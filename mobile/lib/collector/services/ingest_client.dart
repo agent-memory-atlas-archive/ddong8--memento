@@ -11,7 +11,9 @@ class IngestClient {
   final HttpClient _client;
 
   IngestClient(this.config) : _client = HttpClient() {
-    _client.connectionTimeout = const Duration(seconds: 15);
+    _client.connectionTimeout = const Duration(seconds: 20);
+    _client.idleTimeout = const Duration(seconds: 30);
+    _client.maxConnectionsPerHost = 4;
     // Support self-signed or internal CA if necessary
     _client.badCertificateCallback = (cert, host, port) => true;
   }
@@ -92,18 +94,18 @@ class IngestClient {
       final sanitized = Sanitizer.sanitizeText(content).content;
       final bytes = utf8.encode(sanitized);
 
-      final uri = Uri.parse('${config.serverUrl}/api/ingest');
+      final uri = Uri.parse('${config.serverUrl}/api/ingest/file');
       final req = await _client.postUrl(uri);
       _authHeaders.forEach((k, v) => req.headers.set(k, v));
       req.headers.contentType = ContentType.json;
 
       final payload = {
-        'tool_id': toolId,
+        'tool': toolId,
         'category': category,
         'content_type': contentType,
         'relative_path': relativePath,
         'content': sanitized,
-        'content_hash': contentHash,
+        'hash': contentHash,
         'file_size': bytes.length,
         'mode': mode,
         'offset': offset,
@@ -111,7 +113,13 @@ class IngestClient {
 
       req.write(jsonEncode(payload));
       final resp = await req.close();
-      return resp.statusCode == 200;
+      if (resp.statusCode == 200 || resp.statusCode == 201) {
+        return true;
+      } else {
+        final errBody = await resp.transform(utf8.decoder).join();
+        stderr.writeln('[IngestClient] ingestDocument ($relativePath) HTTP ${resp.statusCode}: $errBody');
+        return false;
+      }
     } catch (e) {
       stderr.writeln('[IngestClient] ingestDocument ($relativePath) failed: $e');
       return false;
