@@ -273,6 +273,7 @@ export interface DeviceSummary {
   device_id: string;
   collector_version: string | null;
   last_heartbeat: string | null;
+  online?: boolean;
   document_count: number;
 }
 

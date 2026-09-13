@@ -200,12 +200,14 @@ async def _tool_list_devices(db: AsyncSession, user: User) -> dict:
             if hb and hb.tzinfo is None:
                 hb = hb.replace(tzinfo=timezone.utc)
             age = (now - hb).total_seconds() if hb else None
+            m_candidates = [m.collector_token_hash, m.name, normalize_device_name(m.name), str(m.id)]
+            has_ws = any(cand and ws_manager.has_device(cand) for cand in m_candidates)
             out.append({
                 "device_id": m.collector_token_hash,
                 "name": m.name,
                 "collector_version": m.collector_version,
                 "last_heartbeat": hb.isoformat() if hb else None,
-                "online": age is not None and age < OFFLINE_AFTER_SECONDS,
+                "online": has_ws or (age is not None and age < OFFLINE_AFTER_SECONDS),
             })
         return {"devices": out}
     except Exception as e:
@@ -314,7 +316,19 @@ async def _tool_run_on_device(db: AsyncSession, user: User, args: dict):
             mq = select(Machine).order_by(Machine.last_heartbeat.desc().nulls_last())
             if user.role not in ("admin", "owner"):
                 mq = mq.where(Machine.user_id == user.id)
-            machine = (await db.execute(mq)).scalars().first()
+            machines = (await db.execute(mq)).scalars().all()
+            now_utc = datetime.now(timezone.utc)
+            chosen = None
+            for m in machines:
+                m_hb = m.last_heartbeat
+                if m_hb and m_hb.tzinfo is None:
+                    m_hb = m_hb.replace(tzinfo=timezone.utc)
+                m_age = (now_utc - m_hb).total_seconds() if m_hb else None
+                m_candidates = [m.collector_token_hash, m.name, normalize_device_name(m.name), str(m.id)]
+                if any(cand and ws_manager.has_device(cand) for cand in m_candidates) or (m_age is not None and m_age < OFFLINE_AFTER_SECONDS):
+                    chosen = m
+                    break
+            machine = chosen or (machines[0] if machines else None)
         else:
             base_dev_id = normalize_device_name(device_id)
             machine = (await db.execute(
@@ -340,6 +354,43 @@ async def _tool_run_on_device(db: AsyncSession, user: User, args: dict):
             device_id = machine.collector_token_hash
 
         mach_name = machine.name if machine else device_id
+
+        # Fast-fail if device is offline (no active websocket and heartbeat > OFFLINE_AFTER_SECONDS)
+        now_utc = datetime.now(timezone.utc)
+        hb = machine.last_heartbeat if machine else None
+        if hb and hb.tzinfo is None:
+            hb = hb.replace(tzinfo=timezone.utc)
+        age_sec = (now_utc - hb).total_seconds() if hb else None
+
+        candidates = [device_id, mach_name, normalize_device_name(mach_name)]
+        if machine:
+            candidates.extend([
+                machine.collector_token_hash,
+                machine.name,
+                normalize_device_name(machine.name),
+                str(machine.id),
+            ])
+        has_ws = any(cand and ws_manager.has_device(cand) for cand in candidates)
+        is_online = has_ws or (age_sec is not None and age_sec < OFFLINE_AFTER_SECONDS)
+
+        if not is_online:
+            time_desc = "从未收到心跳" if age_sec is None else (
+                f"最后心跳于 {int(age_sec // 60)} 分钟前" if age_sec < 3600 else f"最后心跳于 {int(age_sec // 3600)} 小时前"
+            )
+            yield {
+                "type": "tool_result",
+                "name": "run_on_device",
+                "result": {
+                    "task_id": "",
+                    "device_id": device_id,
+                    "device_name": mach_name,
+                    "action": action,
+                    "status": "failed",
+                    "exit_code": 1,
+                    "error": f"目标设备「{mach_name}」当前处于离线状态（{time_desc}），采集器未连接，无法接收任务。请在目标设备上启动 Memento 客户端，或切换为在线设备。",
+                },
+            }
+            return
         payload: dict = {}
         if action == "shell":
             if not (args.get("command") or "").strip():

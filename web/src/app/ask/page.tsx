@@ -1016,6 +1016,9 @@ function AskPageContent() {
   }, [executionMode, loadProjectsForMode]);
 
   const currentDev = devices.find((d) => d.device_id === selectedDevice);
+  const isCurrentDevOnline = currentDev
+    ? (currentDev.online ?? (currentDev.last_heartbeat ? (Date.now() - new Date(currentDev.last_heartbeat).getTime()) < 180_000 : false))
+    : true;
   let placeholderText = t.ask.placeholderAgent;
   if (executionMode === "claude") {
     placeholderText = t.ask.placeholderClaude || (isZh ? "向 Claude Code 派发编码任务..." : "Dispatch coding task to Claude Code...");
@@ -1383,22 +1386,22 @@ function AskPageContent() {
                       gap: 4,
                       padding: "2px 8px",
                       borderRadius: 8,
-                      background: "var(--aurora-surface-solid)",
-                      border: "1px solid var(--aurora-border)",
-                      color: "var(--aurora-fg2)",
+                      background: !isCurrentDevOnline && selectedDevice !== "auto" && selectedDevice !== "ask_only" ? "rgba(239, 68, 68, 0.12)" : "var(--aurora-surface-solid)",
+                      border: !isCurrentDevOnline && selectedDevice !== "auto" && selectedDevice !== "ask_only" ? "1px solid rgba(239, 68, 68, 0.4)" : "1px solid var(--aurora-border)",
+                      color: !isCurrentDevOnline && selectedDevice !== "auto" && selectedDevice !== "ask_only" ? "#ef4444" : "var(--aurora-fg2)",
                       fontSize: 11.5,
                       fontWeight: 500,
                       whiteSpace: "nowrap",
                       flexShrink: 0,
                     }}
                   >
-                    <Icon name="devices" size={12} style={{ color: "var(--aurora-accent)" }} />
+                    <Icon name="devices" size={12} style={{ color: !isCurrentDevOnline && selectedDevice !== "auto" && selectedDevice !== "ask_only" ? "#ef4444" : "var(--aurora-accent)" }} />
                     <span>
                       {selectedDevice === "auto"
                         ? t.ask.autoDispatch
                         : selectedDevice === "ask_only"
                         ? t.ask.askOnly
-                        : (devices.find((d) => d.device_id === selectedDevice)?.name || (selectedDevice.length > 8 ? selectedDevice.slice(0, 8) : selectedDevice))}
+                        : `${isCurrentDevOnline ? "🟢" : "🔴"} ${currentDev?.name || (selectedDevice.length > 8 ? selectedDevice.slice(0, 8) : selectedDevice)} (${isCurrentDevOnline ? (isZh ? "在线" : "Online") : (isZh ? "离线" : "Offline")})`}
                     </span>
                   </span>
 
@@ -1653,8 +1656,8 @@ function AskPageContent() {
                   display: "inline-flex",
                   alignItems: "center",
                   gap: 6,
-                  background: "var(--aurora-chip)",
-                  border: "1px solid var(--aurora-border)",
+                  background: !isCurrentDevOnline && selectedDevice !== "auto" && selectedDevice !== "ask_only" ? "rgba(239, 68, 68, 0.08)" : "var(--aurora-chip)",
+                  border: !isCurrentDevOnline && selectedDevice !== "auto" && selectedDevice !== "ask_only" ? "1px solid rgba(239, 68, 68, 0.5)" : "1px solid var(--aurora-border)",
                   borderRadius: 10,
                   padding: "4px 10px",
                   fontSize: 12,
@@ -1662,7 +1665,7 @@ function AskPageContent() {
                   minWidth: 0,
                 }}
               >
-                <Icon name="devices" size={13} style={{ color: "var(--aurora-accent)", flexShrink: 0 }} />
+                <Icon name="devices" size={13} style={{ color: !isCurrentDevOnline && selectedDevice !== "auto" && selectedDevice !== "ask_only" ? "#ef4444" : "var(--aurora-accent)", flexShrink: 0 }} />
                 <select
                   value={selectedDevice}
                   onChange={(e) => handleDeviceChange(e.target.value)}
@@ -1683,15 +1686,33 @@ function AskPageContent() {
                   <option value="auto" style={{ background: "var(--aurora-surface-solid)", color: "var(--aurora-fg1)" }}>
                     {t.ask.autoDispatch}
                   </option>
-                  {devices.map((d) => (
-                    <option key={d.device_id} value={d.device_id} style={{ background: "var(--aurora-surface-solid)", color: "var(--aurora-fg1)" }}>
-                      🖥️ {d.name} ({d.device_id.slice(0, 8)})
-                    </option>
-                  ))}
+                  {devices.map((d) => {
+                    const isOnline = d.online ?? (d.last_heartbeat ? (Date.now() - new Date(d.last_heartbeat).getTime()) < 180_000 : false);
+                    return (
+                      <option key={d.device_id} value={d.device_id} style={{ background: "var(--aurora-surface-solid)", color: isOnline ? "var(--aurora-fg1)" : "var(--aurora-fg3)" }}>
+                        {isOnline ? "🟢" : "🔴"} {d.name} ({isOnline ? (isZh ? "在线" : "Online") : (isZh ? "离线" : "Offline")})
+                      </option>
+                    );
+                  })}
                   <option value="ask_only" style={{ background: "var(--aurora-surface-solid)", color: "var(--aurora-fg1)" }}>
                     {t.ask.askOnly}
                   </option>
                 </select>
+                {!isCurrentDevOnline && selectedDevice !== "auto" && selectedDevice !== "ask_only" && (
+                  <span
+                    title={isZh ? "目标设备当前离线，请在目标机器上启动 Memento 客户端" : "Target device is offline, please start Memento on target device"}
+                    style={{
+                      fontSize: 11,
+                      color: "#ef4444",
+                      fontWeight: 600,
+                      display: "inline-flex",
+                      alignItems: "center",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    ⚠️ {isZh ? "离线" : "Offline"}
+                  </span>
+                )}
               </div>
 
               {/* Optional working directory selector */}

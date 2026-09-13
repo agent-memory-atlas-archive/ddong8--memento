@@ -12,6 +12,7 @@ interface Device {
   name: string;
   device_id: string;
   last_heartbeat: string | null;
+  online?: boolean;
   created_at: string;
   document_count: number;
   tools: string[];
@@ -126,7 +127,7 @@ memento-collector setup`}
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           {devices.map((d) => {
             const isOnline =
-              !!d.last_heartbeat && now - new Date(d.last_heartbeat).getTime() < 300000;
+              d.online ?? (!!d.last_heartbeat && now - new Date(d.last_heartbeat).getTime() < 180000);
             const toolsShown = d.tools.filter((tool) => tool !== "system");
             return (
               <Glass key={d.id} padding={22} radius={20}>

@@ -74,18 +74,38 @@ async def list_devices(
         if tid not in tlist:
             tlist.append(tid)
 
+    from datetime import datetime, timezone
+    from ..services.ws_manager import ws_manager
+    from ..services.user_filter import normalize_device_name
+
     items = []
     seen_names = set()
+    now_utc = datetime.now(timezone.utc)
     for m in machines:
         if m.name in seen_names:
             continue
         seen_names.add(m.name)
+        hb = m.last_heartbeat
+        if hb and hb.tzinfo is None:
+            hb = hb.replace(tzinfo=timezone.utc)
+        age_sec = (now_utc - hb).total_seconds() if hb else None
+
+        has_ws = False
+        candidates = [m.collector_token_hash, m.name, normalize_device_name(m.name), str(m.id)]
+        for cand in candidates:
+            if cand and ws_manager.has_device(cand):
+                has_ws = True
+                break
+
+        is_online = has_ws or (age_sec is not None and age_sec < 180)
+
         items.append({
             "id": str(m.id),
             "name": m.name,
             "device_id": m.collector_token_hash,
             "collector_version": m.collector_version,
-            "last_heartbeat": m.last_heartbeat.isoformat() if m.last_heartbeat else None,
+            "last_heartbeat": hb.isoformat() if hb else None,
+            "online": is_online,
             "created_at": m.created_at.isoformat(),
             "document_count": totals_by_name.get(m.name, 0),
             "tools": tools_by_name.get(m.name, []),

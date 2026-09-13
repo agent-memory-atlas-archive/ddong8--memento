@@ -740,7 +740,9 @@ async def _direct_agent_stream(
         stderr = (result_dict.get("stderr") or "").strip()
         err_msg = result_dict.get("error") or stderr or f"退出码 {exit_code}"
 
-        if action == "agent" and stdout:
+        if status == "failed":
+            summary_text = f"❌ {err_msg}"
+        elif action == "agent" and stdout:
             summary_text = stdout
         elif status == "succeeded" or exit_code == 0:
             summary_text = f"✅ {execution_mode.capitalize()} 任务在设备上执行完毕。"
