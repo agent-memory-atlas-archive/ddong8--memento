@@ -292,6 +292,7 @@ class _AskScreenState extends ConsumerState<AskScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(deviceProvider.notifier).loadDevices();
       _checkAutoRestoreLastConversation();
       // Auto-raise keyboard when entering first screen
       Future.delayed(const Duration(milliseconds: 300), () {

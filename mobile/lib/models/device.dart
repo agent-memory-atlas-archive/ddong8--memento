@@ -38,9 +38,11 @@ class Device {
   factory Device.fromJson(Map<String, dynamic> json) {
     final heartbeatStr = (json['last_heartbeat'] ?? json['last_seen']) as String?;
     DateTime? heartbeatTime;
-    bool isOnline = false;
-
-    if (heartbeatStr != null && heartbeatStr.isNotEmpty) {
+    if (json['online'] is bool) {
+      isOnline = json['online'] as bool;
+    } else if (json['is_online'] is bool) {
+      isOnline = json['is_online'] as bool;
+    } else if (heartbeatStr != null && heartbeatStr.isNotEmpty) {
       try {
         heartbeatTime = DateTime.parse(heartbeatStr).toUtc();
         final nowUtc = DateTime.now().toUtc();

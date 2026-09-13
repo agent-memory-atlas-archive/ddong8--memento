@@ -63,3 +63,13 @@ async def find_machine_by_id_or_hash(
     except (ValueError, AttributeError):
         return None
 
+
+def normalize_device_name(name: str | None) -> str:
+    """Strip platform suffixes like ' (Darwin)', ' (Windows)', ' (Linux)'."""
+    if not name:
+        return ""
+    for suffix in (" (Darwin)", " (Windows)", " (Linux)"):
+        if name.endswith(suffix):
+            return name[:-len(suffix)]
+    return name
+

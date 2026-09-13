@@ -47,7 +47,8 @@ class DeviceNotifier extends StateNotifier<DeviceState> {
         devices: devices,
         selectedDeviceId: lastId ?? 'auto',
       );
-    } catch (_) {
+    } catch (e) {
+      print('[DeviceNotifier] loadDevices error: $e');
       state = state.copyWith(isLoading: false);
     }
   }
