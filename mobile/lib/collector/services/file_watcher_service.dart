@@ -130,8 +130,9 @@ class FileWatcherService {
 
     // Tool-specific strict filtering
     if (toolId == 'antigravity') {
-      // Modern Antigravity: only watch conversation transcripts
-      if (fileName != 'transcript.jsonl' && fileName != 'transcript_full.jsonl') {
+      // Modern Antigravity: only watch conversation transcripts (compact format)
+      // transcript_full.jsonl contains duplicate conversation with redundant massive base64 image blobs
+      if (fileName != 'transcript.jsonl') {
         return;
       }
     } else if (toolId == 'claude') {
@@ -175,8 +176,8 @@ class FileWatcherService {
         return; // File timestamp hasn't changed
       }
 
-      // Limit initial file read to 10MB
-      if (stat.size > 10 * 1024 * 1024) {
+      // Limit initial file read to 50MB
+      if (stat.size > 50 * 1024 * 1024) {
         _log('File too large, skipping: $filePath (${stat.size} bytes)');
         return;
       }
