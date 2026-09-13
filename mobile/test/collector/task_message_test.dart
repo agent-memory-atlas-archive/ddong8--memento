@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import '../../lib/collector/models/task_message.dart';
+import 'package:memento_mobile/collector/models/task_message.dart';
 
 void main() {
   group('TaskMessage Tests', () {

@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import '../../lib/collector/security/sanitizer.dart';
+import 'package:memento_mobile/collector/security/sanitizer.dart';
 
 void main() {
   group('Sanitizer Tests', () {

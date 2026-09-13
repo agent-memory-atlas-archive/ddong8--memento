@@ -4,6 +4,7 @@ import '../../core/api_client.dart';
 import '../../core/theme/aurora_theme.dart';
 import '../../models/ask_conversation.dart';
 import '../../models/ask_turn.dart';
+import '../../models/device.dart';
 import '../../state/ask_state.dart';
 import '../../state/device_state.dart';
 import '../widgets/execution_card.dart';

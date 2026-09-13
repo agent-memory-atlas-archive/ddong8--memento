@@ -12,6 +12,7 @@ import 'ask_screen.dart';
 import 'daily_screen.dart';
 import 'devices_screen.dart';
 import 'collector_screen.dart';
+import 'memory_screen.dart';
 
 class ShellScreen extends ConsumerStatefulWidget {
   const ShellScreen({super.key});

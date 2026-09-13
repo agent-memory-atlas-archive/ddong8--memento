@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 /// Sensitive data sanitizer — filters secrets, tokens and massive base64 payloads before sync.
 class SanitizeResult {
   final String content;
@@ -45,7 +43,8 @@ class Sanitizer {
     // Generic key=value or key: value
     MapEntry(
       RegExp(
-        r'(?i)(password|passwd|secret|api[_-]?key|access[_-]?token|auth[_-]?token)\s*[:=]\s*["\x27]?([^\s"\x27]{8,})["\x27]?',
+        r'(password|passwd|secret|api[_-]?key|access[_-]?token|auth[_-]?token)\s*[:=]\s*["\x27]?([^\s"\x27]{8,})["\x27]?',
+        caseSensitive: false,
       ),
       r'$1=[REDACTED]',
     ),
@@ -95,7 +94,13 @@ class Sanitizer {
       final matches = entry.key.allMatches(current);
       if (matches.isNotEmpty) {
         count += matches.length;
-        current = current.replaceAll(entry.key, entry.value);
+        if (entry.value.contains(r'$1')) {
+          current = current.replaceAllMapped(entry.key, (m) {
+            return entry.value.replaceAll(r'$1', m.group(1) ?? '');
+          });
+        } else {
+          current = current.replaceAll(entry.key, entry.value);
+        }
       }
     }
 

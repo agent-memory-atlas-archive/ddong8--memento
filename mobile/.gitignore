@@ -34,6 +34,8 @@ migrate_working_dir/
 /coverage/
 
 # Symbolication related
+memento-collector
+memento-collector.exe
 app.*.symbols
 
 # Obfuscation related

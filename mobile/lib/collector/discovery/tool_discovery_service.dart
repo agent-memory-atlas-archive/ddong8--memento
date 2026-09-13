@@ -54,7 +54,7 @@ class ToolDiscoveryService {
           final dirName = p.basename(entity.path);
           if (dirName.startsWith('-')) {
             // e.g. -Users-haixingdong-dev-memento -> /Users/haixingdong/dev/memento
-            final decoded = '/' + dirName.substring(1).replaceAll('-', '/');
+            final decoded = '/${dirName.substring(1).replaceAll('-', '/')}';
             projects.add(DiscoveredProject(
               name: p.basename(decoded),
               path: _cleanPath(decoded),
@@ -203,7 +203,7 @@ class ToolDiscoveryService {
 
     if (hasStorage) {
       try {
-        final data = jsonDecode(await storageFile!.readAsString());
+        final data = jsonDecode(await storageFile.readAsString());
         final folders = data['backupWorkspaces']?['folders'] as List? ?? [];
         for (final f in folders) {
           final uri = f['folderUri']?.toString() ?? '';

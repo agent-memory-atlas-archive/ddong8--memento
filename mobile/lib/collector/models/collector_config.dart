@@ -37,6 +37,9 @@ class CollectorConfig {
   /// Default memento config directory (~/.memento)
   static Directory get mementoDir => Directory(p.join(homeDir, '.memento'));
 
+  /// Legacy Python config.json path (~/.memento/config.json)
+  static File get legacyJsonFile => File(p.join(mementoDir.path, 'config.json'));
+
   /// Config file path (~/.memento/collector.json)
   static File get configFile => File(p.join(mementoDir.path, 'collector.json'));
 
@@ -94,12 +97,28 @@ class CollectorConfig {
         }
         if (map['token'] is String && (map['token'] as String).isNotEmpty) {
           token = map['token'];
+        } else if (map['server_token'] is String && (map['server_token'] as String).isNotEmpty) {
+          token = map['server_token'];
         }
         if (map['remote_exec_key'] is String && (map['remote_exec_key'] as String).isNotEmpty) {
           execKey = map['remote_exec_key'];
         }
         if (map['extra_watch_dirs'] is List) {
           extraDirs = (map['extra_watch_dirs'] as List).cast<String>();
+        }
+      } else if (await legacyJsonFile.exists()) {
+        final content = await legacyJsonFile.readAsString();
+        final map = jsonDecode(content) as Map<String, dynamic>;
+        if (map['server_url'] is String && (map['server_url'] as String).isNotEmpty) {
+          serverUrl = map['server_url'];
+        }
+        if (map['token'] is String && (map['token'] as String).isNotEmpty) {
+          token = map['token'];
+        } else if (map['server_token'] is String && (map['server_token'] as String).isNotEmpty) {
+          token = map['server_token'];
+        }
+        if (map['obsidian_vault_path'] is String && (map['obsidian_vault_path'] as String).isNotEmpty) {
+          extraDirs.add(map['obsidian_vault_path'] as String);
         }
       } else if (await legacyTomlFile.exists()) {
         // Simple TOML line parse fallback

@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'dart:io';
 
-import '../lib/collector/collector_controller.dart';
-import '../lib/collector/models/collector_config.dart';
+import 'package:memento_mobile/collector/collector_controller.dart';
+import 'package:memento_mobile/collector/models/collector_config.dart';
 
 /// Standalone CLI entrypoint for headless environments (Linux servers, NAS, or background daemons).
 /// Can be compiled to a single native binary using:
