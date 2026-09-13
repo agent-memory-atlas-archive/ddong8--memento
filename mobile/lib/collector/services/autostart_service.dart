@@ -5,6 +5,28 @@ import 'package:path/path.dart' as p;
 class AutostartService {
   static const String appName = 'Memento';
 
+  /// Check if the standalone daemon process is already running
+  static Future<bool> isDaemonRunning() async {
+    try {
+      final home = Platform.environment['HOME'] ?? '';
+      final pidFile = File(p.join(home, '.memento', 'collector.pid'));
+      if (await pidFile.exists()) {
+        final pidStr = (await pidFile.readAsString()).trim();
+        final pid = int.tryParse(pidStr);
+        if (pid != null && pid > 0) {
+          if (!Platform.isWindows) {
+            final res = await Process.run('kill', ['-0', pid.toString()]);
+            return res.exitCode == 0;
+          } else {
+            final res = await Process.run('tasklist', ['/FI', 'PID eq $pid', '/NH']);
+            return res.exitCode == 0 && res.stdout.toString().contains(pid.toString());
+          }
+        }
+      }
+    } catch (_) {}
+    return false;
+  }
+
   /// Check if autostart on login is currently enabled
   static Future<bool> isEnabled() async {
     try {

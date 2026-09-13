@@ -37,6 +37,9 @@ class _ShellScreenState extends ConsumerState<ShellScreen> with WidgetsBindingOb
   Future<void> _autoStartCollectorIfDesktop() async {
     if (!Platform.isMacOS && !Platform.isWindows && !Platform.isLinux) return;
 
+    // If external system daemon is already running, skip in-process collector
+    if (await AutostartService.isDaemonRunning()) return;
+
     final token = await AppStorage.getToken();
     final serverUrl = await AppStorage.getServerUrl();
 

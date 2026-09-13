@@ -40,36 +40,44 @@ class FileWatcherService {
     _subscriptions.clear();
   }
 
-  /// Start watching tool projects and extra configured directories
+  /// Start watching tool session directories and extra configured directories
   Future<void> startWatching(Map<String, DiscoveredTool> tools) async {
     final watchPaths = <String, String>{}; // path -> toolId
 
     for (final tool in tools.values) {
-      for (final proj in tool.projects) {
-        if (proj.path.isNotEmpty) {
-          watchPaths[proj.path] = tool.id;
-        }
-      }
       if (tool.id == 'claude') {
         final projDir = p.join(tool.root, 'projects');
         if (await Directory(projDir).exists()) {
           watchPaths[projDir] = 'claude';
+        }
+        final plansDir = p.join(tool.root, 'plans');
+        if (await Directory(plansDir).exists()) {
+          watchPaths[plansDir] = 'claude';
         }
       } else if (tool.id == 'codex') {
         final sessDir = p.join(tool.root, 'sessions');
         if (await Directory(sessDir).exists()) {
           watchPaths[sessDir] = 'codex';
         }
+      } else if (tool.id == 'antigravity') {
+        final brainDir = p.join(tool.root, 'brain');
+        if (await Directory(brainDir).exists()) {
+          watchPaths[brainDir] = 'antigravity';
+        }
+      } else if (tool.id == 'cursor') {
+        if (await Directory(tool.root).exists()) {
+          watchPaths[tool.root] = 'cursor';
+        }
       }
     }
 
     for (final dir in config.extraWatchDirs) {
       if (await Directory(dir).exists()) {
-        watchPaths[dir] = 'custom';
+        watchPaths[dir] = 'obsidian';
       }
     }
 
-    _log('Watching ${watchPaths.length} tool workspaces');
+    _log('Watching ${watchPaths.length} tool data directories');
 
     for (final entry in watchPaths.entries) {
       final dirPath = entry.key;
@@ -98,19 +106,58 @@ class FileWatcherService {
   }
 
   void _onFileEvent(String filePath, String toolId) {
-    // Filter non-text / noise files
-    final ext = p.extension(filePath).toLowerCase();
-    final validExts = {'.md', '.json', '.jsonl', '.txt', '.toml'};
-    if (!validExts.contains(ext)) return;
+    // Normalize path separators
+    final normalized = filePath.replaceAll(r'\', '/');
+    final fileName = p.basename(normalized);
 
-    // Ignore temporary, git, or lock files
-    if (filePath.contains('.git') || filePath.contains('node_modules') || filePath.endsWith('.tmp')) {
+    // Filter noise directories and temporary files
+    if (normalized.contains('/.git/') ||
+        normalized.contains('/node_modules/') ||
+        normalized.contains('/build/') ||
+        normalized.contains('/.dart_tool/') ||
+        normalized.contains('/__pycache__/') ||
+        normalized.contains('/.memento/') ||
+        normalized.contains('/.system_generated/steps/') ||
+        normalized.contains('/.system_generated/tasks/') ||
+        fileName.startsWith('.') ||
+        fileName.endsWith('.tmp') ||
+        fileName.endsWith('.lock') ||
+        fileName.startsWith('polling-lease-') ||
+        fileName == 'output.txt' ||
+        fileName == 'read.json') {
       return;
     }
 
-    // Debounce 1.5s
+    // Tool-specific strict filtering
+    if (toolId == 'antigravity') {
+      // Modern Antigravity: only watch conversation transcripts
+      if (fileName != 'transcript.jsonl' && fileName != 'transcript_full.jsonl') {
+        return;
+      }
+    } else if (toolId == 'claude') {
+      if (!fileName.endsWith('.jsonl') && !fileName.endsWith('.meta.json') && !fileName.endsWith('.md')) {
+        return;
+      }
+      if (fileName.contains('lease') || fileName.contains('storage') || fileName.contains('prefs')) {
+        return;
+      }
+    } else if (toolId == 'codex') {
+      if (!fileName.endsWith('.jsonl') && !fileName.endsWith('.json')) {
+        return;
+      }
+    } else if (toolId == 'obsidian') {
+      if (!fileName.endsWith('.md')) {
+        return;
+      }
+    } else {
+      final ext = p.extension(fileName).toLowerCase();
+      final validExts = {'.md', '.json', '.jsonl', '.txt'};
+      if (!validExts.contains(ext)) return;
+    }
+
+    // Debounce 2.0s
     _debounceTimers[filePath]?.cancel();
-    _debounceTimers[filePath] = Timer(const Duration(milliseconds: 1500), () {
+    _debounceTimers[filePath] = Timer(const Duration(milliseconds: 2000), () {
       _syncFile(filePath, toolId);
     });
   }

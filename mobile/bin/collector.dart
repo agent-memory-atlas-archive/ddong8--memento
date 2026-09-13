@@ -53,18 +53,39 @@ void main(List<String> args) async {
   stdout.writeln('Starting Memento Collector Daemon...');
   final controller = CollectorController();
 
+  bool wasOnline = false;
   controller.statusStream.listen((status) {
-    if (status.isOnline) {
+    if (status.isOnline && !wasOnline) {
+      wasOnline = true;
       stdout.writeln('[ONLINE 🟢] Connected to server: ${status.serverUrl}');
+    } else if (!status.isOnline && wasOnline) {
+      wasOnline = false;
+      stdout.writeln('[OFFLINE 🔴] Disconnected from server: ${status.serverUrl}');
     }
   });
 
   await controller.start();
 
+  // Write PID file
+  final pidFile = File('${CollectorConfig.mementoDir.path}/collector.pid');
+  try {
+    if (!CollectorConfig.mementoDir.existsSync()) {
+      CollectorConfig.mementoDir.createSync(recursive: true);
+    }
+    pidFile.writeAsStringSync(pid.toString());
+  } catch (_) {}
+
+  void cleanupPid() {
+    try {
+      if (pidFile.existsSync()) pidFile.deleteSync();
+    } catch (_) {}
+  }
+
   // Handle SIGINT and SIGTERM
   final completer = Completer<void>();
   ProcessSignal.sigint.watch().listen((_) {
     stdout.writeln('\nReceived SIGINT, shutting down...');
+    cleanupPid();
     controller.stop();
     completer.complete();
   });
@@ -72,11 +93,13 @@ void main(List<String> args) async {
   if (!Platform.isWindows) {
     ProcessSignal.sigterm.watch().listen((_) {
       stdout.writeln('\nReceived SIGTERM, shutting down...');
+      cleanupPid();
       controller.stop();
       completer.complete();
     });
   }
 
   await completer.future;
+  cleanupPid();
   exit(0);
 }
