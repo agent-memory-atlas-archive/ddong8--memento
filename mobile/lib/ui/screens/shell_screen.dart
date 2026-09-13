@@ -1,13 +1,17 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/theme/aurora_theme.dart';
+import '../../core/storage.dart';
 import '../../state/auth_state.dart';
 import '../../state/device_state.dart';
+import '../../state/collector_state.dart';
+import '../../collector/models/collector_config.dart';
+import '../../collector/services/autostart_service.dart';
 import 'ask_screen.dart';
 import 'daily_screen.dart';
 import 'devices_screen.dart';
 import 'collector_screen.dart';
-import '../../state/collector_state.dart';
 
 class ShellScreen extends ConsumerStatefulWidget {
   const ShellScreen({super.key});
@@ -24,6 +28,36 @@ class _ShellScreenState extends ConsumerState<ShellScreen> with WidgetsBindingOb
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _autoStartCollectorIfDesktop();
+    });
+  }
+
+  Future<void> _autoStartCollectorIfDesktop() async {
+    if (!Platform.isMacOS && !Platform.isWindows && !Platform.isLinux) return;
+
+    final token = await AppStorage.getToken();
+    final serverUrl = await AppStorage.getServerUrl();
+
+    if (token != null && token.isNotEmpty) {
+      final controller = ref.read(collectorControllerProvider);
+      if (!controller.currentStatus.isRunning) {
+        final baseConfig = await CollectorConfig.load();
+        final effectiveConfig = baseConfig.copyWith(
+          serverUrl: serverUrl,
+          token: token,
+        );
+        await effectiveConfig.save();
+        await controller.start(configOverride: effectiveConfig);
+
+        // Best effort: ensure autostart on system login
+        try {
+          if (!await AutostartService.isEnabled()) {
+            await AutostartService.enable();
+          }
+        } catch (_) {}
+      }
+    }
   }
 
   @override
