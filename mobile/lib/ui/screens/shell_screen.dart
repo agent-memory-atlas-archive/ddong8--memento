@@ -6,7 +6,8 @@ import '../../state/device_state.dart';
 import 'ask_screen.dart';
 import 'daily_screen.dart';
 import 'devices_screen.dart';
-import 'memory_screen.dart';
+import 'collector_screen.dart';
+import '../../state/collector_state.dart';
 
 class ShellScreen extends ConsumerStatefulWidget {
   const ShellScreen({super.key});
@@ -40,11 +41,13 @@ class _ShellScreenState extends ConsumerState<ShellScreen> with WidgetsBindingOb
   }
 
   List<Widget> _buildPages() {
+    final collectorController = ref.watch(collectorControllerProvider);
     return [
       const AskScreen(),
       _loadedTabs.contains(1) ? const MemoryScreen() : const SizedBox.shrink(),
       _loadedTabs.contains(2) ? const DevicesScreen() : const SizedBox.shrink(),
       _loadedTabs.contains(3) ? const DailyScreen() : const SizedBox.shrink(),
+      _loadedTabs.contains(4) ? CollectorScreen(controller: collectorController) : const SizedBox.shrink(),
     ];
   }
 
@@ -76,6 +79,11 @@ class _ShellScreenState extends ConsumerState<ShellScreen> with WidgetsBindingOb
       'label': '工作总结',
       'icon': Icons.calendar_today_outlined,
       'activeIcon': Icons.calendar_today,
+    },
+    {
+      'label': '本机采集',
+      'icon': Icons.sensors_outlined,
+      'activeIcon': Icons.sensors,
     },
   ];
 
