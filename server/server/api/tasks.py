@@ -449,6 +449,17 @@ async def device_websocket_endpoint(
         ws_manager.register(str(machine.id), websocket)
 
     try:
+        async with async_session_factory() as db:
+            await db.execute(
+                update(Machine)
+                .where(Machine.id == machine.id)
+                .values(last_heartbeat=datetime.now(timezone.utc))
+            )
+            await db.commit()
+    except Exception as e:
+        logger.warning("Failed to update machine last_heartbeat on WS accept: %s", e)
+
+    try:
         await websocket.send_json({
             "type": "connected",
             "device_id": real_device_id,

@@ -428,39 +428,53 @@ async def _run_ws_loop(config: CollectorConfig) -> None:
                 except Exception as e:
                     logger.debug("Failed to report agent capabilities: %s", e)
 
-                async for raw_msg in ws:
+                async def _ping_worker(ws_conn) -> None:
                     try:
-                        msg = json.loads(raw_msg)
+                        while True:
+                            await asyncio.sleep(25)
+                            await ws_conn.send(json.dumps({"type": "ping"}))
                     except Exception:
-                        continue
+                        pass
 
-                    mtype = msg.get("type")
-                    if mtype == "connected":
-                        logger.info("WebSocket handshake verified by server")
-                    elif mtype == "get_agent_capabilities":
+                ping_task = asyncio.create_task(_ping_worker(ws))
+                try:
+                    async for raw_msg in ws:
                         try:
-                            from .agent_capabilities import get_all_agent_capabilities
-                            caps = get_all_agent_capabilities()
-                            await ws.send(json.dumps({"type": "agent_capabilities", "capabilities": caps}))
-                        except Exception as e:
-                            logger.debug("Failed to answer get_agent_capabilities: %s", e)
-                    elif mtype == "task_dispatch":
-                        task = msg.get("task") or {}
-                        task_id = task.get("id")
-                        action = task.get("action")
-                        payload = task.get("payload") or {}
-                        timeout = min(int(task.get("timeout_seconds") or 300), 86400)
-                        logger.info("Received real-time task %s (%s) over WebSocket", task_id, action)
-                        # Launch in background so message loop is not blocked
-                        asyncio.create_task(
-                            _execute_task_stream(ws, task_id, action, payload, timeout)
-                        )
-                    elif mtype == "task_cancel":
-                        task_id = msg.get("task_id")
-                        proc = _running_tasks.get(task_id)
-                        if proc:
-                            logger.info("Received task_cancel for %s, terminating process group", task_id)
-                            _kill_subprocess(proc, signal.SIGTERM)
+                            msg = json.loads(raw_msg)
+                        except Exception:
+                            continue
+
+                        mtype = msg.get("type")
+                        if mtype == "connected":
+                            logger.info("WebSocket handshake verified by server")
+                        elif mtype == "pong":
+                            continue
+                        elif mtype == "get_agent_capabilities":
+                            try:
+                                from .agent_capabilities import get_all_agent_capabilities
+                                caps = get_all_agent_capabilities()
+                                await ws.send(json.dumps({"type": "agent_capabilities", "capabilities": caps}))
+                            except Exception as e:
+                                logger.debug("Failed to answer get_agent_capabilities: %s", e)
+                        elif mtype == "task_dispatch":
+                            task = msg.get("task") or {}
+                            task_id = task.get("id")
+                            action = task.get("action")
+                            payload = task.get("payload") or {}
+                            timeout = min(int(task.get("timeout_seconds") or 300), 86400)
+                            logger.info("Received real-time task %s (%s) over WebSocket", task_id, action)
+                            # Launch in background so message loop is not blocked
+                            asyncio.create_task(
+                                _execute_task_stream(ws, task_id, action, payload, timeout)
+                            )
+                        elif mtype == "task_cancel":
+                            task_id = msg.get("task_id")
+                            proc = _running_tasks.get(task_id)
+                            if proc:
+                                logger.info("Received task_cancel for %s, terminating process group", task_id)
+                                _kill_subprocess(proc, signal.SIGTERM)
+                finally:
+                    ping_task.cancel()
         except Exception as e:
             logger.debug("WebSocket connection closed or failed: %s (reconnecting in %ds)", e, backoff)
             await asyncio.sleep(backoff)
