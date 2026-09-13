@@ -110,7 +110,11 @@ class CollectorController {
     // 3. Register & Enroll heartbeat with server
     _addLog('Connecting to server ${_config!.serverUrl}...');
     final key = await _ingestClient!.sendHeartbeat();
-    if (key != null) {
+    if (key != null && key.isNotEmpty) {
+      _config = _config!.copyWith(remoteExecKey: key);
+      try {
+        await _config!.save();
+      } catch (_) {}
       _addLog('Enrolled for remote execution (key verified)');
     }
     await _ingestClient!.reportDiscovery(_discoveredTools);

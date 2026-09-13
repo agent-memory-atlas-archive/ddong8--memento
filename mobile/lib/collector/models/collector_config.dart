@@ -31,7 +31,14 @@ class CollectorConfig {
     if (Platform.isWindows) {
       return env['USERPROFILE'] ?? env['HOME'] ?? 'C:\\Users\\Default';
     }
-    return env['HOME'] ?? '/';
+    final home = env['HOME'] ?? '/';
+    if (Platform.isMacOS && home.contains('/Library/Containers/')) {
+      final parts = home.split('/Library/Containers/');
+      if (parts.isNotEmpty && parts[0].isNotEmpty) {
+        return parts[0];
+      }
+    }
+    return home;
   }
 
   /// Default memento config directory (~/.memento)

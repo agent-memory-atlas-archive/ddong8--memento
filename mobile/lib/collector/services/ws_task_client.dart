@@ -72,8 +72,7 @@ class WsTaskClient {
         );
 
         backoffSeconds = 2;
-        onConnectionStatus?.call(true);
-        _log('Connected to Memento server WebSocket');
+        _log('WebSocket transport connected, awaiting server handshake...');
 
         // Start 25-second periodic heartbeat ping to prevent idle timeouts & keep DB updated
         _startPingTimer();
@@ -88,6 +87,7 @@ class WsTaskClient {
             final type = data['type']?.toString();
 
             if (type == 'connected') {
+              onConnectionStatus?.call(true);
               _log('Handshake verified by server (${data['device_name']})');
             } else if (type == 'pong') {
               // Heartbeat ack from server
@@ -114,6 +114,14 @@ class WsTaskClient {
             }
           } catch (e) {
             _log('Error processing frame: $e');
+          }
+        }
+
+        if (_ws?.closeCode != null) {
+          _log('WebSocket closed by server (code: ${_ws?.closeCode}, reason: ${_ws?.closeReason})');
+          if (_ws?.closeCode == 4003) {
+            _log('Server authentication rejected (4003 unauthorized). Re-verifying credentials...');
+            backoffSeconds = 5;
           }
         }
       } catch (e) {

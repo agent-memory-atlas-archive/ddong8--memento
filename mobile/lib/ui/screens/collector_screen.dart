@@ -1,5 +1,12 @@
+import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:path/path.dart' as p;
 import '../../collector/collector_controller.dart';
+import '../../collector/models/collector_config.dart';
+import '../../collector/discovery/tool_discovery_service.dart';
+import '../../collector/models/tool_discovery.dart';
+import '../../collector/services/autostart_service.dart';
 import '../../core/theme/aurora_theme.dart';
 import '../widgets/glass_card.dart';
 
@@ -16,11 +23,65 @@ class CollectorScreen extends StatefulWidget {
 class _CollectorScreenState extends State<CollectorScreen> {
   final ScrollController _logScrollController = ScrollController();
   bool _autoScroll = true;
+  Timer? _daemonPollTimer;
+  bool _isDaemon = false;
+  int? _daemonPid;
+  List<String> _daemonLogs = [];
+  Map<String, DiscoveredTool> _daemonTools = {};
+  CollectorConfig? _daemonConfig;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkDaemon();
+    _daemonPollTimer = Timer.periodic(const Duration(seconds: 2), (_) => _checkDaemon());
+  }
 
   @override
   void dispose() {
+    _daemonPollTimer?.cancel();
     _logScrollController.dispose();
     super.dispose();
+  }
+
+  Future<void> _checkDaemon() async {
+    final running = await AutostartService.isDaemonRunning();
+    int? pid;
+    if (running) {
+      try {
+        final pidFile = File(p.join(CollectorConfig.homeDir, '.memento', 'collector.pid'));
+        if (await pidFile.exists()) {
+          pid = int.tryParse((await pidFile.readAsString()).trim());
+        }
+      } catch (_) {}
+    }
+
+    if (mounted) {
+      setState(() {
+        _isDaemon = running;
+        _daemonPid = pid;
+      });
+    }
+
+    if (running) {
+      try {
+        final config = await CollectorConfig.load();
+        final logFile = File(p.join(CollectorConfig.mementoDir.path, 'collector.log'));
+        List<String> logs = [];
+        if (await logFile.exists()) {
+          final lines = await logFile.readAsLines();
+          logs = lines.length > 100 ? lines.sublist(lines.length - 100) : lines;
+        }
+        final tools = await ToolDiscoveryService.discoverAll();
+        if (mounted) {
+          setState(() {
+            _daemonConfig = config;
+            _daemonLogs = logs;
+            _daemonTools = tools;
+          });
+        }
+      } catch (_) {}
+    }
   }
 
   void _scrollToBottom() {
@@ -33,13 +94,51 @@ class _CollectorScreenState extends State<CollectorScreen> {
     }
   }
 
+  Future<void> _toggleCollector(bool isCurrentlyRunning) async {
+    if (isCurrentlyRunning) {
+      if (_isDaemon) {
+        if (Platform.isWindows) {
+          if (_daemonPid != null) {
+            await Process.run('taskkill', ['/F', '/PID', '$_daemonPid']);
+          }
+        } else {
+          await Process.run('pkill', ['-9', '-f', 'memento-collector run']);
+        }
+        await _checkDaemon();
+      } else {
+        widget.controller.stop();
+      }
+    } else {
+      final exe = Platform.isWindows ? 'memento-collector.exe' : '/opt/homebrew/bin/memento-collector';
+      if (File(exe).existsSync()) {
+        await Process.start(exe, ['run'], mode: ProcessStartMode.detached);
+        await Future.delayed(const Duration(milliseconds: 800));
+        await _checkDaemon();
+      } else {
+        await widget.controller.start();
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<CollectorStatus>(
       stream: widget.controller.statusStream,
       initialData: widget.controller.currentStatus,
       builder: (context, snapshot) {
-        final status = snapshot.data ?? widget.controller.currentStatus;
+        final internalStatus = snapshot.data ?? widget.controller.currentStatus;
+
+        final isRunning = _isDaemon || internalStatus.isRunning;
+        final isOnline = _isDaemon ? true : internalStatus.isOnline;
+        final deviceName = _isDaemon
+            ? (_daemonConfig?.deviceName ?? internalStatus.deviceName)
+            : internalStatus.deviceName;
+        final serverUrl = _isDaemon
+            ? (_daemonConfig?.serverUrl ?? internalStatus.serverUrl)
+            : internalStatus.serverUrl;
+        final tools = _isDaemon ? _daemonTools : internalStatus.tools;
+        final recentLogs = _isDaemon ? _daemonLogs : internalStatus.recentLogs;
+
         WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
 
         return Scaffold(
@@ -48,17 +147,11 @@ class _CollectorScreenState extends State<CollectorScreen> {
             actions: [
               IconButton(
                 icon: Icon(
-                  status.isRunning ? Icons.stop_circle_outlined : Icons.play_circle_fill,
-                  color: status.isRunning ? Colors.redAccent : AuroraColors.accent,
+                  isRunning ? Icons.stop_circle_outlined : Icons.play_circle_fill,
+                  color: isRunning ? Colors.redAccent : AuroraColors.accent,
                 ),
-                tooltip: status.isRunning ? '停止采集器' : '启动采集器',
-                onPressed: () {
-                  if (status.isRunning) {
-                    widget.controller.stop();
-                  } else {
-                    widget.controller.start();
-                  }
-                },
+                tooltip: isRunning ? '停止采集器' : '启动采集器',
+                onPressed: () => _toggleCollector(isRunning),
               ),
             ],
           ),
@@ -78,11 +171,11 @@ class _CollectorScreenState extends State<CollectorScreen> {
                           height: 12,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
-                            color: status.isOnline
+                            color: isOnline
                                 ? const Color(0xFF10B981)
-                                : (status.isRunning ? Colors.amber : Colors.redAccent),
+                                : (isRunning ? Colors.amber : Colors.redAccent),
                             boxShadow: [
-                              if (status.isOnline)
+                              if (isOnline)
                                 const BoxShadow(
                                   color: Color(0xFF10B981),
                                   blurRadius: 8,
@@ -92,44 +185,41 @@ class _CollectorScreenState extends State<CollectorScreen> {
                           ),
                         ),
                         const SizedBox(width: 10),
-                        Text(
-                          status.isOnline
-                              ? '已连接服务器 (在线)'
-                              : (status.isRunning ? '正在连接服务器...' : '采集器未运行'),
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            color: AuroraColors.fg1,
+                        Expanded(
+                          child: Text(
+                            isOnline
+                                ? (_isDaemon
+                                    ? '已连接服务器 (系统后台常驻 PID: ${_daemonPid ?? ""})'
+                                    : '已连接服务器 (在线)')
+                                : (isRunning ? '正在连接服务器...' : '采集器未运行'),
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: AuroraColors.fg1,
+                            ),
                           ),
                         ),
-                        const Spacer(),
                         ElevatedButton.icon(
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: status.isRunning ? Colors.red.withAlpha(40) : AuroraColors.accent,
-                            foregroundColor: status.isRunning ? Colors.redAccent : Colors.white,
+                            backgroundColor: isRunning ? Colors.red.withAlpha(40) : AuroraColors.accent,
+                            foregroundColor: isRunning ? Colors.redAccent : Colors.white,
                             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                           ),
-                          onPressed: () {
-                            if (status.isRunning) {
-                              widget.controller.stop();
-                            } else {
-                              widget.controller.start();
-                            }
-                          },
-                          icon: Icon(status.isRunning ? Icons.stop : Icons.play_arrow, size: 16),
-                          label: Text(status.isRunning ? '停止' : '启动'),
+                          onPressed: () => _toggleCollector(isRunning),
+                          icon: Icon(isRunning ? Icons.stop : Icons.play_arrow, size: 16),
+                          label: Text(isRunning ? '停止' : '启动'),
                         ),
                       ],
                     ),
                     const SizedBox(height: 14),
                     Text(
-                      '设备名称: ${status.deviceName}',
+                      '设备名称: $deviceName',
                       style: const TextStyle(fontSize: 13, color: AuroraColors.fg2),
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      '服务器地址: ${status.serverUrl.isEmpty ? "未配置" : status.serverUrl}',
+                      '服务器地址: ${serverUrl.isEmpty ? "未配置" : serverUrl}',
                       style: const TextStyle(fontSize: 13, color: AuroraColors.fg3),
                     ),
                   ],
@@ -140,11 +230,11 @@ class _CollectorScreenState extends State<CollectorScreen> {
 
               // Discovered Tools
               Text(
-                '已检测到的本地开发工具 (${status.tools.length})',
+                '已检测到的本地开发工具 (${tools.length})',
                 style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AuroraColors.fg2),
               ),
               const SizedBox(height: 8),
-              if (status.tools.isEmpty)
+              if (tools.isEmpty)
                 const GlassCard(
                   padding: EdgeInsets.all(16),
                   child: Center(
@@ -155,7 +245,7 @@ class _CollectorScreenState extends State<CollectorScreen> {
                 Wrap(
                   spacing: 10,
                   runSpacing: 10,
-                  children: status.tools.values.map((tool) {
+                  children: tools.values.map((tool) {
                     return Container(
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                       decoration: BoxDecoration(
@@ -216,19 +306,19 @@ class _CollectorScreenState extends State<CollectorScreen> {
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(color: AuroraColors.border),
                 ),
-                child: status.recentLogs.isEmpty
+                child: recentLogs.isEmpty
                   ? const Center(child: Text('等待采集器日志输出...', style: TextStyle(color: AuroraColors.fg4, fontSize: 12)))
                   : ListView.builder(
                       controller: _logScrollController,
-                      itemCount: status.recentLogs.length,
+                      itemCount: recentLogs.length,
                       itemBuilder: (context, idx) {
-                        final line = status.recentLogs[idx];
+                        final line = recentLogs[idx];
                         Color color = const Color(0xFF9CA3AF);
-                        if (line.contains('ONLINE') || line.contains('Connected')) {
+                        if (line.contains('ONLINE') || line.contains('Connected') || line.contains('verified')) {
                           color = const Color(0xFF34D399);
-                        } else if (line.contains('Error') || line.contains('failed')) {
+                        } else if (line.contains('Error') || line.contains('failed') || line.contains('rejected')) {
                           color = const Color(0xFFF87171);
-                        } else if (line.contains('Watching') || line.contains('Discovered')) {
+                        } else if (line.contains('Watching') || line.contains('Discovered') || line.contains('Syncing')) {
                           color = const Color(0xFF60A5FA);
                         }
                         return Padding(
