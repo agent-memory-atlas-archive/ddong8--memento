@@ -8,9 +8,10 @@ import '../security/sanitizer.dart';
 /// HTTP client for document ingestion, device registration, and tool discovery reporting.
 class IngestClient {
   final CollectorConfig config;
+  final void Function(String message)? onLog;
   final HttpClient _client;
 
-  IngestClient(this.config) : _client = HttpClient() {
+  IngestClient(this.config, {this.onLog}) : _client = HttpClient() {
     _client.connectionTimeout = const Duration(seconds: 15);
     _client.idleTimeout = const Duration(seconds: 15);
     _client.maxConnectionsPerHost = 6;
@@ -125,11 +126,15 @@ class IngestClient {
         return true;
       } else {
         final errBody = await resp.transform(utf8.decoder).join().timeout(const Duration(seconds: 5));
-        stderr.writeln('[IngestClient] ingestDocument ($relativePath) HTTP ${resp.statusCode}: $errBody');
+        final msg = 'ingestDocument ($relativePath) HTTP ${resp.statusCode}: $errBody';
+        onLog?.call(msg);
+        stderr.writeln('[IngestClient] $msg');
         return false;
       }
     } catch (e) {
-      stderr.writeln('[IngestClient] ingestDocument ($relativePath) failed: $e');
+      final msg = 'ingestDocument ($relativePath) error: $e';
+      onLog?.call(msg);
+      stderr.writeln('[IngestClient] $msg');
       return false;
     }
   }

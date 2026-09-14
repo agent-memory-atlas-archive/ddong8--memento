@@ -19,7 +19,7 @@ class ExecutionCard extends StatefulWidget {
 }
 
 class _ExecutionCardState extends State<ExecutionCard> {
-  bool _expanded = true;
+  bool _expanded = false;
   bool _copied = false;
   bool _showRawTerminal = false;
 
@@ -129,12 +129,16 @@ class _ExecutionCardState extends State<ExecutionCard> {
           // Header
           InkWell(
             onTap: () => setState(() => _expanded = !_expanded),
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
+            borderRadius: _expanded
+                ? const BorderRadius.vertical(top: Radius.circular(14))
+                : BorderRadius.circular(14),
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: const BoxDecoration(
+              decoration: BoxDecoration(
                 color: AuroraColors.chip,
-                borderRadius: BorderRadius.vertical(top: Radius.circular(14)),
+                borderRadius: _expanded
+                    ? const BorderRadius.vertical(top: Radius.circular(14))
+                    : BorderRadius.circular(14),
               ),
               child: Row(
                 children: [
@@ -232,10 +236,13 @@ class _ExecutionCardState extends State<ExecutionCard> {
                     ),
                   ),
                   const SizedBox(width: 4),
-                  Icon(
-                    _expanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
-                    size: 14,
-                    color: AuroraColors.fg3,
+                  Tooltip(
+                    message: _expanded ? '收起详情' : '展开查看详情',
+                    child: Icon(
+                      _expanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
+                      size: 16,
+                      color: AuroraColors.fg3,
+                    ),
                   ),
                 ],
               ),

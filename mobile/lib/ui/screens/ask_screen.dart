@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/api_client.dart';
 import '../../core/theme/aurora_theme.dart';
@@ -65,6 +66,8 @@ class _AskScreenState extends ConsumerState<AskScreen> {
   bool _showSessionContext = true;
   bool _isConfigCollapsed = false;
   bool _compactMode = false;
+  bool _isUserScrolledUp = false;
+  bool _isAutoScrolling = false;
 
   void _handleModeChange(String id) {
     setState(() {
@@ -246,7 +249,7 @@ class _AskScreenState extends ConsumerState<AskScreen> {
 
     final title = targetSession['title']?.toString();
     ref.read(askProvider.notifier).setSessionTurns(turns, title: title);
-    _scrollToBottom(force: true);
+    _scrollToBottom(force: true, smooth: true);
   }
 
   String _getHintText() {
@@ -360,7 +363,7 @@ class _AskScreenState extends ConsumerState<AskScreen> {
                 _showCwd = true;
               });
             }
-            _scrollToBottom(force: true);
+            _scrollToBottom(force: true, smooth: true);
           },
         );
       }
@@ -377,27 +380,64 @@ class _AskScreenState extends ConsumerState<AskScreen> {
     super.dispose();
   }
 
-  DateTime _lastScrollTime = DateTime.now();
+  void _scrollToBottom({bool force = false, bool smooth = false}) {
+    if (force) {
+      _isUserScrolledUp = false;
+    }
+    // 如果用户主动向上滚动查看历史，且非强制，则不抢夺滚动位置
+    if (_isUserScrolledUp && !force) {
+      return;
+    }
 
-  void _scrollToBottom({bool force = false}) {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    void doScroll() {
       if (!_scrollController.hasClients) return;
-      final max = _scrollController.position.maxScrollExtent;
-      final current = _scrollController.position.pixels;
+      final position = _scrollController.position;
+      final target = position.maxScrollExtent;
+      if (target <= 0) return;
 
-      // Do not hijack scroll if user scrolled up to read earlier history
-      if (!force && (max - current) > 140) {
-        return;
+      if (!smooth) {
+        // 高频流式输出：直接对齐到底部，避免动画堆叠和打断卡死
+        _scrollController.jumpTo(target);
+      } else {
+        if (_isAutoScrolling) {
+          _scrollController.jumpTo(target);
+          return;
+        }
+        _isAutoScrolling = true;
+        _scrollController
+            .animateTo(
+          target,
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOutCubic,
+        )
+            .then((_) {
+          _isAutoScrolling = false;
+          if (_scrollController.hasClients && !_isUserScrolledUp) {
+            final newMax = _scrollController.position.maxScrollExtent;
+            if (newMax > target) {
+              _scrollController.jumpTo(newMax);
+            }
+          }
+        }).catchError((_) {
+          _isAutoScrolling = false;
+        });
       }
+    }
 
-      final now = DateTime.now();
-      if (force || now.difference(_lastScrollTime).inMilliseconds > 120) {
-        _lastScrollTime = now;
-        _scrollController.animateTo(
-          max,
-          duration: const Duration(milliseconds: 100),
-          curve: Curves.easeOutQuad,
-        );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      doScroll();
+      // 对于复杂布局/Markdown/富文本异步排版，如果强制滚动，做二次轻微延迟重测
+      if (force) {
+        Future.delayed(const Duration(milliseconds: 60), () {
+          if (mounted && !_isUserScrolledUp) {
+            doScroll();
+          }
+        });
+        Future.delayed(const Duration(milliseconds: 200), () {
+          if (mounted && !_isUserScrolledUp) {
+            doScroll();
+          }
+        });
       }
     });
   }
@@ -612,7 +652,7 @@ class _AskScreenState extends ConsumerState<AskScreen> {
                                           _showCwd = true;
                                         });
                                       }
-                                      _scrollToBottom(force: true);
+                                      _scrollToBottom(force: true, smooth: true);
                                     },
                                   );
                                 },
@@ -770,7 +810,7 @@ class _AskScreenState extends ConsumerState<AskScreen> {
         );
 
     _inputController.clear();
-    _scrollToBottom(force: true);
+    _scrollToBottom(force: true, smooth: true);
   }
 
   void _handleSmartCompactAndRetry([String? targetSid]) {
@@ -803,15 +843,28 @@ class _AskScreenState extends ConsumerState<AskScreen> {
             sessionId: sidToUse,
             compactMode: true,
           );
-      _scrollToBottom(force: true);
+      _scrollToBottom(force: true, smooth: true);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     ref.listen<AskState>(askProvider, (previous, next) {
+      // 1. 新回合插入或切换会话（turns 数量改变，如发送消息、载入历史、清空对话）
+      if (previous?.turns.length != next.turns.length) {
+        _scrollToBottom(force: true, smooth: true);
+        return;
+      }
+
+      // 2. 流式响应期间内容增量吐出
       if (next.isStreaming) {
-        _scrollToBottom();
+        _scrollToBottom(smooth: false);
+        return;
+      }
+
+      // 3. 流式响应刚结束，进行平滑收尾对齐
+      if (previous?.isStreaming == true && !next.isStreaming) {
+        _scrollToBottom(force: false, smooth: true);
       }
     });
 
@@ -881,20 +934,123 @@ class _AskScreenState extends ConsumerState<AskScreen> {
           Expanded(
             child: askState.turns.isEmpty
                 ? _buildEmptyState()
-                : ListView.builder(
-                    controller: _scrollController,
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                    itemCount: askState.turns.length,
-                    itemBuilder: (context, index) {
-                      final turn = askState.turns[index];
-                      return _buildTurnItem(turn, index, askState.isStreaming);
-                    },
+                : Stack(
+                    children: [
+                      NotificationListener<ScrollNotification>(
+                        onNotification: (notification) {
+                          if (!_scrollController.hasClients) return false;
+                          final metrics = notification.metrics;
+                          if (metrics.maxScrollExtent <= 0) return false;
+                          final distanceFromBottom =
+                              metrics.maxScrollExtent - metrics.pixels;
+
+                          if (distanceFromBottom <= 50) {
+                            if (_isUserScrolledUp) {
+                              setState(() {
+                                _isUserScrolledUp = false;
+                              });
+                            }
+                          } else if (notification is UserScrollNotification) {
+                            if (notification.direction == ScrollDirection.forward &&
+                                distanceFromBottom > 80) {
+                              if (!_isUserScrolledUp) {
+                                setState(() {
+                                  _isUserScrolledUp = true;
+                                });
+                              }
+                            }
+                          } else if (notification is ScrollUpdateNotification &&
+                              notification.dragDetails != null) {
+                            if (distanceFromBottom > 80 && !_isUserScrolledUp) {
+                              setState(() {
+                                _isUserScrolledUp = true;
+                              });
+                            }
+                          }
+                          return false;
+                        },
+                        child: ListView.builder(
+                          controller: _scrollController,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 12),
+                          itemCount: askState.turns.length,
+                          itemBuilder: (context, index) {
+                            final turn = askState.turns[index];
+                            return _buildTurnItem(
+                                turn, index, askState.isStreaming);
+                          },
+                        ),
+                      ),
+                      if (_isUserScrolledUp)
+                        Positioned(
+                          right: 18,
+                          bottom: 14,
+                          child: _buildScrollToBottomFab(askState),
+                        ),
+                    ],
                   ),
           ),
 
           // Bottom Console Toolbelt
           _buildBottomConsole(deviceState, askState),
         ],
+      ),
+    );
+  }
+
+  Widget _buildScrollToBottomFab(AskState askState) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () {
+          _scrollToBottom(force: true, smooth: true);
+        },
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+          decoration: BoxDecoration(
+            color: AuroraColors.surfaceElevated.withOpacity(0.92),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: AuroraColors.border, width: 1),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.25),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (askState.isStreaming) ...[
+                Container(
+                  width: 7,
+                  height: 7,
+                  margin: const EdgeInsets.only(right: 6),
+                  decoration: const BoxDecoration(
+                    color: AuroraColors.accent,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ],
+              const Icon(
+                Icons.keyboard_arrow_down_rounded,
+                size: 18,
+                color: AuroraColors.fg1,
+              ),
+              const SizedBox(width: 4),
+              Text(
+                askState.isStreaming ? '最新消息' : '回到底部',
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                  color: AuroraColors.fg1,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -1589,13 +1745,13 @@ class _AskScreenState extends ConsumerState<AskScreen> {
                                       );
                                     });
                                   }(),
-                                  DropdownMenuItem<String>(
+                                  const DropdownMenuItem<String>(
                                     value: '__custom__',
                                     child: Row(
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
                                         Icon(Icons.edit_outlined, size: 12, color: AuroraColors.accent),
-                                        const SizedBox(width: 4),
+                                        SizedBox(width: 4),
                                         Text('✏️ 自定义输入模型...', style: TextStyle(color: AuroraColors.accent), overflow: TextOverflow.ellipsis),
                                       ],
                                     ),

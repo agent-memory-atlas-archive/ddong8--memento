@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/theme/aurora_theme.dart';
 import '../../core/storage.dart';
+import '../../core/api_client.dart';
 import '../../state/auth_state.dart';
 import '../../state/device_state.dart';
 import '../../state/collector_state.dart';
@@ -40,19 +41,39 @@ class _ShellScreenState extends ConsumerState<ShellScreen> with WidgetsBindingOb
     // If external system daemon is already running, skip in-process collector
     if (await AutostartService.isDaemonRunning()) return;
 
-    final token = await AppStorage.getToken();
+    final authToken = await AppStorage.getToken();
     final serverUrl = await AppStorage.getServerUrl();
 
-    if (token != null && token.isNotEmpty) {
+    if (authToken != null && authToken.isNotEmpty) {
       final controller = ref.read(collectorControllerProvider);
       if (!controller.currentStatus.isRunning) {
         final baseConfig = await CollectorConfig.load();
-        final effectiveConfig = baseConfig.copyWith(
-          serverUrl: serverUrl,
-          token: token,
-        );
-        await effectiveConfig.save();
-        await controller.start(configOverride: effectiveConfig);
+
+        // Ensure we obtain a real collector_token rather than the user's JWT login token
+        var collectorToken = await AppStorage.getCollectorToken();
+        if (collectorToken == null || collectorToken.isEmpty) {
+          try {
+            final me = await ApiClient().getMe();
+            final fetched = me['collector_token']?.toString();
+            if (fetched != null && fetched.isNotEmpty) {
+              collectorToken = fetched;
+              await AppStorage.setCollectorToken(fetched);
+            }
+          } catch (_) {}
+        }
+
+        final effectiveToken = (collectorToken != null && collectorToken.isNotEmpty)
+            ? collectorToken
+            : (baseConfig.token.startsWith('ey') ? '' : baseConfig.token);
+
+        if (effectiveToken.isNotEmpty) {
+          final effectiveConfig = baseConfig.copyWith(
+            serverUrl: serverUrl,
+            token: effectiveToken,
+          );
+          await effectiveConfig.save();
+          await controller.start(configOverride: effectiveConfig);
+        }
 
         // Best effort: ensure autostart on system login
         try {

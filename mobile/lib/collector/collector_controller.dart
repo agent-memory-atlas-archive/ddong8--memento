@@ -100,7 +100,7 @@ class CollectorController {
     _notify();
 
     // 1. Initialize Ingest Client
-    _ingestClient = IngestClient(_config!);
+    _ingestClient = IngestClient(_config!, onLog: _addLog);
 
     // 2. Discover local AI tools
     _addLog('Discovering installed AI tools on ${_config!.deviceName}...');

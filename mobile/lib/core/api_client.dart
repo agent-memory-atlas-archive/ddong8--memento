@@ -62,6 +62,13 @@ class ApiClient {
     if (token != null) {
       await AppStorage.setToken(token.toString());
       await AppStorage.setUsername(usernameOrEmail);
+      try {
+        final me = await getMe();
+        final colToken = me['collector_token']?.toString();
+        if (colToken != null && colToken.isNotEmpty) {
+          await AppStorage.setCollectorToken(colToken);
+        }
+      } catch (_) {}
     }
     return data;
   }

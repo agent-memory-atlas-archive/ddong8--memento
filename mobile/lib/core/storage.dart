@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 class AppStorage {
   static const String _keyServerUrl = 'server_url';
   static const String _keyToken = 'auth_token';
+  static const String _keyCollectorToken = 'collector_token';
   static const String _keyUsername = 'auth_username';
   static const String _keyLastDeviceId = 'last_device_id';
 
@@ -12,6 +13,7 @@ class AppStorage {
   static SharedPreferences? _prefs;
   static String? _cachedServerUrl;
   static String? _cachedToken;
+  static String? _cachedCollectorToken;
   static String? _cachedUsername;
   static String? _cachedLastDeviceId;
 
@@ -50,6 +52,23 @@ class AppStorage {
       await prefs.remove(_keyToken);
     } else {
       await prefs.setString(_keyToken, token);
+    }
+  }
+
+  static Future<String?> getCollectorToken() async {
+    if (_cachedCollectorToken != null) return _cachedCollectorToken;
+    final prefs = await _getPrefs();
+    _cachedCollectorToken = prefs.getString(_keyCollectorToken);
+    return _cachedCollectorToken;
+  }
+
+  static Future<void> setCollectorToken(String? token) async {
+    _cachedCollectorToken = token;
+    final prefs = await _getPrefs();
+    if (token == null || token.isEmpty) {
+      await prefs.remove(_keyCollectorToken);
+    } else {
+      await prefs.setString(_keyCollectorToken, token);
     }
   }
 

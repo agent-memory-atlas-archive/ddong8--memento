@@ -227,16 +227,22 @@ class WsTaskClient {
       paths.addAll([
         '$home\\AppData\\Local\\Programs',
         '$home\\AppData\\Roaming\\npm',
+        'C:\\Program Files\\nodejs',
+        '$home\\.local\\bin',
       ]);
     }
 
+    final extensions = Platform.isWindows ? ['.cmd', '.exe', '.bat', '.ps1', ''] : [''];
+
     for (final name in names) {
-      final exeName = Platform.isWindows ? (name.endsWith('.exe') ? name : '$name.exe') : name;
-      for (final dir in paths) {
-        if (dir.isEmpty) continue;
-        final file = File('$dir${Platform.pathSeparator}$exeName');
-        if (await file.exists()) {
-          return file.path;
+      for (final ext in extensions) {
+        final targetName = name.toLowerCase().endsWith(ext.toLowerCase()) ? name : '$name$ext';
+        for (final dir in paths) {
+          if (dir.isEmpty) continue;
+          final file = File('$dir${Platform.pathSeparator}$targetName');
+          if (await file.exists()) {
+            return file.path;
+          }
         }
       }
     }
@@ -291,12 +297,14 @@ class WsTaskClient {
         if (model.isNotEmpty) args.addAll(['--model', model]);
         args.add(prompt);
       } else if (binary.contains('codex')) {
-        args = [
-          'exec',
-          sessionId.isNotEmpty ? 'resume' : 'new',
+        args = ['exec'];
+        if (sessionId.isNotEmpty) {
+          args.add('resume');
+        }
+        args.addAll([
           '--dangerously-bypass-approvals-and-sandbox',
           '--skip-git-repo-check',
-        ];
+        ]);
         if (effort.isNotEmpty) args.addAll(['-c', 'model_reasoning_effort="$effort"']);
         if (model.isNotEmpty) args.addAll(['-m', model]);
         if (sessionId.isNotEmpty) args.add(sessionId);
@@ -320,11 +328,13 @@ class WsTaskClient {
     Process? proc;
 
     try {
+      final useShell = Platform.isWindows &&
+          (exe.toLowerCase().endsWith('.cmd') || exe.toLowerCase().endsWith('.bat'));
       proc = await Process.start(
         exe,
         args,
         workingDirectory: workingDir,
-        runInShell: false,
+        runInShell: useShell,
       );
       // Close stdin immediately so CLI tools know no input is piped,
       // avoiding "Warning: no stdin data received in 3s, proceeding without it."
