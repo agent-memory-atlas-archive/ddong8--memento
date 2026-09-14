@@ -72,7 +72,7 @@ class ToolDiscoveryService {
     }
 
     return DiscoveredTool(
-      id: 'claude',
+      id: 'claude_code',
       name: 'Claude Code',
       root: root.path,
       projects: projects,

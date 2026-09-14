@@ -29,6 +29,7 @@ class FileWatcherService {
   final Map<String, Timer> _debounceTimers = {};
   final List<_SyncTask> _queue = [];
   final Set<String> _queuedFiles = {};
+  Timer? _periodicScanTimer;
   bool _isProcessingQueue = false;
   bool _disposed = false;
 
@@ -48,6 +49,8 @@ class FileWatcherService {
 
   void dispose() {
     _disposed = true;
+    _periodicScanTimer?.cancel();
+    _periodicScanTimer = null;
     for (final timer in _debounceTimers.values) {
       timer.cancel();
     }
@@ -122,14 +125,14 @@ class FileWatcherService {
     final watchPaths = <String, String>{}; // path -> toolId
 
     for (final tool in tools.values) {
-      if (tool.id == 'claude') {
+      if (tool.id == 'claude' || tool.id == 'claude_code') {
         final projDir = p.join(tool.root, 'projects');
         if (await Directory(projDir).exists()) {
-          watchPaths[projDir] = 'claude';
+          watchPaths[projDir] = 'claude_code';
         }
         final plansDir = p.join(tool.root, 'plans');
         if (await Directory(plansDir).exists()) {
-          watchPaths[plansDir] = 'claude';
+          watchPaths[plansDir] = 'claude_code';
         }
       } else if (tool.id == 'codex') {
         final sessDir = p.join(tool.root, 'sessions');
@@ -164,6 +167,14 @@ class FileWatcherService {
       // Gentle background scan for initial or missed files
       unawaited(_initialScan(dirPath, toolId));
     }
+
+    // Periodic light rescan every 60s to catch files that failed during temporary network glitches
+    _periodicScanTimer = Timer.periodic(const Duration(seconds: 60), (_) {
+      if (_disposed) return;
+      for (final entry in watchPaths.entries) {
+        unawaited(_initialScan(entry.key, entry.value));
+      }
+    });
   }
 
   Future<void> _initialScan(String dirPath, String toolId) async {
@@ -230,7 +241,7 @@ class FileWatcherService {
       // Only sync canonical transcripts (compact format)
       // Ignore transcript_full.jsonl which duplicates conversation with massive raw base64 images
       return fileName == 'transcript.jsonl';
-    } else if (toolId == 'claude') {
+    } else if (toolId == 'claude' || toolId == 'claude_code') {
       if (!fileName.endsWith('.jsonl') && !fileName.endsWith('.meta.json') && !fileName.endsWith('.md')) {
         return false;
       }
@@ -268,7 +279,7 @@ class FileWatcherService {
         final cascadeId = brainMatch.group(1);
         return 'antigravity/brain/$cascadeId/transcript.jsonl';
       }
-    } else if (toolId == 'claude') {
+    } else if (toolId == 'claude' || toolId == 'claude_code') {
       final idx = normalized.indexOf('/projects/');
       if (idx != -1) {
         return normalized.substring(idx + 1);
@@ -402,6 +413,9 @@ class FileWatcherService {
           contentHash: batchHash,
           offset: lastOffset,
           mode: mode,
+          metadata: {
+            'session_id': p.basenameWithoutExtension(filePath),
+          },
         );
 
         if (!ok && !_disposed) {
@@ -416,6 +430,9 @@ class FileWatcherService {
             contentHash: batchHash,
             offset: lastOffset,
             mode: mode,
+            metadata: {
+              'session_id': p.basenameWithoutExtension(filePath),
+            },
           );
         }
 

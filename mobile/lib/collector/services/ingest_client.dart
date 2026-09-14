@@ -11,9 +11,9 @@ class IngestClient {
   final HttpClient _client;
 
   IngestClient(this.config) : _client = HttpClient() {
-    _client.connectionTimeout = const Duration(seconds: 20);
-    _client.idleTimeout = const Duration(seconds: 30);
-    _client.maxConnectionsPerHost = 4;
+    _client.connectionTimeout = const Duration(seconds: 15);
+    _client.idleTimeout = const Duration(seconds: 15);
+    _client.maxConnectionsPerHost = 6;
     // Support self-signed or internal CA if necessary
     _client.badCertificateCallback = (cert, host, port) => true;
   }
@@ -34,19 +34,21 @@ class IngestClient {
   Future<String?> sendHeartbeat() async {
     try {
       final uri = Uri.parse('${config.serverUrl}/api/ingest/heartbeat');
-      final req = await _client.postUrl(uri);
+      final req = await _client.postUrl(uri).timeout(const Duration(seconds: 15));
       _authHeaders.forEach((k, v) => req.headers.set(k, v));
       req.headers.contentType = ContentType.json;
 
-      final resp = await req.close();
+      final resp = await req.close().timeout(const Duration(seconds: 20));
       if (resp.statusCode == 200) {
-        final body = await resp.transform(utf8.decoder).join();
+        final body = await resp.transform(utf8.decoder).join().timeout(const Duration(seconds: 10));
         final map = jsonDecode(body) as Map<String, dynamic>;
         final key = map['remote_exec_key']?.toString();
         if (key != null && key.isNotEmpty) {
           await config.copyWith(remoteExecKey: key).save();
           return key;
         }
+      } else {
+        await resp.drain().timeout(const Duration(seconds: 5));
       }
     } catch (e) {
       stderr.writeln('[IngestClient] heartbeat failed: $e');
@@ -58,7 +60,7 @@ class IngestClient {
   Future<bool> reportDiscovery(Map<String, DiscoveredTool> tools) async {
     try {
       final uri = Uri.parse('${config.serverUrl}/api/ingest/discovery');
-      final req = await _client.postUrl(uri);
+      final req = await _client.postUrl(uri).timeout(const Duration(seconds: 15));
       _authHeaders.forEach((k, v) => req.headers.set(k, v));
       req.headers.contentType = ContentType.json;
 
@@ -70,8 +72,10 @@ class IngestClient {
       };
 
       req.write(jsonEncode(payload));
-      final resp = await req.close();
-      return resp.statusCode == 200;
+      final resp = await req.close().timeout(const Duration(seconds: 20));
+      final isOk = resp.statusCode == 200;
+      await resp.drain().timeout(const Duration(seconds: 5));
+      return isOk;
     } catch (e) {
       stderr.writeln('[IngestClient] reportDiscovery failed: $e');
       return false;
@@ -88,6 +92,7 @@ class IngestClient {
     required String contentHash,
     int offset = 0,
     String mode = 'full',
+    Map<String, dynamic> metadata = const {},
   }) async {
     try {
       // Clean sensitive credentials before upload
@@ -95,7 +100,7 @@ class IngestClient {
       final bytes = utf8.encode(sanitized);
 
       final uri = Uri.parse('${config.serverUrl}/api/ingest/file');
-      final req = await _client.postUrl(uri);
+      final req = await _client.postUrl(uri).timeout(const Duration(seconds: 15));
       _authHeaders.forEach((k, v) => req.headers.set(k, v));
       req.headers.contentType = ContentType.json;
 
@@ -109,14 +114,17 @@ class IngestClient {
         'file_size': bytes.length,
         'mode': mode,
         'offset': offset,
+        'metadata': metadata,
       };
 
       req.write(jsonEncode(payload));
-      final resp = await req.close();
+      final resp = await req.close().timeout(const Duration(seconds: 30));
       if (resp.statusCode == 200 || resp.statusCode == 201) {
+        // Crucial: always drain response so socket can be returned to pool
+        await resp.drain().timeout(const Duration(seconds: 5));
         return true;
       } else {
-        final errBody = await resp.transform(utf8.decoder).join();
+        final errBody = await resp.transform(utf8.decoder).join().timeout(const Duration(seconds: 5));
         stderr.writeln('[IngestClient] ingestDocument ($relativePath) HTTP ${resp.statusCode}: $errBody');
         return false;
       }
@@ -130,12 +138,12 @@ class IngestClient {
   Future<List<Map<String, dynamic>>> pollCommands() async {
     try {
       final uri = Uri.parse('${config.serverUrl}/api/devices/commands');
-      final req = await _client.getUrl(uri);
+      final req = await _client.getUrl(uri).timeout(const Duration(seconds: 15));
       _authHeaders.forEach((k, v) => req.headers.set(k, v));
 
-      final resp = await req.close();
+      final resp = await req.close().timeout(const Duration(seconds: 20));
       if (resp.statusCode == 200) {
-        final body = await resp.transform(utf8.decoder).join();
+        final body = await resp.transform(utf8.decoder).join().timeout(const Duration(seconds: 10));
         final list = jsonDecode(body) as List;
         final commands = list.cast<Map<String, dynamic>>();
 
@@ -147,6 +155,8 @@ class IngestClient {
           }
         }
         return commands;
+      } else {
+        await resp.drain().timeout(const Duration(seconds: 5));
       }
     } catch (_) {}
     return [];
@@ -155,9 +165,10 @@ class IngestClient {
   Future<void> _ackCommand(dynamic id) async {
     try {
       final uri = Uri.parse('${config.serverUrl}/api/devices/commands/$id/ack');
-      final req = await _client.postUrl(uri);
+      final req = await _client.postUrl(uri).timeout(const Duration(seconds: 10));
       _authHeaders.forEach((k, v) => req.headers.set(k, v));
-      await req.close();
+      final resp = await req.close().timeout(const Duration(seconds: 10));
+      await resp.drain().timeout(const Duration(seconds: 5));
     } catch (_) {}
   }
 }

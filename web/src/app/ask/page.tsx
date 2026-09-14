@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, memo, useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { getApiBase, authFetch, api, DeviceSummary, AskConversationSummary, ProjectSummary } from "@/lib/api-client";
@@ -165,6 +165,120 @@ function formatRelativeTime(dateStr: string | null, isZh: boolean): string {
   return d.toLocaleDateString();
 }
 
+/* ── Memoized turn renderer ── */
+const UserBubble = memo(function UserBubble({ content }: { content: string }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "flex-end" }}>
+      <div
+        style={{
+          background: "var(--aurora-accent-soft)",
+          color: "var(--aurora-fg1)",
+          padding: "11px 16px",
+          borderRadius: 16,
+          maxWidth: "min(88%, 680px)",
+          fontSize: 14,
+          lineHeight: 1.5,
+          whiteSpace: "pre-wrap",
+          wordBreak: "break-word",
+          boxShadow: "0 2px 10px rgba(0,0,0,0.1)",
+        }}
+      >
+        {content}
+      </div>
+    </div>
+  );
+});
+
+const AssistantBubble = memo(function AssistantBubble({
+  turn,
+  isLast,
+  streaming,
+  onSourcesClick,
+  onSmartCompactAndRetry,
+  t,
+}: {
+  turn: Turn;
+  isLast: boolean;
+  streaming: boolean;
+  onSourcesClick: (sources: Source[]) => void;
+  onSmartCompactAndRetry: (sid?: string) => void;
+  t: any;
+}) {
+  const { thinking, content } = parseTurnContent(turn);
+  const isThinkingActive = Boolean(streaming && isLast && !content);
+  const hasTools = Boolean(turn.toolCalls && turn.toolCalls.length > 0);
+
+  return (
+    <Glass padding="clamp(12px, 3vw, 20px)" radius={18} style={{ maxWidth: "100%", minWidth: 0, overflow: "hidden" }}>
+      {turn.sources && turn.sources.length > 0 && (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", marginBottom: 10 }}>
+          <button
+            type="button"
+            onClick={() => onSourcesClick(turn.sources || [])}
+            title={t.ask.sources}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              padding: "4px 10px",
+              borderRadius: 999,
+              background: "var(--aurora-chip)",
+              border: "1px solid var(--aurora-border)",
+              color: "var(--aurora-fg2)",
+              fontSize: 12,
+              cursor: "pointer",
+              transition: "all 0.15s ease",
+            }}
+          >
+            <Icon name="book" size={13} style={{ color: "var(--aurora-accent)" }} />
+            <span>{t.ask.sources}</span>
+            <span
+              style={{
+                fontSize: 10.5,
+                padding: "1px 6px",
+                borderRadius: 999,
+                background: "rgba(56, 189, 248, 0.15)",
+                color: "var(--aurora-accent)",
+                fontWeight: 600,
+              }}
+            >
+              {turn.sources.length}
+            </span>
+          </button>
+        </div>
+      )}
+      {(thinking || isThinkingActive) && (
+        <ThinkingBlock thinking={thinking} isLive={isThinkingActive} />
+      )}
+      {hasTools && (
+        <div style={{ marginBottom: 12 }}>
+          <ExecutionTabs calls={turn.toolCalls!} onSmartCompactAndRetry={onSmartCompactAndRetry} />
+        </div>
+      )}
+      {content ? (
+        <div className="prose prose-sm max-w-none" style={{ fontSize: 14, lineHeight: 1.6 }}>
+          <MarkdownViewer content={content} />
+        </div>
+      ) : (
+        !hasTools && !thinking && (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--aurora-fg4)", fontSize: 13 }}>
+            <span
+              style={{
+                width: 8,
+                height: 8,
+                borderRadius: "50%",
+                background: "var(--aurora-accent)",
+                animation: "pulse 1s infinite",
+              }}
+            />
+            {t.ask.thinking}
+          </div>
+        )
+      )}
+    </Glass>
+  );
+});
+
 function AskPageContent() {
   const searchParams = useSearchParams();
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -246,6 +360,11 @@ function AskPageContent() {
   const isZh = locale.startsWith("zh");
   const abortRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  // RAF-batched streaming: accumulate updates, flush once per frame
+  const turnsRef = useRef<Turn[]>([]);
+  const rafIdRef = useRef<number>(0);
+  const turnsDirtyRef = useRef(false);
 
   const [historyFilterDevice, setHistoryFilterDevice] = useState<boolean>(true);
 
@@ -341,9 +460,14 @@ function AskPageContent() {
     }
   }, [idParam, loadConversation, loadConversations]);
 
-  // Follow the stream as tokens land.
+  // Follow the stream as tokens land — throttled to avoid layout thrash.
+  const scrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    if (scrollTimerRef.current) return;
+    scrollTimerRef.current = setTimeout(() => {
+      scrollTimerRef.current = null;
+      bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    }, 120);
   }, [turns]);
 
   // Abort any in-flight stream if the user navigates away mid-answer.
@@ -417,29 +541,40 @@ function AskPageContent() {
       }));
 
     setInput("");
-    setTurns((prev) => [
-      ...prev,
+    const initialTurns: Turn[] = [
+      ...turns.filter((x) => !x.error),
       { role: "user", content: question },
       { role: "assistant", content: "", toolCalls: [] },
-    ]);
+    ];
+    turnsRef.current = initialTurns;
+    setTurns(initialTurns);
     streamingRef.current = true;
     setStreaming(true);
 
     const ctrl = new AbortController();
     abortRef.current = ctrl;
 
-    // Mutate the last (assistant) turn as deltas arrive.
-    const patchLast = (fn: (turn: Turn) => Turn) =>
-      setTurns((prev) => {
-        const next = [...prev];
-        const i = next.length - 1;
-        if (i >= 0 && next[i].role === "assistant") {
-          next[i] = fn(next[i]);
-        } else {
-          next.push(fn({ role: "assistant", content: "", toolCalls: [] }));
-        }
-        return next;
-      });
+    // RAF-batched patchLast: mutate ref immediately, schedule single flush per frame
+    const scheduleFlush = () => {
+      if (!turnsDirtyRef.current) {
+        turnsDirtyRef.current = true;
+        rafIdRef.current = requestAnimationFrame(() => {
+          turnsDirtyRef.current = false;
+          setTurns([...turnsRef.current]);
+        });
+      }
+    };
+
+    const patchLast = (fn: (turn: Turn) => Turn) => {
+      const arr = turnsRef.current;
+      const i = arr.length - 1;
+      if (i >= 0 && arr[i].role === "assistant") {
+        arr[i] = fn(arr[i]);
+      } else {
+        arr.push(fn({ role: "assistant", content: "", toolCalls: [] }));
+      }
+      scheduleFlush();
+    };
 
     try {
       const res = await authFetch(`${getApiBase()}/api/ask`, {
@@ -677,6 +812,10 @@ function AskPageContent() {
         patchLast((x) => ({ ...x, content: x.content || t.ask.error, error: true }));
       }
     } finally {
+      // Final flush: cancel pending RAF and push last state
+      if (rafIdRef.current) cancelAnimationFrame(rafIdRef.current);
+      turnsDirtyRef.current = false;
+      setTurns([...turnsRef.current]);
       streamingRef.current = false;
       setStreaming(false);
       abortRef.current = null;
@@ -1159,129 +1298,21 @@ function AskPageContent() {
       <div style={{ display: "flex", flexDirection: "column", gap: 16, marginBottom: 20, maxWidth: "100%", minWidth: 0 }}>
         {turns.map((turn, i) =>
           turn.role === "user" ? (
-            <div key={i} style={{ display: "flex", justifyContent: "flex-end" }}>
-              <div
-                style={{
-                  background: "var(--aurora-accent-soft)",
-                  color: "var(--aurora-fg1)",
-                  padding: "11px 16px",
-                  borderRadius: 16,
-                  maxWidth: "min(88%, 680px)",
-                  fontSize: 14,
-                  lineHeight: 1.5,
-                  whiteSpace: "pre-wrap",
-                  wordBreak: "break-word",
-                  boxShadow: "0 2px 10px rgba(0,0,0,0.1)",
-                }}
-              >
-                {turn.content}
-              </div>
-            </div>
+            <UserBubble key={i} content={turn.content} />
           ) : (
-            <Glass key={i} padding="clamp(12px, 3vw, 20px)" radius={18} style={{ maxWidth: "100%", minWidth: 0, overflow: "hidden" }}>
-              {/* Optional top toolbar / sources pill */}
-              {turn.sources && turn.sources.length > 0 && (
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "flex-end",
-                    marginBottom: 10,
-                  }}
-                >
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSelectedSources(turn.sources || []);
-                      setSourcesOpen(true);
-                      setHistoryOpen(false);
-                    }}
-                    title={t.ask.sources}
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: 6,
-                      padding: "4px 10px",
-                      borderRadius: 999,
-                      background: "var(--aurora-chip)",
-                      border: "1px solid var(--aurora-border)",
-                      color: "var(--aurora-fg2)",
-                      fontSize: 12,
-                      cursor: "pointer",
-                      transition: "all 0.15s ease",
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.borderColor = "var(--aurora-accent)";
-                      e.currentTarget.style.color = "var(--aurora-accent)";
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.borderColor = "var(--aurora-border)";
-                      e.currentTarget.style.color = "var(--aurora-fg2)";
-                    }}
-                  >
-                    <Icon name="book" size={13} style={{ color: "var(--aurora-accent)" }} />
-                    <span>{t.ask.sources}</span>
-                    <span
-                      style={{
-                        fontSize: 10.5,
-                        padding: "1px 6px",
-                        borderRadius: 999,
-                        background: "rgba(56, 189, 248, 0.15)",
-                        color: "var(--aurora-accent)",
-                        fontWeight: 600,
-                      }}
-                    >
-                      {turn.sources.length}
-                    </span>
-                  </button>
-                </div>
-              )}
-
-              {(() => {
-                const { thinking, content } = parseTurnContent(turn);
-                const isLastTurn = i === turns.length - 1;
-                const isThinkingActive = Boolean(streaming && isLastTurn && !content);
-                const hasTools = Boolean(turn.toolCalls && turn.toolCalls.length > 0);
-
-                return (
-                  <>
-                    {/* Collapsible Thinking Process Block */}
-                    {(thinking || isThinkingActive) && (
-                      <ThinkingBlock thinking={thinking} isLive={isThinkingActive} />
-                    )}
-
-                    {/* Render tool executions with multi-device tabs */}
-                    {hasTools && (
-                      <div style={{ marginBottom: 12 }}>
-                        <ExecutionTabs calls={turn.toolCalls!} onSmartCompactAndRetry={handleSmartCompactAndRetry} />
-                      </div>
-                    )}
-
-                    {/* Render assistant text output */}
-                    {content ? (
-                      <div className="prose prose-sm max-w-none" style={{ fontSize: 14, lineHeight: 1.6 }}>
-                        <MarkdownViewer content={content} />
-                      </div>
-                    ) : (
-                      !hasTools && !thinking && (
-                        <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--aurora-fg4)", fontSize: 13 }}>
-                          <span
-                            style={{
-                              width: 8,
-                              height: 8,
-                              borderRadius: "50%",
-                              background: "var(--aurora-accent)",
-                              animation: "pulse 1s infinite",
-                            }}
-                          />
-                          {t.ask.thinking}
-                        </div>
-                      )
-                    )}
-                  </>
-                );
-              })()}
-            </Glass>
+            <AssistantBubble
+              key={i}
+              turn={turn}
+              isLast={i === turns.length - 1}
+              streaming={streaming}
+              onSourcesClick={(sources) => {
+                setSelectedSources(sources);
+                setSourcesOpen(true);
+                setHistoryOpen(false);
+              }}
+              onSmartCompactAndRetry={handleSmartCompactAndRetry}
+              t={t}
+            />
           )
         )}
         <div ref={bottomRef} />

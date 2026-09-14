@@ -216,6 +216,7 @@ class ApiClient {
   Future<Map<String, dynamic>> getProjectConversations(
     String projectId, {
     int limit = 30,
+    int maxMessagesPerSession = 5,
     String order = 'desc',
     String? deviceId,
   }) async {
@@ -223,6 +224,7 @@ class ApiClient {
       '/api/projects/$projectId/conversations',
       queryParameters: {
         'session_limit': limit,
+        'max_messages_per_session': maxMessagesPerSession,
         'order': order,
         if (deviceId != null &&
             deviceId.isNotEmpty &&

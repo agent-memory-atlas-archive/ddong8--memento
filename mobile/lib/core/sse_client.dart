@@ -24,6 +24,7 @@ class AskSseClient {
     String? effort,
     String? projectId,
     String? sessionId,
+    bool? compactMode,
     required void Function(String id, String? title) onConversationId,
     required void Function(List<AskSource> sources) onSources,
     required void Function(ToolCallItem item) onToolCall,
@@ -75,6 +76,7 @@ class AskSseClient {
           if (effort != null && effort.isNotEmpty) 'effort': effort,
           if (projectId != null && projectId.isNotEmpty) 'project_id': projectId,
           if (sessionId != null && sessionId.isNotEmpty) 'session_id': sessionId,
+          if (compactMode == true) 'compact_mode': true,
         },
         options: Options(
           responseType: ResponseType.stream,

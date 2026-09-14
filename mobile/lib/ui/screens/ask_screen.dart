@@ -64,6 +64,7 @@ class _AskScreenState extends ConsumerState<AskScreen> {
   bool _loadingSessions = false;
   bool _showSessionContext = true;
   bool _isConfigCollapsed = false;
+  bool _compactMode = false;
 
   void _handleModeChange(String id) {
     setState(() {
@@ -81,6 +82,7 @@ class _AskScreenState extends ConsumerState<AskScreen> {
       _customModelController.clear();
       _selectedProjectId = null;
       _selectedSessionId = null;
+      _compactMode = false;
       _sessions = [];
       _projects = [];
     });
@@ -151,11 +153,31 @@ class _AskScreenState extends ConsumerState<AskScreen> {
 
     try {
       final dev = ref.read(deviceProvider);
-      final res = await ApiClient().getProjectConversations(
+      var res = await ApiClient().getProjectConversations(
         projId,
+        maxMessagesPerSession: 5,
         deviceId: dev.selectedDeviceId,
       );
-      final rawList = res['sessions'] as List<dynamic>? ?? [];
+      var rawList = res['sessions'] as List<dynamic>? ?? [];
+
+      // If the selected execution device has no local sessions for this project yet,
+      // gracefully show project-wide historical sessions so the user has full context
+      if (rawList.isEmpty &&
+          dev.selectedDeviceId.isNotEmpty &&
+          dev.selectedDeviceId != 'auto' &&
+          dev.selectedDeviceId != 'all') {
+        try {
+          final allRes = await ApiClient().getProjectConversations(
+            projId,
+            maxMessagesPerSession: 5,
+          );
+          final allList = allRes['sessions'] as List<dynamic>? ?? [];
+          if (allList.isNotEmpty) {
+            rawList = allList;
+          }
+        } catch (_) {}
+      }
+
       if (mounted && _selectedProjectId == projId) {
         setState(() {
           _sessions = rawList.cast<Map<String, dynamic>>();
@@ -171,8 +193,11 @@ class _AskScreenState extends ConsumerState<AskScreen> {
   }
 
   Future<void> _handleSelectSession(String? sid) async {
-    setState(() => _selectedSessionId = sid);
     if (sid == null || sid.isEmpty) {
+      setState(() {
+        _selectedSessionId = null;
+        _compactMode = false;
+      });
       ref.read(askProvider.notifier).newChat();
       return;
     }
@@ -180,7 +205,20 @@ class _AskScreenState extends ConsumerState<AskScreen> {
       (s) => (s['session_id'] ?? s['conversation_id'])?.toString() == sid,
       orElse: () => <String, dynamic>{},
     );
-    if (targetSession.isEmpty) return;
+    if (targetSession.isEmpty) {
+      setState(() => _selectedSessionId = sid);
+      return;
+    }
+
+    final count = (targetSession['message_count'] as num?)?.toInt() ?? 0;
+    final bytes = (targetSession['file_size_bytes'] as num?)?.toInt() ?? 0;
+    final compactRecommended = targetSession['compact_recommended'] == true;
+    final isHeavy = compactRecommended || bytes > 300000 || count > 35;
+
+    setState(() {
+      _selectedSessionId = sid;
+      _compactMode = isHeavy;
+    });
 
     List<dynamic> rawMsgs = (targetSession['messages'] as List<dynamic>?) ?? [];
     final docId = targetSession['conversation_id']?.toString();
@@ -728,10 +766,45 @@ class _AskScreenState extends ConsumerState<AskScreen> {
           effort: _selectedEffort,
           projectId: _selectedProjectId,
           sessionId: _selectedSessionId,
+          compactMode: _compactMode,
         );
 
     _inputController.clear();
     _scrollToBottom(force: true);
+  }
+
+  void _handleSmartCompactAndRetry([String? targetSid]) {
+    final sidToUse = targetSid ?? _selectedSessionId;
+    setState(() {
+      if (sidToUse != null && sidToUse.isNotEmpty) {
+        _selectedSessionId = sidToUse;
+      }
+      _compactMode = true;
+    });
+
+    final turns = ref.read(askProvider).turns;
+    final lastUserTurn = turns.reversed.firstWhere(
+      (t) => t.role == 'user' && t.content.trim().isNotEmpty,
+      orElse: () => AskTurn(role: 'user', content: ''),
+    );
+    if (lastUserTurn.content.trim().isNotEmpty) {
+      final deviceState = ref.read(deviceProvider);
+      final selectedDevice = deviceState.selectedDeviceId;
+      final cwd = _showCwd ? _cwdController.text.trim() : null;
+
+      ref.read(askProvider.notifier).sendQuestion(
+            question: lastUserTurn.content,
+            selectedDevice: selectedDevice,
+            cwd: cwd,
+            executionMode: _executionMode,
+            model: _selectedModel,
+            effort: _selectedEffort,
+            projectId: _selectedProjectId,
+            sessionId: sidToUse,
+            compactMode: true,
+          );
+      _scrollToBottom(force: true);
+    }
   }
 
   @override
@@ -984,7 +1057,10 @@ class _AskScreenState extends ConsumerState<AskScreen> {
 
             // Tool execution cards
             if (turn.toolCalls.isNotEmpty)
-              ...turn.toolCalls.map((call) => ExecutionCard(call: call)),
+              ...turn.toolCalls.map((call) => ExecutionCard(
+                    call: call,
+                    onSmartCompactAndRetry: _handleSmartCompactAndRetry,
+                  )),
 
             // Assistant answer text
             if (turn.content.isNotEmpty)
@@ -1141,18 +1217,29 @@ class _AskScreenState extends ConsumerState<AskScreen> {
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                         decoration: BoxDecoration(
-                          color: AuroraColors.accentSoft,
+                          color: _compactMode ? const Color(0x1E10B981) : AuroraColors.accentSoft,
                           borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: AuroraColors.accent, width: 0.8),
+                          border: Border.all(
+                            color: _compactMode ? const Color(0xFF10B981) : AuroraColors.accent,
+                            width: 0.8,
+                          ),
                         ),
-                        child: const Row(
+                        child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.access_time_rounded, size: 11, color: AuroraColors.accent),
-                            SizedBox(width: 3),
+                            Icon(
+                              _compactMode ? Icons.auto_awesome : Icons.access_time_rounded,
+                              size: 11,
+                              color: _compactMode ? const Color(0xFF10B981) : AuroraColors.accent,
+                            ),
+                            const SizedBox(width: 3),
                             Text(
-                              '续接中',
-                              style: TextStyle(fontSize: 10.5, color: AuroraColors.accent, fontWeight: FontWeight.w600),
+                              _compactMode ? '瘦身续接' : '续接中',
+                              style: TextStyle(
+                                fontSize: 10.5,
+                                color: _compactMode ? const Color(0xFF10B981) : AuroraColors.accent,
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
                           ],
                         ),
@@ -1653,9 +1740,14 @@ class _AskScreenState extends ConsumerState<AskScreen> {
                       ..._sessions.map((s) {
                         final sid = (s['session_id'] ?? s['conversation_id'] ?? '').toString();
                         final title = (s['title'] ?? (sid.length > 12 ? sid.substring(0, 12) : sid)).toString();
+                        final count = (s['message_count'] as num?)?.toInt() ?? 0;
+                        final bytes = (s['file_size_bytes'] as num?)?.toInt() ?? 0;
+                        final compactRecommended = s['compact_recommended'] == true;
+                        final isHeavy = compactRecommended || bytes > 300000 || count > 35;
+                        final tag = isHeavy ? ' [⚠️ 建议瘦身]' : '';
                         return DropdownMenuItem<String>(
                           value: sid,
-                          child: Text('💬 $title', overflow: TextOverflow.ellipsis),
+                          child: Text('💬 $title$tag', overflow: TextOverflow.ellipsis),
                         );
                       }),
                     ],
@@ -1676,8 +1768,21 @@ class _AskScreenState extends ConsumerState<AskScreen> {
               final rawMsgs = (activeSession['messages'] as List<dynamic>?) ?? [];
               final msgs = rawMsgs.cast<Map<String, dynamic>>();
               final previewMsgs = msgs.length > 4 ? msgs.sublist(msgs.length - 4) : msgs;
-              final totalCount = activeSession['message_count'] ?? msgs.length;
+              final totalCount = (activeSession['message_count'] as num?)?.toInt() ?? msgs.length;
+              final bytes = (activeSession['file_size_bytes'] as num?)?.toInt() ?? 0;
+              final compactRecommended = activeSession['compact_recommended'] == true;
+              final isHeavy = compactRecommended || bytes > 300000 || totalCount > 35;
               final title = activeSession['title']?.toString() ?? _selectedSessionId!;
+
+              final bannerColor = _compactMode
+                  ? const Color(0x1410B981)
+                  : AuroraColors.accentSoft;
+              final borderColor = _compactMode
+                  ? const Color(0x7F10B981)
+                  : AuroraColors.accent.withOpacity(0.6);
+              final accentTextColor = _compactMode
+                  ? const Color(0xFF10B981)
+                  : AuroraColors.accent;
 
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1685,18 +1790,29 @@ class _AskScreenState extends ConsumerState<AskScreen> {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     decoration: BoxDecoration(
-                      color: AuroraColors.accentSoft,
+                      color: bannerColor,
                       borderRadius: BorderRadius.vertical(
                         top: const Radius.circular(8),
                         bottom: Radius.circular(_showSessionContext ? 0 : 8),
                       ),
-                      border: Border.all(color: AuroraColors.accent.withOpacity(0.6)),
+                      border: Border.all(color: borderColor),
                     ),
                     child: Row(
                       children: [
-                        const Icon(Icons.history_rounded, size: 14, color: AuroraColors.accent),
+                        Icon(
+                          _compactMode ? Icons.auto_awesome : Icons.history_rounded,
+                          size: 14,
+                          color: accentTextColor,
+                        ),
                         const SizedBox(width: 6),
-                        const Text('续接会话: ', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: AuroraColors.accent)),
+                        Text(
+                          _compactMode ? '🌟 智能瘦身续接: ' : '续接会话: ',
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.bold,
+                            color: accentTextColor,
+                          ),
+                        ),
                         Expanded(
                           child: Text(
                             '$title ($totalCount 条)',
@@ -1704,6 +1820,60 @@ class _AskScreenState extends ConsumerState<AskScreen> {
                             style: const TextStyle(fontSize: 11.5, color: AuroraColors.fg1),
                           ),
                         ),
+                        if (isHeavy) ...[
+                          Container(
+                            margin: const EdgeInsets.symmetric(horizontal: 4),
+                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                            decoration: BoxDecoration(
+                              color: const Color(0x26F59E0B),
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(color: const Color(0x7FF59E0B), width: 0.8),
+                            ),
+                            child: const Text(
+                              '⚠️ 建议瘦身',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFFF59E0B),
+                              ),
+                            ),
+                          ),
+                        ],
+                        InkWell(
+                          onTap: () => setState(() => _compactMode = !_compactMode),
+                          borderRadius: BorderRadius.circular(4),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: _compactMode ? const Color(0x2810B981) : AuroraColors.chip,
+                              border: Border.all(
+                                color: _compactMode ? const Color(0xFF10B981) : AuroraColors.border,
+                                width: 0.8,
+                              ),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  _compactMode ? Icons.auto_awesome : Icons.history_rounded,
+                                  size: 11,
+                                  color: _compactMode ? const Color(0xFF10B981) : AuroraColors.fg2,
+                                ),
+                                const SizedBox(width: 3),
+                                Text(
+                                  _compactMode ? '智能瘦身' : '原生续接',
+                                  style: TextStyle(
+                                    fontSize: 10.5,
+                                    fontWeight: _compactMode ? FontWeight.bold : FontWeight.w500,
+                                    color: _compactMode ? const Color(0xFF10B981) : AuroraColors.fg2,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 4),
                         InkWell(
                           onTap: () => setState(() => _showSessionContext = !_showSessionContext),
                           borderRadius: BorderRadius.circular(4),
@@ -1714,12 +1884,16 @@ class _AskScreenState extends ConsumerState<AskScreen> {
                               children: [
                                 Text(
                                   _showSessionContext ? '收起' : '预览',
-                                  style: const TextStyle(fontSize: 11, color: AuroraColors.accent, fontWeight: FontWeight.bold),
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: accentTextColor,
+                                    fontWeight: FontWeight.bold,
+                                  ),
                                 ),
                                 Icon(
                                   _showSessionContext ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
                                   size: 14,
-                                  color: AuroraColors.accent,
+                                  color: accentTextColor,
                                 ),
                               ],
                             ),

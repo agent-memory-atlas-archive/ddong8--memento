@@ -644,6 +644,8 @@ async def ingest_file(
     if title:
         title = str(title).strip()
     sid = (metadata.get("session_id") or relative_path.split("/")[-1].split(".")[0]).strip()
+    if isinstance(metadata, dict) and sid and not metadata.get("session_id"):
+        metadata["session_id"] = sid
     is_title_junk = _is_junk_or_uuid_title(title, sid)
 
     if is_title_junk and content and category == "conversation":

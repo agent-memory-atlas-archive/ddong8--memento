@@ -176,6 +176,7 @@ class AskNotifier extends StateNotifier<AskState> {
     String? effort,
     String? projectId,
     String? sessionId,
+    bool? compactMode,
   }) async {
     if (question.trim().isEmpty || state.isStreaming) return;
 
@@ -208,6 +209,7 @@ class AskNotifier extends StateNotifier<AskState> {
       effort: effort,
       projectId: projectId,
       sessionId: sessionId,
+      compactMode: compactMode,
       onConversationId: (id, title) {
         state = state.copyWith(
           activeConversationId: id,

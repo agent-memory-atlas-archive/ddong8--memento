@@ -6,8 +6,13 @@ import 'app_markdown.dart';
 
 class ExecutionCard extends StatefulWidget {
   final ToolCallItem call;
+  final void Function(String? sessionId)? onSmartCompactAndRetry;
 
-  const ExecutionCard({super.key, required this.call});
+  const ExecutionCard({
+    super.key,
+    required this.call,
+    this.onSmartCompactAndRetry,
+  });
 
   @override
   State<ExecutionCard> createState() => _ExecutionCardState();
@@ -378,6 +383,68 @@ class _ExecutionCardState extends State<ExecutionCard> {
                         fontSize: 11.5,
                         color: Color(0xFFEF4444),
                         height: 1.45,
+                      ),
+                    ),
+                  ],
+                  if ((res?.stdout?.contains('Prompt is too long') ?? false) ||
+                      (res?.stderr?.contains('Prompt is too long') ?? false)) ...[
+                    const SizedBox(height: 10),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0x1EF59E0B),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: const Color(0x59F59E0B)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Row(
+                            children: [
+                              Icon(Icons.warning_amber_rounded, size: 16, color: Color(0xFFF59E0B)),
+                              SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  '历史会话超出上下文限制 (Prompt is too long)',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                    color: Color(0xFFF59E0B),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          const Text(
+                            '“Prompt is too long” 并非指您输入的提问过长，而是当前续接的历史会话已累计大量消息与工具记录（超出了 200,000 Token 上下文限制）。\n👉 推荐解决办法：点击下方按钮一键智能提炼前序记忆并轻装重试；或在上方切换为【➕ 新建独立会话】。',
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              color: AuroraColors.fg2,
+                              height: 1.45,
+                            ),
+                          ),
+                          if (widget.onSmartCompactAndRetry != null) ...[
+                            const SizedBox(height: 10),
+                            ElevatedButton.icon(
+                              onPressed: () {
+                                final sid = (call.args['session_id'] ?? call.args['parent_session_id'])?.toString();
+                                widget.onSmartCompactAndRetry?.call(sid);
+                              },
+                              icon: const Icon(Icons.auto_awesome, size: 14, color: Colors.white),
+                              label: const Text(
+                                '⚡ 立即智能瘦身并重试 (Smart Compact & Retry)',
+                                style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Colors.white),
+                              ),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFFD97706),
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
                     ),
                   ],

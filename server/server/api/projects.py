@@ -933,7 +933,11 @@ async def get_project_conversations(
     # Build session list — merge subagent messages into parent by timestamp
     sessions = []
     for d in page_convs:
-        session_id = (d.metadata_ or {}).get("session_id") or (d.metadata_ or {}).get("cascade_id") or ""
+        session_id = (
+            (d.metadata_ or {}).get("session_id")
+            or (d.metadata_ or {}).get("cascade_id")
+            or (d.relative_path.split("/")[-1].split(".")[0] if d.relative_path else str(d.id))
+        )
         ts = (d.source_modified_at or d.synced_at).isoformat()
 
         # Parse main conversation messages

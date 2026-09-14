@@ -38,6 +38,7 @@ class Device {
   factory Device.fromJson(Map<String, dynamic> json) {
     final heartbeatStr = (json['last_heartbeat'] ?? json['last_seen']) as String?;
     DateTime? heartbeatTime;
+    bool isOnline = false;
     if (json['online'] is bool) {
       isOnline = json['online'] as bool;
     } else if (json['is_online'] is bool) {

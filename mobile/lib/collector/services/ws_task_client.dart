@@ -174,12 +174,14 @@ class WsTaskClient {
     // Check Claude Code
     final claudePath = await _findExecutable(['claude', 'claude-code']);
     if (claudePath != null) {
-      caps['claude'] = {
+      final claudeInfo = {
         'available': true,
         'path': claudePath,
         'models': ['claude-3-5-sonnet-20241022', 'claude-3-7-sonnet-20250219', 'claude-3-5-haiku-20241022'],
         'supports_effort': true,
       };
+      caps['claude'] = claudeInfo;
+      caps['claude_code'] = claudeInfo;
     }
 
     // Check Codex
@@ -324,6 +326,9 @@ class WsTaskClient {
         workingDirectory: workingDir,
         runInShell: false,
       );
+      // Close stdin immediately so CLI tools know no input is piped,
+      // avoiding "Warning: no stdin data received in 3s, proceeding without it."
+      await proc.stdin.close();
       _runningTasks[taskId] = proc;
 
       // Stream stdout chunks
