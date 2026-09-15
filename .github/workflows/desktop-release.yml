@@ -44,7 +44,8 @@ jobs:
         working-directory: mobile/build/macos/Build/Products/Release
         run: |
           set -e
-          zip -r -y Memento-macos-arm64.zip Memento.app
+          echo "release" > .release_marker
+          zip -r -y Memento-macos-arm64.zip Memento.app .release_marker
           hdiutil create -volname "Memento" -srcfolder Memento.app -ov -format UDZO Memento-macos-arm64.dmg
 
       - name: Upload macOS Artifacts
