@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/api_client.dart';
 import '../../core/theme/aurora_theme.dart';
@@ -332,6 +333,7 @@ class _AskScreenState extends ConsumerState<AskScreen> {
   @override
   void initState() {
     super.initState();
+    _inputFocusNode.onKeyEvent = _handleKeyEvent;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(deviceProvider.notifier).loadDevices();
       _checkAutoRestoreLastConversation();
@@ -342,6 +344,58 @@ class _AskScreenState extends ConsumerState<AskScreen> {
         }
       });
     });
+  }
+
+  KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent) {
+      return KeyEventResult.ignored;
+    }
+
+    final key = event.logicalKey;
+    if (key == LogicalKeyboardKey.enter || key == LogicalKeyboardKey.numpadEnter) {
+      // 1. 若正在使用拼音等输入法（处于选词上屏 Composing 状态），不拦截回车，避免误触发送
+      final isComposing = _inputController.value.composing.isValid &&
+          !_inputController.value.composing.isCollapsed;
+      if (isComposing) {
+        return KeyEventResult.ignored;
+      }
+
+      // 2. 检查修饰键：Shift+Enter 或 Alt+Enter 视为换行
+      final isShift = HardwareKeyboard.instance.isShiftPressed;
+      final isAlt = HardwareKeyboard.instance.isAltPressed;
+      if (isShift || isAlt) {
+        _insertNewline();
+        return KeyEventResult.handled;
+      }
+
+      // 3. 单独按 Enter，或 Ctrl+Enter / Meta(Cmd)+Enter：发送消息
+      if (ref.read(askProvider).isStreaming) {
+        return KeyEventResult.handled;
+      }
+
+      _handleSend();
+      return KeyEventResult.handled;
+    }
+
+    return KeyEventResult.ignored;
+  }
+
+  void _insertNewline() {
+    final text = _inputController.text;
+    final selection = _inputController.selection;
+    if (selection.isValid && selection.start >= 0 && selection.end >= 0) {
+      final newText = text.replaceRange(selection.start, selection.end, '\n');
+      _inputController.value = TextEditingValue(
+        text: newText,
+        selection: TextSelection.collapsed(offset: selection.start + 1),
+      );
+    } else {
+      final newText = '$text\n';
+      _inputController.value = TextEditingValue(
+        text: newText,
+        selection: TextSelection.collapsed(offset: newText.length),
+      );
+    }
   }
 
   void _checkAutoRestoreLastConversation() async {
@@ -790,6 +844,7 @@ class _AskScreenState extends ConsumerState<AskScreen> {
   }
 
   void _handleSend() {
+    if (ref.read(askProvider).isStreaming) return;
     final text = _inputController.text.trim();
     if (text.isEmpty) return;
 
@@ -2165,6 +2220,7 @@ class _AskScreenState extends ConsumerState<AskScreen> {
                     autofocus: true,
                     minLines: 1,
                     maxLines: 4,
+                    textInputAction: TextInputAction.send,
                     style: const TextStyle(color: AuroraColors.fg1, fontSize: 14),
                     decoration: InputDecoration(
                       hintText: _getHintText(),
@@ -2182,12 +2238,14 @@ class _AskScreenState extends ConsumerState<AskScreen> {
                 IconButton.filled(
                   onPressed: () => ref.read(askProvider.notifier).abort(),
                   style: IconButton.styleFrom(backgroundColor: AuroraColors.danger),
+                  tooltip: '中止生成',
                   icon: const Icon(Icons.stop, color: Colors.white, size: 20),
                 )
               else
                 IconButton.filled(
                   onPressed: _handleSend,
                   style: IconButton.styleFrom(backgroundColor: AuroraColors.accent),
+                  tooltip: '发送消息 (Enter，Shift+Enter 换行)',
                   icon: const Icon(Icons.send_rounded, color: Colors.black, size: 18),
                 ),
             ],
