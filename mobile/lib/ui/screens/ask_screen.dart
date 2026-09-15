@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -337,12 +338,14 @@ class _AskScreenState extends ConsumerState<AskScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(deviceProvider.notifier).loadDevices();
       _checkAutoRestoreLastConversation();
-      // Auto-raise keyboard when entering first screen
-      Future.delayed(const Duration(milliseconds: 300), () {
-        if (mounted) {
-          _inputFocusNode.requestFocus();
-        }
-      });
+      // Auto-raise keyboard when entering first screen (Desktop only)
+      if (!Platform.isIOS && !Platform.isAndroid) {
+        Future.delayed(const Duration(milliseconds: 300), () {
+          if (mounted) {
+            _inputFocusNode.requestFocus();
+          }
+        });
+      }
     });
   }
 
@@ -865,6 +868,11 @@ class _AskScreenState extends ConsumerState<AskScreen> {
         );
 
     _inputController.clear();
+    // iOS/Android: 发送消息后自动收起键盘
+    if (Platform.isIOS || Platform.isAndroid) {
+      _inputFocusNode.unfocus();
+      FocusScope.of(context).unfocus();
+    }
     _scrollToBottom(force: true, smooth: true);
   }
 
@@ -898,6 +906,10 @@ class _AskScreenState extends ConsumerState<AskScreen> {
             sessionId: sidToUse,
             compactMode: true,
           );
+      if (Platform.isIOS || Platform.isAndroid) {
+        _inputFocusNode.unfocus();
+        FocusScope.of(context).unfocus();
+      }
       _scrollToBottom(force: true, smooth: true);
     }
   }
@@ -987,63 +999,74 @@ class _AskScreenState extends ConsumerState<AskScreen> {
             ),
           // Chat list
           Expanded(
-            child: askState.turns.isEmpty
-                ? _buildEmptyState()
-                : Stack(
-                    children: [
-                      NotificationListener<ScrollNotification>(
-                        onNotification: (notification) {
-                          if (!_scrollController.hasClients) return false;
-                          final metrics = notification.metrics;
-                          if (metrics.maxScrollExtent <= 0) return false;
-                          final distanceFromBottom =
-                              metrics.maxScrollExtent - metrics.pixels;
+            child: GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onTap: () {
+                if (Platform.isIOS || Platform.isAndroid) {
+                  _inputFocusNode.unfocus();
+                  FocusScope.of(context).unfocus();
+                }
+              },
+              child: askState.turns.isEmpty
+                  ? _buildEmptyState()
+                  : Stack(
+                      children: [
+                        NotificationListener<ScrollNotification>(
+                          onNotification: (notification) {
+                            if (!_scrollController.hasClients) return false;
+                            final metrics = notification.metrics;
+                            if (metrics.maxScrollExtent <= 0) return false;
+                            final distanceFromBottom =
+                                metrics.maxScrollExtent - metrics.pixels;
 
-                          if (distanceFromBottom <= 50) {
-                            if (_isUserScrolledUp) {
-                              setState(() {
-                                _isUserScrolledUp = false;
-                              });
-                            }
-                          } else if (notification is UserScrollNotification) {
-                            if (notification.direction == ScrollDirection.forward &&
-                                distanceFromBottom > 80) {
-                              if (!_isUserScrolledUp) {
+                            if (distanceFromBottom <= 50) {
+                              if (_isUserScrolledUp) {
+                                setState(() {
+                                  _isUserScrolledUp = false;
+                                });
+                              }
+                            } else if (notification is UserScrollNotification) {
+                              if (notification.direction == ScrollDirection.forward &&
+                                  distanceFromBottom > 80) {
+                                if (!_isUserScrolledUp) {
+                                  setState(() {
+                                    _isUserScrolledUp = true;
+                                  });
+                                }
+                              }
+                            } else if (notification is ScrollUpdateNotification &&
+                                notification.dragDetails != null) {
+                              if (distanceFromBottom > 80 && !_isUserScrolledUp) {
                                 setState(() {
                                   _isUserScrolledUp = true;
                                 });
                               }
                             }
-                          } else if (notification is ScrollUpdateNotification &&
-                              notification.dragDetails != null) {
-                            if (distanceFromBottom > 80 && !_isUserScrolledUp) {
-                              setState(() {
-                                _isUserScrolledUp = true;
-                              });
-                            }
-                          }
-                          return false;
-                        },
-                        child: ListView.builder(
-                          controller: _scrollController,
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 12),
-                          itemCount: askState.turns.length,
-                          itemBuilder: (context, index) {
-                            final turn = askState.turns[index];
-                            return _buildTurnItem(
-                                turn, index, askState.isStreaming);
+                            return false;
                           },
+                          child: ListView.builder(
+                            controller: _scrollController,
+                            keyboardDismissBehavior:
+                                ScrollViewKeyboardDismissBehavior.onDrag,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 16, vertical: 12),
+                            itemCount: askState.turns.length,
+                            itemBuilder: (context, index) {
+                              final turn = askState.turns[index];
+                              return _buildTurnItem(
+                                  turn, index, askState.isStreaming);
+                            },
+                          ),
                         ),
-                      ),
-                      if (_isUserScrolledUp)
-                        Positioned(
-                          right: 18,
-                          bottom: 14,
-                          child: _buildScrollToBottomFab(askState),
-                        ),
-                    ],
-                  ),
+                        if (_isUserScrolledUp)
+                          Positioned(
+                            right: 18,
+                            bottom: 14,
+                            child: _buildScrollToBottomFab(askState),
+                          ),
+                      ],
+                    ),
+            ),
           ),
 
           // Bottom Console Toolbelt
@@ -2217,7 +2240,7 @@ class _AskScreenState extends ConsumerState<AskScreen> {
                   child: TextField(
                     controller: _inputController,
                     focusNode: _inputFocusNode,
-                    autofocus: true,
+                    autofocus: !Platform.isIOS && !Platform.isAndroid,
                     minLines: 1,
                     maxLines: 4,
                     textInputAction: TextInputAction.send,
