@@ -7,7 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../storage.dart';
 
 /// Current application version
-const String kAppCurrentVersion = '1.0.6';
+const String kAppCurrentVersion = '1.0.7';
 
 class UpdateInfo {
   final String version;
