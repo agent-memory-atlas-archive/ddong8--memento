@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=Memento
+Comment=Memento AI Coding Memory & Cross-Device Remote Dispatch Assistant
+Exec=/opt/memento/memento %U
+Icon=memento
+Terminal=false
+Type=Application
+Categories=Development;Utility;
+StartupNotify=true
+StartupWMClass=com.ihasy.memento
+Keywords=memento;ai;memory;agent;coding;

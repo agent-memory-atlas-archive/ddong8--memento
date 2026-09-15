@@ -1,4 +1,4 @@
-﻿name: Flutter Desktop Release
+name: Flutter Desktop Release
 
 on:
   push:
@@ -91,9 +91,97 @@ jobs:
           path: mobile/build/windows/Memento-windows-x64.zip
           retention-days: 2
 
+  build-linux:
+    name: Build Linux (x64)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Linux Build Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: "stable"
+          cache: true
+
+      - name: Install dependencies
+        working-directory: mobile
+        run: flutter pub get
+
+      - name: Build Linux Release
+        working-directory: mobile
+        run: flutter build linux --release
+
+      - name: Package Linux Artifacts (.tar.gz and .deb)
+        run: |
+          set -e
+          BUNDLE_DIR="mobile/build/linux/x64/release/bundle"
+          OUTPUT_DIR="mobile/build/linux"
+          mkdir -p "$OUTPUT_DIR"
+
+          # 1. Package portable tar.gz
+          mkdir -p "$OUTPUT_DIR/dist/memento"
+          cp -r "$BUNDLE_DIR"/* "$OUTPUT_DIR/dist/memento/"
+          tar -czvf "$OUTPUT_DIR/Memento-linux-x64.tar.gz" -C "$OUTPUT_DIR/dist" memento
+
+          # 2. Package standard Debian/Ubuntu .deb package
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          if [ -n "${{ github.event.inputs.tag_name }}" ]; then
+            VERSION="${{ github.event.inputs.tag_name }}"
+            VERSION="${VERSION#v}"
+          elif [ "$VERSION" = "$GITHUB_REF" ] || [ -z "$VERSION" ]; then
+            VERSION=$(grep '^version:' mobile/pubspec.yaml | head -n 1 | awk '{print $2}' | cut -d'+' -f1)
+          fi
+
+          DEB_ROOT="deb-build"
+          mkdir -p "$DEB_ROOT/opt/memento"
+          mkdir -p "$DEB_ROOT/usr/bin"
+          mkdir -p "$DEB_ROOT/usr/share/applications"
+          mkdir -p "$DEB_ROOT/usr/share/icons/hicolor/512x512/apps"
+          mkdir -p "$DEB_ROOT/DEBIAN"
+
+          cp -r "$BUNDLE_DIR"/* "$DEB_ROOT/opt/memento/"
+          chmod +x "$DEB_ROOT/opt/memento/memento"
+          cat << 'WRAPPER' > "$DEB_ROOT/usr/bin/memento"
+#!/bin/sh
+exec /opt/memento/memento "$@"
+WRAPPER
+          chmod 755 "$DEB_ROOT/usr/bin/memento"
+          cp mobile/linux/assets/memento.png "$DEB_ROOT/usr/share/icons/hicolor/512x512/apps/memento.png"
+          cp mobile/linux/assets/memento.desktop "$DEB_ROOT/usr/share/applications/memento.desktop"
+          chmod 644 "$DEB_ROOT/usr/share/applications/memento.desktop"
+          chmod 644 "$DEB_ROOT/usr/share/icons/hicolor/512x512/apps/memento.png"
+
+          cat <<EOF > "$DEB_ROOT/DEBIAN/control"
+Package: memento
+Version: $VERSION
+Section: devel
+Priority: optional
+Architecture: amd64
+Maintainer: Memento <support@ihasy.com>
+Depends: libgtk-3-0
+Description: Memento AI Coding Memory & Cross-Device Remote Dispatch Assistant
+EOF
+
+          dpkg-deb --build "$DEB_ROOT" "$OUTPUT_DIR/Memento-linux-amd64.deb"
+
+      - name: Upload Linux Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-release
+          path: |
+            mobile/build/linux/Memento-linux-x64.tar.gz
+            mobile/build/linux/Memento-linux-amd64.deb
+          retention-days: 2
+
   publish-release:
     name: Publish GitHub Release
-    needs: [build-macos, build-windows]
+    needs: [build-macos, build-windows, build-linux]
     runs-on: ubuntu-latest
     steps:
       - name: Download all artifacts
@@ -109,7 +197,7 @@ jobs:
           elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
             echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
           else
-            echo "tag=v1.0.3" >> $GITHUB_OUTPUT
+            echo "tag=v1.0.4" >> $GITHUB_OUTPUT
           fi
 
       - name: Upload Assets & Publish Release
@@ -122,3 +210,4 @@ jobs:
           files: |
             dist/macos-release/*
             dist/windows-release/*
+            dist/linux-release/*
