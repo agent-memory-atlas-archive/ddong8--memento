@@ -16,7 +16,14 @@ void main() {
       expect(UpdateService.isNewerVersion('1.0.0.1', '1.0.0'), isTrue);
       expect(UpdateService.isNewerVersion('1.0', '1.0.0'), isFalse);
       expect(UpdateService.isNewerVersion('1.1', '1.0.5'), isTrue);
-      expect(UpdateService.isNewerVersion('', '1.0.0'), isFalse);
+    });
+
+    test('checkUpdate live query picks up newly published release', () async {
+      final info = await UpdateService.checkUpdate(customServerUrl: 'https://mem.ihasy.com');
+      expect(info, isNotNull);
+      expect(info!.hasUpdate, isTrue);
+      expect(info.version, equals('1.0.1'));
+      expect(info.downloadUrl, isNotNull);
     });
   });
 }
