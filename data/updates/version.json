@@ -1,11 +1,11 @@
 {
-  "version": "1.0.2",
-  "title": "Memento v1.0.2",
-  "release_notes": "1. 彻底解决客户端自动更新时的控制台黑窗与卡死问题，实现纯静默后台无缝热替换与秒级自启\n2. 会话支持 Enter 键发送消息与 Shift+Enter 换行\n3. 优化更新下载超时与镜像代理支持",
+  "version": "1.0.3",
+  "title": "Memento v1.0.3",
+  "release_notes": "1. 优化远程执行状态判定，彻底解决任务超时误报为绿标成功的问题，引入后台运行中状态\n2. 修复任务执行详情流式输出协议，实现零缓冲实时进度传输\n3. 彻底解决 Mac mini 远程调度 Codex 失败问题，支持 Shell 环境变量自动穿透与 PATH 智能扩充\n4. 增强跨设备调度鲁棒性，当本地未找到历史会话时自动降级为全新会话自愈执行\n5. macOS 端新增完全磁盘访问权限 (FDA) 一键前往授权直达设置",
   "platforms": {
     "windows": {
-      "asset_name": "memento-windows-v1.0.2.zip",
-      "size": 14993659
+      "asset_name": "memento-windows-v1.0.3.zip",
+      "size": 15000527
     }
   }
 }
