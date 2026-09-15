@@ -7,7 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../storage.dart';
 
 /// Current application version
-const String kAppCurrentVersion = '1.0.0';
+const String kAppCurrentVersion = '1.0.2';
 
 class UpdateInfo {
   final String version;
@@ -427,40 +427,65 @@ class UpdateService {
       debugPrint('[UpdateService] Ready to hot-swap. Source: $sourceDir, AppDir: $appDir, PID: $currentPid');
 
       if (Platform.isWindows) {
-        // Windows: Create updater.bat to wait for current process exit, copy files, and restart
-        final batPath = p.join(tempDir, 'updater.bat');
-        const batContent = '''
-@echo off
-chcp 65001 >nul
-setlocal enabledelayedexpansion
-set TARGET_PID=%~1
-set SRC_DIR=%~2
-set DEST_DIR=%~3
-set EXE_PATH=%~4
-
-:WAIT_LOOP
-tasklist /FI "PID eq !TARGET_PID!" 2>NUL | find /I "!TARGET_PID!" >NUL
-if not errorlevel 1 (
-    timeout /t 1 /nobreak >NUL
-    goto WAIT_LOOP
+        // Windows: Create updater.ps1 with -WindowStyle Hidden for zero console window and robust file overwriting
+        final ps1Path = p.join(tempDir, 'updater.ps1');
+        const ps1Content = r'''param(
+    [int]$TargetPid,
+    [string]$SourceDir,
+    [string]$DestDir,
+    [string]$ExePath
 )
 
-timeout /t 1 /nobreak >NUL
+# 1. Wait safely for the previous process to exit
+if ($TargetPid -gt 0) {
+    try {
+        $proc = Get-Process -Id $TargetPid -ErrorAction SilentlyContinue
+        if ($proc) {
+            $null = $proc.WaitForExit(15000)
+            Stop-Process -Id $TargetPid -Force -ErrorAction SilentlyContinue
+        }
+    } catch {}
+}
 
-xcopy "!SRC_DIR!\\*" "!DEST_DIR!\\" /E /Y /I /Q >NUL
+# Buffer to ensure all file handles (dll, exe) are fully released
+Start-Sleep -Milliseconds 800
 
-start "" "!EXE_PATH!"
+# 2. Overwrite files into target app directory
+try {
+    Copy-Item -Path "$SourceDir\*" -Destination "$DestDir" -Recurse -Force -ErrorAction Stop
+} catch {
+    robocopy "$SourceDir" "$DestDir" /E /IS /IT /NP /R:3 /W:1 *>$null
+}
 
-rd /s /q "!SRC_DIR!" >NUL 2>&1
-(goto) 2>nul & del "%~f0"
-exit
+# 3. Relaunch new version of the application
+Start-Process -FilePath "$ExePath" -WorkingDirectory "$DestDir"
+
+# 4. Clean up temporary extracted folder and updater script
+Start-Sleep -Seconds 2
+try {
+    Remove-Item -LiteralPath "$SourceDir" -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue
+} catch {}
 ''';
-        await File(batPath).writeAsString(batContent);
+        await File(ps1Path).writeAsString(ps1Content);
 
-        // Start updater detached and exit current process to release file locks
+        // Start PowerShell hidden and detached, then exit current process to release file locks
         await Process.start(
-          'cmd.exe',
-          ['/c', batPath, currentPid.toString(), sourceDir, appDir, currentExe],
+          'powershell.exe',
+          [
+            '-WindowStyle',
+            'Hidden',
+            '-NoProfile',
+            '-NonInteractive',
+            '-ExecutionPolicy',
+            'Bypass',
+            '-File',
+            ps1Path,
+            currentPid.toString(),
+            sourceDir,
+            appDir,
+            currentExe,
+          ],
           mode: ProcessStartMode.detached,
         );
         exit(0);
