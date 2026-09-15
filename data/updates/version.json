@@ -1,0 +1,11 @@
+{
+  "version": "1.0.1",
+  "title": "Memento v1.0.1",
+  "release_notes": "1. 修复大日志同步爆栈问题\n2. 修复Mac下Codex执行参数异常\n3. 支持全自动服务端热更新与原地重启",
+  "platforms": {
+    "windows": {
+      "asset_name": "memento-windows-v1.0.1.zip",
+      "size": 14992464
+    }
+  }
+}

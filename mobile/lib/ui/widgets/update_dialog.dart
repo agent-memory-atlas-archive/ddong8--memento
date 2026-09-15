@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import '../../core/services/update_service.dart';
 import '../../core/theme/aurora_theme.dart';
@@ -74,7 +74,7 @@ class _UpdateDialogState extends State<UpdateDialog> {
         setState(() {
           _isDownloading = false;
           _downloadedPath = savePath;
-          _statusText = '下载完成，正在启动安装程序...';
+          _statusText = '下载完成，正在自动热更新并重启...';
         });
       },
     );
@@ -146,6 +146,25 @@ class _UpdateDialogState extends State<UpdateDialog> {
                               ),
                             ),
                           ),
+                          if (info.isFromCustomServer) ...[
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                              decoration: BoxDecoration(
+                                color: AuroraColors.success.withOpacity(0.2),
+                                borderRadius: BorderRadius.circular(4),
+                                border: Border.all(color: AuroraColors.success.withOpacity(0.4)),
+                              ),
+                              child: const Text(
+                                '私有服务端',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: AuroraColors.success,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                       const SizedBox(height: 3),

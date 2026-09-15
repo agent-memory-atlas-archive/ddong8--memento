@@ -8,7 +8,7 @@ from collections.abc import AsyncGenerator
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .api import admin, ask, auth, conversations, daily, dashboard, data_io, devices, documents, events, hierarchy, ingest, install_bootstrap, memory, projects, public, search, share, tools
+from .api import admin, ask, auth, conversations, daily, dashboard, data_io, devices, documents, events, hierarchy, ingest, install_bootstrap, memory, projects, public, search, share, tools, updates
 # Aliased: `server.api.tasks` (remote device task queue) is a different module
 # from the `server.tasks` package (Celery jobs). Importing it bare here would
 # read as the latter.
@@ -338,6 +338,7 @@ app.include_router(install_bootstrap.router)
 app.include_router(public.router)
 app.include_router(share.router)
 app.include_router(data_io.router)
+app.include_router(updates.router)
 
 # Mount MCP Memory Server (best-effort, skip if deps not available)
 try:

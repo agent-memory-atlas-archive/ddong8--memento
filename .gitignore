@@ -51,3 +51,11 @@ mobile/ios/Pods/
 mobile/ios/.symlinks/
 mobile/ios/Flutter/Flutter.framework
 mobile/ios/Flutter/Flutter.podspec
+
+# Updates distribution binaries
+data/updates/*.zip
+data/updates/*.tar.gz
+data/updates/*.dmg
+data/updates/*.AppImage
+data/updates/*.exe
+
