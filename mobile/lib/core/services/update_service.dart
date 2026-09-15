@@ -427,8 +427,10 @@ class UpdateService {
       debugPrint('[UpdateService] Ready to hot-swap. Source: $sourceDir, AppDir: $appDir, PID: $currentPid');
 
       if (Platform.isWindows) {
-        // Windows: Create updater.ps1 with -WindowStyle Hidden for zero console window and robust file overwriting
+        // Windows: Create updater.ps1 and launcher.vbs (vbHide) for 100% zero-console-window silent hot replacement
         final ps1Path = p.join(tempDir, 'updater.ps1');
+        final vbsPath = p.join(tempDir, 'launcher.vbs');
+
         const ps1Content = r'''param(
     [int]$TargetPid,
     [string]$SourceDir,
@@ -460,32 +462,29 @@ try {
 # 3. Relaunch new version of the application
 Start-Process -FilePath "$ExePath" -WorkingDirectory "$DestDir"
 
-# 4. Clean up temporary extracted folder and updater script
+# 4. Clean up temporary extracted folder and updater scripts
 Start-Sleep -Seconds 2
 try {
     Remove-Item -LiteralPath "$SourceDir" -Recurse -Force -ErrorAction SilentlyContinue
+    $parentDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+    Remove-Item -LiteralPath (Join-Path $parentDir "launcher.vbs") -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue
 } catch {}
 ''';
         await File(ps1Path).writeAsString(ps1Content);
 
-        // Start PowerShell hidden and detached, then exit current process to release file locks
+        // VBScript launches PowerShell with vbHide (0) and async (False) - zero console window
+        final vbsContent = '''
+Set WshShell = CreateObject("WScript.Shell")
+cmd = "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ""$ps1Path"" $currentPid ""$sourceDir"" ""$appDir"" ""$currentExe"""
+WshShell.Run cmd, 0, False
+''';
+        await File(vbsPath).writeAsString(vbsContent);
+
+        // wscript.exe is a native GUI process: completely silent, detached, immune to console handle issues
         await Process.start(
-          'powershell.exe',
-          [
-            '-WindowStyle',
-            'Hidden',
-            '-NoProfile',
-            '-NonInteractive',
-            '-ExecutionPolicy',
-            'Bypass',
-            '-File',
-            ps1Path,
-            currentPid.toString(),
-            sourceDir,
-            appDir,
-            currentExe,
-          ],
+          'wscript.exe',
+          [vbsPath],
           mode: ProcessStartMode.detached,
         );
         exit(0);
