@@ -201,11 +201,16 @@ class UpdateService {
           break;
         }
       } else if (Platform.isMacOS) {
-        if (aName.endsWith('.dmg') || (aName.contains('mac') && aName.endsWith('.zip'))) {
+        // Prefer .zip for fastest in-place hot auto-update; fallback to .dmg
+        if (aName.contains('mac') && aName.endsWith('.zip')) {
           downloadUrl = aUrl;
           assetName = raw['name']?.toString();
           assetSize = aSize;
           break;
+        } else if (aName.endsWith('.dmg') && downloadUrl == null) {
+          downloadUrl = aUrl;
+          assetName = raw['name']?.toString();
+          assetSize = aSize;
         }
       } else if (Platform.isLinux) {
         if (aName.endsWith('.appimage') || aName.endsWith('.deb') || aName.endsWith('.tar.gz')) {
@@ -349,7 +354,9 @@ class UpdateService {
 
       // 3. macOS: Native installer (.dmg / .pkg)
       if (Platform.isMacOS) {
-        if (lowerPath.endsWith('.dmg') || lowerPath.endsWith('.pkg')) {
+        if (lowerPath.endsWith('.dmg')) {
+          return await _installMacDmg(filePath);
+        } else if (lowerPath.endsWith('.pkg')) {
           await Process.run('open', [filePath]);
           return true;
         }
@@ -370,6 +377,65 @@ class UpdateService {
       debugPrint('[UpdateService] installPackage failed: $e');
     }
     return false;
+  }
+
+  /// Silently attach DMG, overwrite local Memento.app, detach and restart application
+  static Future<bool> _installMacDmg(String dmgPath) async {
+    try {
+      final currentExe = Platform.resolvedExecutable;
+      final currentPid = pid;
+      final tempDir = p.dirname(dmgPath);
+      final shPath = p.join(tempDir, 'dmg_updater.sh');
+
+      const shContent = '''#!/bin/sh
+TARGET_PID="\$1"
+DMG_PATH="\$2"
+EXE_PATH="\$3"
+
+# 1. Wait for current process to exit
+while kill -0 "\$TARGET_PID" 2>/dev/null; do
+    sleep 1
+done
+sleep 1
+
+# 2. Attach DMG silently
+MOUNT_DIR=\$(mktemp -d /tmp/memento_mnt.XXXXXX)
+hdiutil attach -nobrowse -readonly -mountpoint "\$MOUNT_DIR" "\$DMG_PATH"
+
+# 3. Locate source Memento.app and destination
+SRC_APP="\$MOUNT_DIR/Memento.app"
+DEST_APP=\$(echo "\$EXE_PATH" | sed -E 's/(.*\\.app).*/\\1/')
+if [ -z "\$DEST_APP" ] || [ ! -d "\$DEST_APP" ]; then
+    DEST_APP="/Applications/Memento.app"
+fi
+
+if [ -d "\$SRC_APP" ]; then
+    rm -rf "\$DEST_APP"
+    cp -R "\$SRC_APP" "\$DEST_APP"
+fi
+
+# 4. Detach DMG and clean up
+hdiutil detach "\$MOUNT_DIR" -force
+rm -rf "\$MOUNT_DIR"
+rm -f "\$DMG_PATH"
+
+# 5. Relaunch new application
+open -n "\$DEST_APP"
+''';
+      await File(shPath).writeAsString(shContent);
+      await Process.run('chmod', ['+x', shPath]);
+
+      await Process.start(
+        '/bin/sh',
+        [shPath, currentPid.toString(), dmgPath, currentExe],
+        mode: ProcessStartMode.detached,
+      );
+      exit(0);
+    } catch (e) {
+      debugPrint('[UpdateService] _installMacDmg failed, fallback to open: $e');
+      await Process.run('open', [dmgPath]);
+      return true;
+    }
   }
 
   /// Perform in-place unzipping, file overwriting, and application restart
