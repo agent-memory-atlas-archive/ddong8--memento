@@ -420,6 +420,10 @@ async def _tool_run_on_device(db: AsyncSession, user: User, args: dict):
                 payload["effort"] = args["effort"]
             if args.get("project_id"):
                 payload["project_id"] = args["project_id"]
+            if args.get("fork") is not None:
+                payload["fork"] = args["fork"]
+            if args.get("system_prompt_append"):
+                payload["system_prompt_append"] = args["system_prompt_append"]
         if args.get("cwd"):
             payload["cwd"] = args["cwd"]
 

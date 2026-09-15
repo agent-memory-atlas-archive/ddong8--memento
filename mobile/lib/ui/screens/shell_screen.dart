@@ -9,6 +9,8 @@ import '../../state/device_state.dart';
 import '../../state/collector_state.dart';
 import '../../collector/models/collector_config.dart';
 import '../../collector/services/autostart_service.dart';
+import '../../core/services/update_service.dart';
+import '../widgets/update_dialog.dart';
 import 'ask_screen.dart';
 import 'daily_screen.dart';
 import 'devices_screen.dart';
@@ -32,6 +34,17 @@ class _ShellScreenState extends ConsumerState<ShellScreen> with WidgetsBindingOb
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _autoStartCollectorIfDesktop();
+      // Auto-heal autostart path if previously pointing to stale executables
+      AutostartService.ensureCorrectPath();
+      // Check for app updates in background after startup
+      Future.delayed(const Duration(seconds: 4), () {
+        if (!mounted) return;
+        UpdateService.checkUpdate().then((info) {
+          if (info != null && info.hasUpdate && mounted) {
+            UpdateDialog.show(context, info);
+          }
+        }).catchError((_) {});
+      });
     });
   }
 

@@ -91,8 +91,25 @@ bool FlutterWindow::OnCreate() {
   RegisterPlugins(flutter_controller_->engine());
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
-  flutter_controller_->engine()->SetNextFrameCallback([&]() {
-    this->Show();
+  bool start_minimized = false;
+  int argc = 0;
+  LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc);
+  if (argv) {
+    for (int i = 1; i < argc; ++i) {
+      if (wcscmp(argv[i], L"--minimized") == 0 ||
+          wcscmp(argv[i], L"--silent") == 0 ||
+          wcscmp(argv[i], L"-m") == 0) {
+        start_minimized = true;
+        break;
+      }
+    }
+    LocalFree(argv);
+  }
+
+  flutter_controller_->engine()->SetNextFrameCallback([&, start_minimized]() {
+    if (!start_minimized) {
+      this->Show();
+    }
   });
 
   // Flutter can complete the first frame before the "show window" callback is

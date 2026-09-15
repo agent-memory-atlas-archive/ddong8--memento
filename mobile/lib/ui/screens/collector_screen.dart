@@ -7,8 +7,10 @@ import '../../collector/models/collector_config.dart';
 import '../../collector/discovery/tool_discovery_service.dart';
 import '../../collector/models/tool_discovery.dart';
 import '../../collector/services/autostart_service.dart';
+import '../../core/services/update_service.dart';
 import '../../core/theme/aurora_theme.dart';
 import '../widgets/glass_card.dart';
+import '../widgets/update_dialog.dart';
 
 /// Screen for managing and monitoring the local device collector.
 class CollectorScreen extends StatefulWidget {
@@ -29,12 +31,70 @@ class _CollectorScreenState extends State<CollectorScreen> {
   List<String> _daemonLogs = [];
   Map<String, DiscoveredTool> _daemonTools = {};
   CollectorConfig? _daemonConfig;
+  bool _autostartEnabled = false;
+  bool _checkingUpdate = false;
 
   @override
   void initState() {
     super.initState();
     _checkDaemon();
+    _loadAutostartStatus();
     _daemonPollTimer = Timer.periodic(const Duration(seconds: 2), (_) => _checkDaemon());
+  }
+
+  Future<void> _loadAutostartStatus() async {
+    final enabled = await AutostartService.isEnabled();
+    if (mounted) {
+      setState(() => _autostartEnabled = enabled);
+    }
+  }
+
+  Future<void> _toggleAutostart(bool value) async {
+    bool ok = false;
+    if (value) {
+      ok = await AutostartService.enable();
+    } else {
+      ok = await AutostartService.disable();
+    }
+    if (mounted) {
+      setState(() => _autostartEnabled = ok ? value : !value);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(ok
+              ? (value ? '已开启开机自启动 (后台静默托盘运行)' : '已关闭开机自启动')
+              : '操作失败，请检查系统权限'),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
+  Future<void> _checkUpdate() async {
+    if (_checkingUpdate) return;
+    setState(() => _checkingUpdate = true);
+    try {
+      final info = await UpdateService.checkUpdate();
+      if (!mounted) return;
+      setState(() => _checkingUpdate = false);
+      if (info == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('检查更新失败，请检查网络连接')),
+        );
+      } else if (info.hasUpdate) {
+        UpdateDialog.show(context, info);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('已是最新版本 (v${info.currentVersion})')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _checkingUpdate = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('检查更新异常: $e')),
+        );
+      }
+    }
   }
 
   @override
@@ -227,6 +287,124 @@ class _CollectorScreenState extends State<CollectorScreen> {
               ),
 
               const SizedBox(height: 16),
+
+              // System Settings Card (Autostart & Version Update)
+              if (AutostartService.isSupported) ...[
+                GlassCard(
+                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                  child: Column(
+                    children: [
+                      // Autostart row
+                      Row(
+                        children: [
+                          Container(
+                            width: 34,
+                            height: 34,
+                            decoration: BoxDecoration(
+                              color: (_autostartEnabled ? AuroraColors.accent : AuroraColors.fg4).withOpacity(0.15),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Icon(
+                              Icons.power_settings_new_rounded,
+                              size: 18,
+                              color: _autostartEnabled ? AuroraColors.accent : AuroraColors.fg3,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  '开机自动启动',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                    color: AuroraColors.fg1,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  _autostartEnabled
+                                      ? '已开启 · 登录系统时自动在后台托盘静默运行'
+                                      : '未开启 · 登录系统后需手动启动客户端',
+                                  style: const TextStyle(fontSize: 11.5, color: AuroraColors.fg3),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Switch(
+                            value: _autostartEnabled,
+                            activeColor: AuroraColors.accent,
+                            onChanged: _toggleAutostart,
+                          ),
+                        ],
+                      ),
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 8),
+                        child: Divider(height: 1, color: AuroraColors.border),
+                      ),
+                      // Update row
+                      Row(
+                        children: [
+                          Container(
+                            width: 34,
+                            height: 34,
+                            decoration: BoxDecoration(
+                              color: AuroraColors.success.withOpacity(0.15),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Icon(
+                              Icons.system_update_rounded,
+                              size: 18,
+                              color: AuroraColors.success,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          const Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  '客户端版本',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                    color: AuroraColors.fg1,
+                                  ),
+                                ),
+                                SizedBox(height: 2),
+                                Text(
+                                  '当前安装版本: v$kAppCurrentVersion',
+                                  style: TextStyle(fontSize: 11.5, color: AuroraColors.fg3),
+                                ),
+                              ],
+                            ),
+                          ),
+                          OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: AuroraColors.fg2,
+                              side: const BorderSide(color: AuroraColors.border),
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            ),
+                            onPressed: _checkingUpdate ? null : _checkUpdate,
+                            icon: _checkingUpdate
+                                ? const SizedBox(
+                                    width: 12,
+                                    height: 12,
+                                    child: CircularProgressIndicator(strokeWidth: 1.5, color: AuroraColors.accent),
+                                  )
+                                : const Icon(Icons.refresh_rounded, size: 14),
+                            label: Text(_checkingUpdate ? '检查中...' : '检查更新', style: const TextStyle(fontSize: 12)),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
 
               // Discovered Tools
               Text(

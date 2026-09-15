@@ -298,8 +298,9 @@ class WsTaskClient {
         args.add(prompt);
       } else if (binary.contains('codex')) {
         args = ['exec'];
+        final isFork = payload['fork'] == true;
         if (sessionId.isNotEmpty) {
-          args.add('resume');
+          args.add(isFork ? 'fork' : 'resume');
         }
         args.addAll([
           '--dangerously-bypass-approvals-and-sandbox',
@@ -362,7 +363,7 @@ class WsTaskClient {
       });
 
       // Wait for process completion or timeout
-      final exitCode = await proc.exitCode.timeout(
+      var exitCode = await proc.exitCode.timeout(
         Duration(seconds: task.timeoutSeconds),
         onTimeout: () {
           proc?.kill(ProcessSignal.sigterm);
@@ -370,8 +371,68 @@ class WsTaskClient {
         },
       );
 
-      final fullOut = stdoutBuf.toString().trim();
-      final fullErr = stderrBuf.toString().trim();
+      var fullOut = stdoutBuf.toString().trim();
+      var fullErr = stderrBuf.toString().trim();
+
+      // Reactive retry: if resume hit ChatGPT.app active writer lock on Mac, auto fork & retry
+      if (exitCode != 0 &&
+          action != 'shell' &&
+          (payload['binary']?.toString() ?? '').toLowerCase().contains('codex') &&
+          (payload['session_id']?.toString() ?? '').isNotEmpty &&
+          payload['fork'] != true &&
+          fullErr.contains('already has an active writer')) {
+        const notice = '\n⚡ [自动重试] 该会话当前正被 ChatGPT 客户端占用锁定，已自动无缝切换为 Fork 分支模式重新执行（完整继承上下文记忆）...\n\n';
+        stderrBuf.write(notice);
+        _sendJson(TaskChunk(
+          taskId: taskId,
+          stream: 'stderr',
+          text: notice,
+        ).toJson());
+
+        final sId = payload['session_id'].toString();
+        final pText = payload['prompt']?.toString() ?? '';
+        final mModel = payload['model']?.toString() ?? '';
+        final mEffort = payload['effort']?.toString() ?? '';
+
+        final retryArgs = [
+          'exec',
+          'fork',
+          '--dangerously-bypass-approvals-and-sandbox',
+          '--skip-git-repo-check',
+        ];
+        if (mEffort.isNotEmpty) retryArgs.addAll(['-c', 'model_reasoning_effort="$mEffort"']);
+        if (mModel.isNotEmpty) retryArgs.addAll(['-m', mModel]);
+        retryArgs.addAll([sId, pText]);
+
+        final retryProc = await Process.start(
+          exe,
+          retryArgs,
+          workingDirectory: workingDir,
+          runInShell: useShell,
+        );
+        await retryProc.stdin.close();
+        _runningTasks[taskId] = retryProc;
+
+        retryProc.stdout.transform(utf8.decoder).listen((chunk) {
+          stdoutBuf.write(chunk);
+          _sendJson(TaskChunk(taskId: taskId, stream: 'stdout', text: chunk).toJson());
+        });
+        retryProc.stderr.transform(utf8.decoder).listen((chunk) {
+          stderrBuf.write(chunk);
+          _sendJson(TaskChunk(taskId: taskId, stream: 'stderr', text: chunk).toJson());
+        });
+
+        exitCode = await retryProc.exitCode.timeout(
+          Duration(seconds: task.timeoutSeconds),
+          onTimeout: () {
+            retryProc.kill(ProcessSignal.sigterm);
+            return -999;
+          },
+        );
+        fullOut = stdoutBuf.toString().trim();
+        fullErr = stderrBuf.toString().trim();
+      }
+
       final isTimeout = exitCode == -999;
       final isPromptTooLong = fullErr.contains('Prompt is too long') || fullOut.contains('Prompt is too long');
 
