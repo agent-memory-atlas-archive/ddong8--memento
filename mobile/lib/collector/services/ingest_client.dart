@@ -131,10 +131,10 @@ class IngestClient {
         stderr.writeln('[IngestClient] $msg');
         return false;
       }
-    } catch (e) {
+    } catch (e, st) {
       final msg = 'ingestDocument ($relativePath) error: $e';
       onLog?.call(msg);
-      stderr.writeln('[IngestClient] $msg');
+      stderr.writeln('[IngestClient] $msg\n$st');
       return false;
     }
   }

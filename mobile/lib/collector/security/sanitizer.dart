@@ -31,19 +31,19 @@ class Sanitizer {
     // AWS keys
     MapEntry(RegExp(r'AKIA[0-9A-Z]{16}'), '[AWS_ACCESS_KEY_REDACTED]'),
 
-    // Private keys
+    // Private keys (bounded to max 4096 chars to prevent catastrophic backtracking)
     MapEntry(
       RegExp(
-        r'-----BEGIN\s+(RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----[\s\S]*?-----END\s+(RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----',
+        r'-----BEGIN\s+(RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----[\s\S]{1,4096}?-----END\s+(RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----',
         multiLine: true,
       ),
       '[PRIVATE_KEY_REDACTED]',
     ),
 
-    // Generic key=value or key: value
+    // Generic key=value or key: value (bounded to 256 chars max value)
     MapEntry(
       RegExp(
-        r'(password|passwd|secret|api[_-]?key|access[_-]?token|auth[_-]?token)\s*[:=]\s*["\x27]?([^\s"\x27]{8,})["\x27]?',
+        r'(password|passwd|secret|api[_-]?key|access[_-]?token|auth[_-]?token)\s*[:=]\s*["\x27]?([^\s"\x27]{8,256})["\x27]?',
         caseSensitive: false,
       ),
       r'$1=[REDACTED]',
@@ -57,7 +57,7 @@ class Sanitizer {
 
     // Base64 oversized image replacement to keep memory small (< 200 bytes)
     MapEntry(
-      RegExp(r'data:image/[a-zA-Z0-9\+\-]+;base64,[A-Za-z0-9+/=]{200,}'),
+      RegExp(r'data:image/[a-zA-Z0-9\+\-]+;base64,[A-Za-z0-9+/=]{100,8192}'),
       '[IMAGE_DATA_OMITTED]',
     ),
   ];
@@ -87,20 +87,55 @@ class Sanitizer {
       return const SanitizeResult(content: '', redactionCount: 0, hasSensitiveContent: false);
     }
 
+    try {
+      // For large multiline text (like JSONL session logs), sanitize line by line
+      // to avoid catastrophic backtracking and Stack Overflow in regex engine.
+      if (text.length > 64 * 1024 && text.contains('\n')) {
+        final lines = text.split('\n');
+        final cleanLines = <String>[];
+        int totalCount = 0;
+        for (final line in lines) {
+          if (line.isEmpty) {
+            cleanLines.add('');
+            continue;
+          }
+          final res = _sanitizeSingleChunk(line);
+          totalCount += res.redactionCount;
+          cleanLines.add(res.content);
+        }
+        return SanitizeResult(
+          content: cleanLines.join('\n'),
+          redactionCount: totalCount,
+          hasSensitiveContent: totalCount > 0,
+        );
+      }
+
+      return _sanitizeSingleChunk(text);
+    } catch (_) {
+      // Fail-safe: if regex engine ever fails on an extreme payload, return original
+      return SanitizeResult(content: text, redactionCount: 0, hasSensitiveContent: false);
+    }
+  }
+
+  static SanitizeResult _sanitizeSingleChunk(String chunk) {
     int count = 0;
-    String current = text;
+    String current = chunk;
 
     for (final entry in _patterns) {
-      final matches = entry.key.allMatches(current);
-      if (matches.isNotEmpty) {
-        count += matches.length;
-        if (entry.value.contains(r'$1')) {
-          current = current.replaceAllMapped(entry.key, (m) {
-            return entry.value.replaceAll(r'$1', m.group(1) ?? '');
-          });
-        } else {
-          current = current.replaceAll(entry.key, entry.value);
+      try {
+        final matches = entry.key.allMatches(current);
+        if (matches.isNotEmpty) {
+          count += matches.length;
+          if (entry.value.contains(r'$1')) {
+            current = current.replaceAllMapped(entry.key, (m) {
+              return entry.value.replaceAll(r'$1', m.group(1) ?? '');
+            });
+          } else {
+            current = current.replaceAll(entry.key, entry.value);
+          }
         }
+      } catch (_) {
+        // Continue with other patterns if one specific regex hits limit
       }
     }
 

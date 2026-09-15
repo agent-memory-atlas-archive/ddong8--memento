@@ -20,12 +20,13 @@ class FileWatcherService {
   final IngestClient ingestClient;
   final void Function(String message)? onLog;
 
-  static const int _maxBatchSize = 2 * 1024 * 1024; // 2 MB per batch upload
-  static const int _maxLineLength = 512 * 1024;     // 512 KB per line max (truncate giant dumps)
+  static const int _maxBatchSize = 512 * 1024; // 512 KB per batch upload (prevents high memory / regex stack overflow)
+  static const int _maxLineLength = 128 * 1024; // 128 KB per line max (truncate giant dumps)
 
   final List<StreamSubscription> _subscriptions = [];
   final Map<String, int> _lastModifiedCache = {};
   final Map<String, int> _offsets = {};
+  final Map<String, int> _failureCounts = {};
   final Map<String, Timer> _debounceTimers = {};
   final List<_SyncTask> _queue = [];
   final Set<String> _queuedFiles = {};
@@ -382,9 +383,9 @@ class FileWatcherService {
         for (var line in lines) {
           if (line.isEmpty) continue;
           if (line.length > _maxLineLength) {
-            final head = line.substring(0, 256 * 1024);
-            final tail = line.substring(line.length - 128 * 1024);
-            line = '$head\n...[TRUNCATED: line exceeded 512KB limit]...\n$tail';
+            final head = line.substring(0, 64 * 1024);
+            final tail = line.substring(line.length - 32 * 1024);
+            line = '$head\n...[TRUNCATED: line exceeded 128KB limit]...\n$tail';
           }
           cleanLines.add(line);
         }
@@ -437,12 +438,25 @@ class FileWatcherService {
         }
 
         if (ok) {
+          _failureCounts.remove(filePath);
           lastOffset += sliceBytes.length;
           _offsets[filePath] = lastOffset;
           await _saveOffsets();
         } else {
-          _log('Failed to ingest batch for $relPath at offset $lastOffset, will retry later');
-          break;
+          final fails = (_failureCounts[filePath] ?? 0) + 1;
+          _failureCounts[filePath] = fails;
+          if (fails >= 3) {
+            // Repeatedly failed on the exact same slice (e.g. malformed JSON or rejected by server).
+            // Skip this slice to prevent permanent block, log warning and advance offset so sync continues.
+            _log('⚠️ Warning: repeatedly failed ($fails times) at offset $lastOffset for $relPath. Skipping slice (+${sliceBytes.length}B) to resume sync.');
+            lastOffset += sliceBytes.length;
+            _offsets[filePath] = lastOffset;
+            await _saveOffsets();
+            _failureCounts.remove(filePath);
+          } else {
+            _log('Failed to ingest batch for $relPath at offset $lastOffset (attempt $fails/3), will retry later');
+            break;
+          }
         }
 
         // Yield to event loop if more batches remain
