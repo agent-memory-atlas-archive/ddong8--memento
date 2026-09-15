@@ -60,6 +60,7 @@ class _ExecutionCardState extends State<ExecutionCard> {
     final call = widget.call;
     final res = call.result;
     final isRunning = call.isRunning;
+    final isStillRunning = call.isStillRunning;
     final isSuccess = call.isSuccess;
     final isFailed = call.isFailed;
 
@@ -95,19 +96,23 @@ class _ExecutionCardState extends State<ExecutionCard> {
 
     final statusColor = isRunning
         ? AuroraColors.accent
-        : isSuccess
-            ? AuroraColors.success
-            : isFailed
-                ? AuroraColors.danger
-                : AuroraColors.fg3;
+        : isStillRunning
+            ? const Color(0xFFF59E0B)
+            : isSuccess
+                ? AuroraColors.success
+                : isFailed
+                    ? AuroraColors.danger
+                    : AuroraColors.fg3;
 
     final statusText = isRunning
         ? '执行中...'
-        : isSuccess
-            ? (res?.exitCode != null ? '完成 (0)' : '成功')
-            : isFailed
-                ? (res?.exitCode != null ? '失败 (${res?.exitCode})' : '失败')
-                : '就绪';
+        : isStillRunning
+            ? '后台运行中'
+            : isSuccess
+                ? (res?.exitCode != null ? '完成 (0)' : '成功')
+                : isFailed
+                    ? (res?.exitCode != null ? '失败 (${res?.exitCode})' : '失败')
+                    : '就绪';
 
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 6),
@@ -390,6 +395,34 @@ class _ExecutionCardState extends State<ExecutionCard> {
                         fontSize: 11.5,
                         color: Color(0xFFEF4444),
                         height: 1.45,
+                      ),
+                    ),
+                  ],
+                  if (res?.note != null && res!.note!.isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: const Color(0x19F59E0B),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: const Color(0x40F59E0B)),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Icon(Icons.info_outline_rounded, size: 14, color: Color(0xFFF59E0B)),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              res.note!,
+                              style: const TextStyle(
+                                fontSize: 11,
+                                color: Color(0xFFFBBF24),
+                                height: 1.4,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],

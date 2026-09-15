@@ -138,6 +138,7 @@ async def _execute_task_stream(ws: Any, task_id: str, action: str, payload: dict
                 raise ValueError("empty prompt")
             binary = str(payload.get("binary") or "claude").strip().lower()
             sub_env = build_subprocess_env()
+            sub_env["PYTHONUNBUFFERED"] = "1"
 
             resolved = resolve_agent_binary(binary, sub_env.get("PATH"))
             if not resolved:
@@ -162,10 +163,10 @@ async def _execute_task_stream(ws: Any, task_id: str, action: str, payload: dict
                     stderr_chunks.append(notice)
                     try:
                         await ws.send(json.dumps({
-                            "type": "task_output",
+                            "type": "task_chunk",
                             "task_id": task_id,
                             "stream": "stderr",
-                            "chunk": notice,
+                            "text": notice,
                         }))
                     except Exception:
                         pass
@@ -250,10 +251,10 @@ async def _execute_task_stream(ws: Any, task_id: str, action: str, payload: dict
             stderr_chunks.append(retry_notice)
             try:
                 await ws.send(json.dumps({
-                    "type": "task_output",
+                    "type": "task_chunk",
                     "task_id": task_id,
                     "stream": "stderr",
-                    "chunk": retry_notice,
+                    "text": retry_notice,
                 }))
             except Exception:
                 pass

@@ -7,6 +7,7 @@ class ToolCallResult {
   final String? stdout;
   final String? stderr;
   final String? error;
+  final String? note;
   final int? exitCode;
   final List<dynamic>? devices;
 
@@ -19,6 +20,7 @@ class ToolCallResult {
     this.stdout,
     this.stderr,
     this.error,
+    this.note,
     this.exitCode,
     this.devices,
   });
@@ -33,6 +35,7 @@ class ToolCallResult {
       stdout: json['stdout']?.toString(),
       stderr: json['stderr']?.toString(),
       error: json['error']?.toString(),
+      note: json['note']?.toString(),
       exitCode: json['exit_code'] as int?,
       devices: json['devices'] as List<dynamic>?,
     );
@@ -47,6 +50,7 @@ class ToolCallResult {
     String? stdout,
     String? stderr,
     String? error,
+    String? note,
     int? exitCode,
     List<dynamic>? devices,
   }) {
@@ -59,6 +63,7 @@ class ToolCallResult {
       stdout: stdout ?? this.stdout,
       stderr: stderr ?? this.stderr,
       error: error ?? this.error,
+      note: note ?? this.note,
       exitCode: exitCode ?? this.exitCode,
       devices: devices ?? this.devices,
     );
@@ -99,23 +104,23 @@ class ToolCallItem {
   String get prompt => (args['prompt'] ?? '').toString();
 
   bool get isRunning =>
+      result == null ||
       result?.status == 'queued' ||
-      result?.status == 'running' ||
-      (result == null);
+      result?.status == 'running';
 
-  bool get isSuccess =>
-      result?.status == 'succeeded' ||
-      (result != null &&
-          result?.status != 'failed' &&
-          result?.status != 'timeout' &&
-          result?.status != 'error' &&
-          (result?.exitCode == 0 || result?.exitCode == null));
+  bool get isStillRunning => result?.status == 'still_running';
 
   bool get isFailed =>
       result?.status == 'failed' ||
       result?.status == 'timeout' ||
       result?.status == 'error' ||
       (result?.exitCode != null && result!.exitCode != 0);
+
+  bool get isSuccess =>
+      result != null &&
+      !isRunning &&
+      !isStillRunning &&
+      !isFailed;
 
   ToolCallItem copyWith({
     String? id,
