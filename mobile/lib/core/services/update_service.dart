@@ -7,7 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../storage.dart';
 
 /// Current application version
-const String kAppCurrentVersion = '1.0.4';
+const String kAppCurrentVersion = '1.0.5';
 
 class UpdateInfo {
   final String version;
@@ -379,10 +379,21 @@ class UpdateService {
     return false;
   }
 
+  /// Resolve the enclosing .app bundle path from executable path on macOS
+  static String _getMacAppBundlePath(String exePath) {
+    final parts = p.split(exePath);
+    final appIndex = parts.lastIndexWhere((part) => part.toLowerCase().endsWith('.app'));
+    if (appIndex != -1) {
+      return p.joinAll(parts.sublist(0, appIndex + 1));
+    }
+    return '/Applications/Memento.app';
+  }
+
   /// Silently attach DMG, overwrite local Memento.app, detach and restart application
   static Future<bool> _installMacDmg(String dmgPath) async {
     try {
       final currentExe = Platform.resolvedExecutable;
+      final targetApp = _getMacAppBundlePath(currentExe);
       final currentPid = pid;
       final tempDir = p.dirname(dmgPath);
       final shPath = p.join(tempDir, 'dmg_updater.sh');
@@ -390,11 +401,18 @@ class UpdateService {
       const shContent = '''#!/bin/sh
 TARGET_PID="\$1"
 DMG_PATH="\$2"
-EXE_PATH="\$3"
+TARGET_APP="\$3"
+TEMP_DIR="\$4"
 
-# 1. Wait for current process to exit
+# 1. Wait for current process to exit (with max 10s fallback)
+COUNT=0
 while kill -0 "\$TARGET_PID" 2>/dev/null; do
-    sleep 1
+    sleep 0.5
+    COUNT=\$((COUNT + 1))
+    if [ "\$COUNT" -ge 20 ]; then
+        kill -9 "\$TARGET_PID" 2>/dev/null
+        break
+    fi
 done
 sleep 1
 
@@ -402,32 +420,34 @@ sleep 1
 MOUNT_DIR=\$(mktemp -d /tmp/memento_mnt.XXXXXX)
 hdiutil attach -nobrowse -readonly -mountpoint "\$MOUNT_DIR" "\$DMG_PATH"
 
-# 3. Locate source Memento.app and destination
-SRC_APP="\$MOUNT_DIR/Memento.app"
-DEST_APP=\$(echo "\$EXE_PATH" | sed -E 's/(.*\\.app).*/\\1/')
-if [ -z "\$DEST_APP" ] || [ ! -d "\$DEST_APP" ]; then
-    DEST_APP="/Applications/Memento.app"
-fi
+# 3. Locate source .app inside mounted DMG
+SRC_APP=\$(find "\$MOUNT_DIR" -maxdepth 2 -name "*.app" 2>/dev/null | head -n 1)
 
-if [ -d "\$SRC_APP" ]; then
-    rm -rf "\$DEST_APP"
-    cp -R "\$SRC_APP" "\$DEST_APP"
+if [ -n "\$SRC_APP" ] && [ -d "\$SRC_APP" ] && [ -n "\$TARGET_APP" ]; then
+    rm -rf "\$TARGET_APP"
+    cp -R "\$SRC_APP" "\$TARGET_APP"
+    xattr -cr "\$TARGET_APP" 2>/dev/null || true
 fi
 
 # 4. Detach DMG and clean up
-hdiutil detach "\$MOUNT_DIR" -force
+hdiutil detach "\$MOUNT_DIR" -force 2>/dev/null || true
 rm -rf "\$MOUNT_DIR"
 rm -f "\$DMG_PATH"
+if [ -n "\$TEMP_DIR" ] && [ -d "\$TEMP_DIR" ]; then
+    rm -rf "\$TEMP_DIR"
+fi
 
-# 5. Relaunch new application
-open -n "\$DEST_APP"
+# 5. Relaunch single instance
+open "\$TARGET_APP"
+
+rm -f "\$0"
 ''';
       await File(shPath).writeAsString(shContent);
       await Process.run('chmod', ['+x', shPath]);
 
       await Process.start(
         '/bin/sh',
-        [shPath, currentPid.toString(), dmgPath, currentExe],
+        [shPath, currentPid.toString(), dmgPath, targetApp, tempDir],
         mode: ProcessStartMode.detached,
       );
       exit(0);
@@ -555,43 +575,67 @@ WshShell.Run cmd, 0, False
         );
         exit(0);
       } else if (Platform.isMacOS) {
-        // macOS: Create updater.sh
+        // macOS: Accurately locate .app bundle inside extractDir
+        String? srcAppPath;
+        if (extractDir.path.toLowerCase().endsWith('.app')) {
+          srcAppPath = extractDir.path;
+        } else {
+          try {
+            for (final entity in extractDir.listSync(recursive: true)) {
+              if (entity is Directory && entity.path.toLowerCase().endsWith('.app')) {
+                srcAppPath = entity.path;
+                break;
+              }
+            }
+          } catch (_) {}
+        }
+        srcAppPath ??= sourceDir;
+
+        final targetApp = _getMacAppBundlePath(currentExe);
+        debugPrint('[UpdateService] macOS hot replace: srcApp=$srcAppPath, targetApp=$targetApp');
+
         final shPath = p.join(tempDir, 'updater.sh');
         const shContent = '''#!/bin/sh
 TARGET_PID="\$1"
-SRC_DIR="\$2"
-DEST_DIR="\$3"
-EXE_PATH="\$4"
+SRC_APP="\$2"
+TARGET_APP="\$3"
+TEMP_DIR="\$4"
 
+# 1. Wait for existing process to exit (with max 10s fallback)
+COUNT=0
 while kill -0 "\$TARGET_PID" 2>/dev/null; do
-    sleep 1
+    sleep 0.5
+    COUNT=\$((COUNT + 1))
+    if [ "\$COUNT" -ge 20 ]; then
+        kill -9 "\$TARGET_PID" 2>/dev/null
+        break
+    fi
 done
 sleep 1
 
-if [ -d "\$SRC_DIR/Memento.app" ]; then
-    APP_TARGET=\$(echo "\$EXE_PATH" | sed -E 's/(.*\\.app).*/\\1/')
-    if [ -n "\$APP_TARGET" ]; then
-        rm -rf "\$APP_TARGET"
-        cp -R "\$SRC_DIR/Memento.app" "\$APP_TARGET"
-        open -n "\$APP_TARGET"
-    else
-        cp -R "\$SRC_DIR/"* "\$DEST_DIR/"
-        open -n "\$EXE_PATH"
-    fi
-else
-    cp -R "\$SRC_DIR/"* "\$DEST_DIR/"
-    nohup "\$EXE_PATH" >/dev/null 2>&1 &
+# 2. Overwrite application bundle cleanly
+if [ -n "\$SRC_APP" ] && [ -d "\$SRC_APP" ] && [ -n "\$TARGET_APP" ]; then
+    rm -rf "\$TARGET_APP"
+    cp -R "\$SRC_APP" "\$TARGET_APP"
+    xattr -cr "\$TARGET_APP" 2>/dev/null || true
 fi
 
-rm -rf "\$SRC_DIR"
+# 3. Clean up temporary extraction folder completely
+if [ -n "\$TEMP_DIR" ] && [ -d "\$TEMP_DIR" ]; then
+    rm -rf "\$TEMP_DIR"
+fi
+
+# 4. Relaunch single instance cleanly via open
+open "\$TARGET_APP"
+
 rm -f "\$0"
 ''';
         await File(shPath).writeAsString(shContent);
         await Process.run('chmod', ['+x', shPath]);
 
         await Process.start(
-          shPath,
-          [currentPid.toString(), sourceDir, appDir, currentExe],
+          '/bin/sh',
+          [shPath, currentPid.toString(), srcAppPath, targetApp, tempDir],
           mode: ProcessStartMode.detached,
         );
         exit(0);

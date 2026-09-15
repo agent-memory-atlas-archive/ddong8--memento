@@ -185,7 +185,7 @@ jobs:
           elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
             echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
           else
-            echo "tag=v1.0.4" >> $GITHUB_OUTPUT
+            echo "tag=v1.0.5" >> $GITHUB_OUTPUT
           fi
 
       - name: Upload Assets & Publish Release
