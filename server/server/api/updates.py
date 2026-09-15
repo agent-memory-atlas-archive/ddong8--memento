@@ -155,6 +155,36 @@ async def download_update(
 
     file_path = _UPDATES_DIR / safe_name
     if not file_path.exists() or not file_path.is_file():
+        # Attempt to fetch from upstream GitHub release and cache locally on the server
+        version_file = _UPDATES_DIR / "version.json"
+        tag = ""
+        if version_file.exists():
+            try:
+                with open(version_file, "r", encoding="utf-8") as f:
+                    meta = json.load(f)
+                    tag = str(meta.get("version", "")).strip()
+            except Exception:
+                pass
+
+        if tag:
+            tag_name = tag if tag.startswith("v") else f"v{tag}"
+            upstream_url = f"https://github.com/ddong8/memento/releases/download/{tag_name}/{safe_name}"
+            try:
+                import httpx
+                _UPDATES_DIR.mkdir(parents=True, exist_ok=True)
+                tmp_file = _UPDATES_DIR / f"{safe_name}.part"
+                async with httpx.AsyncClient(follow_redirects=True, timeout=120.0) as client:
+                    async with client.stream("GET", upstream_url) as resp:
+                        if resp.status_code == 200:
+                            with open(tmp_file, "wb") as out_f:
+                                async for chunk in resp.aiter_bytes():
+                                    out_f.write(chunk)
+                            tmp_file.replace(file_path)
+            except Exception as e:
+                if tmp_file.exists():
+                    tmp_file.unlink(missing_ok=True)
+
+    if not file_path.exists() or not file_path.is_file():
         raise HTTPException(status_code=404, detail="Update asset not found")
 
     return FileResponse(

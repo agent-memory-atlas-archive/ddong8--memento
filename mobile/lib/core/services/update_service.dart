@@ -273,21 +273,45 @@ class UpdateService {
       final tempDir = Directory.systemTemp.createTempSync('memento_update_');
       final savePath = p.join(tempDir.path, name);
 
-      // Support mirror for downloading GitHub release assets in China
-      String finalUrl = downloadUrl;
-      if (downloadUrl.contains('github.com') && !downloadUrl.contains('ghproxy') && !downloadUrl.contains('mirror.ghproxy')) {
-        finalUrl = 'https://mirror.ghproxy.com/$downloadUrl';
+      // List of candidate URLs: direct original URL first, followed by fast reliable mirrors if it's GitHub
+      final candidates = <String>[downloadUrl];
+      if (downloadUrl.contains('github.com')) {
+        candidates.add('https://ghfast.top/$downloadUrl');
+        candidates.add('https://ghproxy.net/$downloadUrl');
       }
 
-      await _dio.download(
-        finalUrl,
-        savePath,
-        onReceiveProgress: onProgress,
-        options: Options(
-          responseType: ResponseType.bytes,
-          followRedirects: true,
-        ),
-      );
+      Object? lastError;
+      bool downloaded = false;
+
+      for (final targetUrl in candidates) {
+        try {
+          debugPrint('[UpdateService] Attempting download from: $targetUrl');
+          await _dio.download(
+            targetUrl,
+            savePath,
+            onReceiveProgress: onProgress,
+            options: Options(
+              responseType: ResponseType.bytes,
+              followRedirects: true,
+              sendTimeout: const Duration(seconds: 30),
+              receiveTimeout: const Duration(minutes: 5),
+            ),
+          );
+          downloaded = true;
+          break;
+        } catch (e) {
+          debugPrint('[UpdateService] Download attempt failed from $targetUrl: $e');
+          lastError = e;
+          final f = File(savePath);
+          if (await f.exists()) {
+            await f.delete();
+          }
+        }
+      }
+
+      if (!downloaded) {
+        throw lastError ?? Exception('所有更新下载通道均失败，请稍后重试');
+      }
 
       onComplete(savePath);
 

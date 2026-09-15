@@ -25,6 +25,7 @@ RUN pip install --no-cache-dir /tmp/mcp_server && rm -rf /tmp/mcp_server
 
 # Bootstrap installer assets served at /install.sh, /install.ps1, /install
 COPY deploy/bootstrap/ /app/bootstrap/
+COPY data/updates/ /app/data/updates/
 
 # Note: BGE-M3 embedding model runs on host machine (not in container)
 # Start with: python -m server.services.embedding_server --port 8002
