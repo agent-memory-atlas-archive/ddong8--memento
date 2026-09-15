@@ -7,6 +7,7 @@ import '../../collector/models/collector_config.dart';
 import '../../collector/discovery/tool_discovery_service.dart';
 import '../../collector/models/tool_discovery.dart';
 import '../../collector/services/autostart_service.dart';
+import '../../collector/services/ws_task_client.dart';
 import '../../core/services/update_service.dart';
 import '../../core/theme/aurora_theme.dart';
 import '../widgets/glass_card.dart';
@@ -400,6 +401,61 @@ class _CollectorScreenState extends State<CollectorScreen> {
                           ),
                         ],
                       ),
+                      if (Platform.isMacOS) ...[
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 8),
+                          child: Divider(height: 1, color: AuroraColors.border),
+                        ),
+                        Row(
+                          children: [
+                            Container(
+                              width: 34,
+                              height: 34,
+                              decoration: BoxDecoration(
+                                color: AuroraColors.warn.withOpacity(0.15),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: const Icon(
+                                Icons.admin_panel_settings_rounded,
+                                size: 18,
+                                color: AuroraColors.warn,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            const Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    '完全磁盘访问权限 (macOS FDA)',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w600,
+                                      color: AuroraColors.fg1,
+                                    ),
+                                  ),
+                                  SizedBox(height: 2),
+                                  Text(
+                                    'Codex / Claude CLI 访问项目或全局配置需勾选 Memento.app',
+                                    style: TextStyle(fontSize: 11.5, color: AuroraColors.fg3),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            OutlinedButton.icon(
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: AuroraColors.fg2,
+                                side: const BorderSide(color: AuroraColors.border),
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                              ),
+                              onPressed: () => WsTaskClient.openMacFullDiskAccessPreferences(),
+                              icon: const Icon(Icons.open_in_new_rounded, size: 14),
+                              label: const Text('前往授权', style: TextStyle(fontSize: 12)),
+                            ),
+                          ],
+                        ),
+                      ],
                     ],
                   ),
                 ),

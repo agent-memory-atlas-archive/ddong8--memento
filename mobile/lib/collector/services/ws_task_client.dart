@@ -209,6 +209,76 @@ class WsTaskClient {
     return caps;
   }
 
+  static Map<String, String>? _cachedExecutionEnv;
+
+  /// Sniff critical API keys from user shell configs (~/.zshrc, ~/.bash_profile, etc.)
+  /// on macOS/Linux where GUI desktop apps lack interactive login environment.
+  Future<Map<String, String>> _buildExecutionEnvironment() async {
+    if (_cachedExecutionEnv != null) return _cachedExecutionEnv!;
+
+    final env = Map<String, String>.from(Platform.environment);
+    env['PYTHONUNBUFFERED'] = '1';
+
+    if (Platform.isMacOS || Platform.isLinux) {
+      final home = CollectorConfig.homeDir;
+      final shellFiles = [
+        '$home/.zshrc',
+        '$home/.bash_profile',
+        '$home/.bashrc',
+        '$home/.profile',
+      ];
+
+      final targetKeys = {
+        'DASHSCOPE_API_KEY',
+        'OPENAI_API_KEY',
+        'ANTHROPIC_API_KEY',
+        'GEMINI_API_KEY',
+        'DEEPSEEK_API_KEY',
+        'OPENAI_BASE_URL',
+        'CODEX_HOME',
+        'CLAUDE_CONFIG_DIR',
+      };
+
+      for (final sf in shellFiles) {
+        final f = File(sf);
+        if (await f.exists()) {
+          try {
+            final lines = await f.readAsLines();
+            for (final line in lines) {
+              final trimmed = line.trim();
+              if (trimmed.isEmpty || trimmed.startsWith('#')) continue;
+              var lineContent = trimmed;
+              if (lineContent.startsWith('export ')) {
+                lineContent = lineContent.substring(7).trim();
+              }
+              final eqIdx = lineContent.indexOf('=');
+              if (eqIdx > 0) {
+                final k = lineContent.substring(0, eqIdx).trim();
+                var v = lineContent.substring(eqIdx + 1).trim();
+                // Strip inline comments or semicolons
+                if (v.contains(';')) {
+                  v = v.substring(0, v.indexOf(';')).trim();
+                }
+                if ((v.startsWith('"') && v.endsWith('"')) ||
+                    (v.startsWith("'") && v.endsWith("'"))) {
+                  if (v.length >= 2) {
+                    v = v.substring(1, v.length - 1).trim();
+                  }
+                }
+                if (targetKeys.contains(k) && !env.containsKey(k) && v.isNotEmpty) {
+                  env[k] = v;
+                }
+              }
+            }
+          } catch (_) {}
+        }
+      }
+    }
+
+    _cachedExecutionEnv = env;
+    return env;
+  }
+
   Future<String?> _findExecutable(List<String> names) async {
     final pathSeparator = Platform.isWindows ? ';' : ':';
     final envPath = Platform.environment['PATH'] ?? '';
@@ -219,10 +289,32 @@ class WsTaskClient {
     if (Platform.isMacOS) {
       paths.addAll([
         '/opt/homebrew/bin',
+        '/opt/homebrew/sbin',
         '/usr/local/bin',
+        '/usr/local/sbin',
         '$home/.local/bin',
+        '$home/.cargo/bin',
+        '$home/go/bin',
         '$home/.gemini/antigravity/bin',
+        '$home/.antigravity/antigravity/bin',
+        '$home/.fnm/current/bin',
+        '$home/.asdf/shims',
+        '/Applications/ChatGPT.app/Contents/Resources',
+        '/Applications/Antigravity.app/Contents/MacOS',
       ]);
+
+      // Scan dynamic nvm / asdf node directories
+      final nvmDir = Directory('$home/.nvm/versions/node');
+      if (await nvmDir.exists()) {
+        try {
+          final entries = await nvmDir.list().toList();
+          for (final entry in entries) {
+            if (entry is Directory) {
+              paths.add('${entry.path}/bin');
+            }
+          }
+        } catch (_) {}
+      }
     } else if (Platform.isWindows) {
       paths.addAll([
         '$home\\AppData\\Local\\Programs',
@@ -331,10 +423,12 @@ class WsTaskClient {
     try {
       final useShell = Platform.isWindows &&
           (exe.toLowerCase().endsWith('.cmd') || exe.toLowerCase().endsWith('.bat'));
+      final executionEnv = await _buildExecutionEnvironment();
       proc = await Process.start(
         exe,
         args,
         workingDirectory: workingDir,
+        environment: executionEnv,
         runInShell: useShell,
       );
       // Close stdin immediately so CLI tools know no input is piped,
@@ -374,7 +468,7 @@ class WsTaskClient {
       var fullOut = stdoutBuf.toString().trim();
       var fullErr = stderrBuf.toString().trim();
 
-      // Reactive retry: if resume hit ChatGPT.app active writer lock on Mac, auto fork & retry
+      // Reactive retry 1: if resume hit ChatGPT.app active writer lock on Mac, auto fork & retry
       if (exitCode != 0 &&
           action != 'shell' &&
           (payload['binary']?.toString() ?? '').toLowerCase().contains('codex') &&
@@ -408,6 +502,7 @@ class WsTaskClient {
           exe,
           retryArgs,
           workingDirectory: workingDir,
+          environment: executionEnv,
           runInShell: useShell,
         );
         await retryProc.stdin.close();
@@ -430,6 +525,93 @@ class WsTaskClient {
           },
         );
         fullOut = stdoutBuf.toString().trim();
+        fullErr = stderrBuf.toString().trim();
+      }
+
+      // Reactive retry 2: cross-device session missing or corrupted (no rollout found, session not found, etc.)
+      final isSessionNotFound = fullErr.contains('no rollout found') ||
+          fullErr.contains('thread not found') ||
+          fullErr.contains('session not found') ||
+          fullErr.contains('failed to resume') ||
+          fullErr.contains('cannot resume') ||
+          fullErr.contains('unable to resume') ||
+          fullErr.contains('No conversation found') ||
+          fullErr.contains('could not find session');
+
+      if (exitCode != 0 &&
+          action != 'shell' &&
+          (payload['session_id']?.toString() ?? '').isNotEmpty &&
+          isSessionNotFound) {
+        const resetNotice = '\n⚡ [自动自愈] 本地未找到历史会话（跨设备远程调度常见），已自动重置为全新会话重新执行...\n\n';
+        stderrBuf.write(resetNotice);
+        _sendJson(TaskChunk(
+          taskId: taskId,
+          stream: 'stderr',
+          text: resetNotice,
+        ).toJson());
+
+        final binary = (payload['binary']?.toString() ?? 'claude').toLowerCase();
+        final pText = payload['prompt']?.toString() ?? '';
+        final mModel = payload['model']?.toString() ?? '';
+        final mEffort = payload['effort']?.toString() ?? '';
+        final sysAppend = payload['system_prompt_append']?.toString() ?? '';
+
+        List<String> freshArgs = [];
+        if (binary.contains('claude')) {
+          freshArgs = ['-p'];
+          if (sysAppend.isNotEmpty) freshArgs.addAll(['--append-system-prompt', sysAppend]);
+          freshArgs.addAll(['--output-format', 'text', '--dangerously-skip-permissions']);
+          if (mModel.isNotEmpty) freshArgs.addAll(['--model', mModel]);
+          freshArgs.add(pText);
+        } else if (binary.contains('codex')) {
+          freshArgs = [
+            'exec',
+            '--dangerously-bypass-approvals-and-sandbox',
+            '--skip-git-repo-check',
+          ];
+          if (mEffort.isNotEmpty) freshArgs.addAll(['-c', 'model_reasoning_effort="$mEffort"']);
+          if (mModel.isNotEmpty) freshArgs.addAll(['-m', mModel]);
+          freshArgs.add(pText);
+        } else {
+          freshArgs = ['--prompt', pText];
+        }
+
+        final freshProc = await Process.start(
+          exe,
+          freshArgs,
+          workingDirectory: workingDir,
+          environment: executionEnv,
+          runInShell: useShell,
+        );
+        await freshProc.stdin.close();
+        _runningTasks[taskId] = freshProc;
+
+        freshProc.stdout.transform(utf8.decoder).listen((chunk) {
+          stdoutBuf.write(chunk);
+          _sendJson(TaskChunk(taskId: taskId, stream: 'stdout', text: chunk).toJson());
+        });
+        freshProc.stderr.transform(utf8.decoder).listen((chunk) {
+          stderrBuf.write(chunk);
+          _sendJson(TaskChunk(taskId: taskId, stream: 'stderr', text: chunk).toJson());
+        });
+
+        exitCode = await freshProc.exitCode.timeout(
+          Duration(seconds: task.timeoutSeconds),
+          onTimeout: () {
+            freshProc.kill(ProcessSignal.sigterm);
+            return -999;
+          },
+        );
+        fullOut = stdoutBuf.toString().trim();
+        fullErr = stderrBuf.toString().trim();
+      }
+
+      if (exitCode != 0 &&
+          (fullErr.contains('Operation not permitted') || fullErr.contains('Permission denied')) &&
+          Platform.isMacOS) {
+        const hint = '\n💡 [权限提示] 检测到 macOS 磁盘访问受限。请在「系统设置 -> 隐私与安全性 -> 完全磁盘访问权限」中添加并开启 Memento.app。\n';
+        stderrBuf.write(hint);
+        _sendJson(TaskChunk(taskId: taskId, stream: 'stderr', text: hint).toJson());
         fullErr = stderrBuf.toString().trim();
       }
 
@@ -462,6 +644,19 @@ class WsTaskClient {
       ).toJson());
     } finally {
       _runningTasks.remove(taskId);
+    }
+  }
+
+  /// Open macOS System Settings directly to Full Disk Access (FDA) panel.
+  static Future<bool> openMacFullDiskAccessPreferences() async {
+    if (!Platform.isMacOS) return false;
+    try {
+      final res = await Process.run('open', [
+        'x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles',
+      ]);
+      return res.exitCode == 0;
+    } catch (_) {
+      return false;
     }
   }
 }
