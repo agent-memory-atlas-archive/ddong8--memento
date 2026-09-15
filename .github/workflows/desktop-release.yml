@@ -147,26 +147,14 @@ jobs:
 
           cp -r "$BUNDLE_DIR"/* "$DEB_ROOT/opt/memento/"
           chmod +x "$DEB_ROOT/opt/memento/memento"
-          cat << 'WRAPPER' > "$DEB_ROOT/usr/bin/memento"
-#!/bin/sh
-exec /opt/memento/memento "$@"
-WRAPPER
+          printf '#!/bin/sh\nexec /opt/memento/memento "$@"\n' > "$DEB_ROOT/usr/bin/memento"
           chmod 755 "$DEB_ROOT/usr/bin/memento"
           cp mobile/linux/assets/memento.png "$DEB_ROOT/usr/share/icons/hicolor/512x512/apps/memento.png"
           cp mobile/linux/assets/memento.desktop "$DEB_ROOT/usr/share/applications/memento.desktop"
           chmod 644 "$DEB_ROOT/usr/share/applications/memento.desktop"
           chmod 644 "$DEB_ROOT/usr/share/icons/hicolor/512x512/apps/memento.png"
 
-          cat <<EOF > "$DEB_ROOT/DEBIAN/control"
-Package: memento
-Version: $VERSION
-Section: devel
-Priority: optional
-Architecture: amd64
-Maintainer: Memento <support@ihasy.com>
-Depends: libgtk-3-0
-Description: Memento AI Coding Memory & Cross-Device Remote Dispatch Assistant
-EOF
+          printf "Package: memento\nVersion: %s\nSection: devel\nPriority: optional\nArchitecture: amd64\nMaintainer: Memento <support@ihasy.com>\nDepends: libgtk-3-0\nDescription: Memento AI Coding Memory & Cross-Device Remote Dispatch Assistant\n" "$VERSION" > "$DEB_ROOT/DEBIAN/control"
 
           dpkg-deb --build "$DEB_ROOT" "$OUTPUT_DIR/Memento-linux-amd64.deb"
 
