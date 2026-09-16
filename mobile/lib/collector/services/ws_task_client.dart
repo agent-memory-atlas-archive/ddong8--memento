@@ -273,6 +273,24 @@ class WsTaskClient {
           } catch (_) {}
         }
       }
+    } else if (Platform.isWindows) {
+      final home = CollectorConfig.homeDir;
+      final extraDirs = [
+        '$home\\AppData\\Local\\agy\\bin',
+        '$home\\AppData\\Local\\Programs\\Antigravity',
+        '$home\\.gemini\\antigravity\\bin',
+        '$home\\.antigravity\\bin',
+        '$home\\.cargo\\bin',
+        '$home\\go\\bin',
+      ];
+      final currentPath = env['PATH'] ?? '';
+      final parts = currentPath.split(';');
+      for (final ed in extraDirs) {
+        if (!parts.any((p) => p.toLowerCase() == ed.toLowerCase()) && Directory(ed).existsSync()) {
+          parts.insert(0, ed);
+        }
+      }
+      env['PATH'] = parts.join(';');
     }
 
     _cachedExecutionEnv = env;
@@ -317,10 +335,16 @@ class WsTaskClient {
       }
     } else if (Platform.isWindows) {
       paths.addAll([
+        '$home\\AppData\\Local\\agy\\bin',
+        '$home\\AppData\\Local\\Programs\\Antigravity',
         '$home\\AppData\\Local\\Programs',
+        '$home\\.gemini\\antigravity\\bin',
+        '$home\\.antigravity\\bin',
         '$home\\AppData\\Roaming\\npm',
         'C:\\Program Files\\nodejs',
         '$home\\.local\\bin',
+        '$home\\.cargo\\bin',
+        '$home\\go\\bin',
       ]);
     }
 
@@ -369,13 +393,27 @@ class WsTaskClient {
       final effort = payload['effort']?.toString() ?? '';
       final sysAppend = payload['system_prompt_append']?.toString() ?? '';
 
-      final resolvedExe = await _findExecutable([binary]);
+      final candidates = <String>[binary];
+      if (binary == 'agy') candidates.add('antigravity');
+      if (binary == 'antigravity') candidates.add('agy');
+
+      final resolvedExe = await _findExecutable(candidates);
       if (resolvedExe == null) {
+        String installTip = '';
+        if (binary.contains('agy') || binary.contains('antigravity')) {
+          installTip = Platform.isWindows
+              ? '\n💡 Antigravity CLI 未安装，请在 PowerShell 中执行以下命令进行安装：\nirm https://antigravity.google/cli/install.ps1 | iex'
+              : '\n💡 Antigravity CLI 未安装，请在终端中执行以下命令进行安装：\ncurl -fsSL https://antigravity.google/cli/install.sh | bash';
+        } else if (binary.contains('claude')) {
+          installTip = '\n💡 请运行 npm install -g @anthropic-ai/claude-code 安装 Claude Code CLI';
+        } else if (binary.contains('codex')) {
+          installTip = '\n💡 请运行 pip install openai-codex 或参考 Codex 官方文档安装 Codex CLI';
+        }
         _sendJson(TaskFinished(
           taskId: taskId,
           status: 'failed',
           exitCode: 1,
-          error: 'Agent CLI executable not found on device: $binary',
+          error: 'Agent CLI executable not found on device: $binary$installTip',
         ).toJson());
         return;
       }
@@ -404,9 +442,19 @@ class WsTaskClient {
         args.add(prompt);
       } else {
         // agy / antigravity
-        args = [];
-        if (sessionId.isNotEmpty) args.addAll(['--resume', sessionId]);
-        args.addAll(['--prompt', prompt]);
+        args = [
+          '--prompt', prompt,
+          '--dangerously-skip-permissions',
+        ];
+        if (sessionId.isNotEmpty) {
+          args.addAll(['--conversation', sessionId]);
+        }
+        if (model.isNotEmpty) {
+          args.addAll(['--model', model]);
+        }
+        if (effort.isNotEmpty) {
+          args.addAll(['--effort', effort]);
+        }
       }
     }
 
