@@ -233,55 +233,107 @@ async def list_projects(
         for p, count, local_path in rows
     ]
 
-    # Incorporate discovered projects for target machine that may not have synced conversations yet
-    if target_mid is not None and target_machine is not None:
+    # Incorporate discovered projects for target machine or all user machines
+    target_docs = []
+    if target_mid is not None:
         disc_doc = (await db.execute(
             select(Document).where(
                 Document.tool_id == "system",
                 Document.category == "discovery",
-                or_(
-                    Document.machine_id == target_mid,
-                    Document.metadata_["device_id"].astext == str(target_machine.collector_token_hash),
-                    Document.relative_path == f"discovery/{target_machine.collector_token_hash}.json",
-                )
+                Document.machine_id == target_mid,
             ).order_by(Document.synced_at.desc()).limit(1)
         )).scalar_one_or_none()
-        if disc_doc and disc_doc.content:
-            try:
-                tools_map = json.loads(disc_doc.content)
-                target_tools = [tool_id] if tool_id else list(tools_map.keys())
-                existing_slugs = {item["slug"] for item in items}
-                for t in target_tools:
-                    tool_info = tools_map.get(t, {})
-                    for p_entry in tool_info.get("projects", []):
-                        if not isinstance(p_entry, dict):
-                            continue
-                        p_name = p_entry.get("name") or (p_entry.get("path") or "").replace("\\", "/").rstrip("/").split("/")[-1]
-                        p_path = p_entry.get("path")
-                        if not p_name:
-                            continue
-                        clean_name = _prettify_project_name(p_name).strip("-\"'` ")
-                        if not clean_name or _is_invalid_project_name(clean_name):
-                            continue
-                        c_slug = f"{t}/{clean_name}"
-                        if c_slug in existing_slugs:
-                            continue
-                        # Ensure project exists
+        if not disc_doc and target_machine and target_machine.collector_token_hash:
+            disc_doc = (await db.execute(
+                select(Document).where(
+                    Document.tool_id == "system",
+                    Document.category == "discovery",
+                    Document.relative_path == f"discovery/{target_machine.collector_token_hash}.json",
+                ).order_by(Document.synced_at.desc()).limit(1)
+            )).scalar_one_or_none()
+        if disc_doc:
+            target_docs.append(disc_doc)
+    else:
+        # User sees all machines
+        m_query = select(Document).where(
+            Document.tool_id == "system",
+            Document.category == "discovery",
+        )
+        if mids is not None:
+            m_query = m_query.where(Document.machine_id.in_(mids))
+        m_docs = (await db.execute(m_query)).scalars().all()
+        seen_mids = set()
+        for d in sorted(m_docs, key=lambda x: x.synced_at or datetime.min.replace(tzinfo=timezone.utc), reverse=True):
+            mid_key = str(d.machine_id or d.relative_path)
+            if mid_key not in seen_mids:
+                seen_mids.add(mid_key)
+                target_docs.append(d)
+
+    existing_slugs = {item["slug"] for item in items}
+    new_projs_created = False
+    for disc_doc in target_docs:
+        if not disc_doc or not disc_doc.content:
+            continue
+        try:
+            tools_map = json.loads(disc_doc.content)
+            target_tools = [tool_id] if tool_id else list(tools_map.keys())
+            for t in target_tools:
+                tool_info = tools_map.get(t, {})
+                if not isinstance(tool_info, dict):
+                    continue
+                for p_entry in tool_info.get("projects", []):
+                    if not isinstance(p_entry, dict):
+                        continue
+                    p_name = p_entry.get("name") or (p_entry.get("path") or "").replace("\\", "/").rstrip("/").split("/")[-1]
+                    p_path = p_entry.get("path")
+                    if not p_name:
+                        continue
+                    clean_name = _prettify_project_name(p_name).strip("-\"'` ")
+                    if not clean_name or _is_invalid_project_name(clean_name):
+                        continue
+                    c_slug = f"{t}/{clean_name}"
+                    if c_slug in existing_slugs:
+                        continue
+                    existing_slugs.add(c_slug)
+                    try:
                         proj_obj = await ensure_project(db, t, clean_name, source_path=p_path)
-                        existing_slugs.add(c_slug)
-                        items.append({
-                            "id": str(proj_obj.id),
-                            "slug": proj_obj.slug,
-                            "title": proj_obj.title,
-                            "tool_id": proj_obj.tool_id,
-                            "source_path": _clean_source_path(p_path or proj_obj.source_path),
-                            "visibility": proj_obj.visibility,
-                            "document_count": 0,
-                            "created_at": proj_obj.created_at.isoformat() if proj_obj.created_at else None,
-                            "updated_at": proj_obj.updated_at.isoformat() if proj_obj.updated_at else None,
-                        })
-            except Exception:
-                pass
+                        new_projs_created = True
+                        p_id = str(proj_obj.id)
+                        p_title = proj_obj.title
+                        p_tool = proj_obj.tool_id
+                        p_src = _clean_source_path(p_path or proj_obj.source_path)
+                        p_vis = proj_obj.visibility
+                        p_created = proj_obj.created_at.isoformat() if getattr(proj_obj, "created_at", None) else None
+                        p_updated = proj_obj.updated_at.isoformat() if getattr(proj_obj, "updated_at", None) else None
+                    except Exception as proj_err:
+                        import uuid as _uuid
+                        p_id = str(_uuid.uuid4())
+                        p_title = clean_name
+                        p_tool = t
+                        p_src = _clean_source_path(p_path)
+                        p_vis = "private"
+                        p_created = None
+                        p_updated = None
+                    items.append({
+                        "id": p_id,
+                        "slug": c_slug,
+                        "title": p_title,
+                        "tool_id": p_tool,
+                        "source_path": p_src,
+                        "visibility": p_vis,
+                        "document_count": 0,
+                        "created_at": p_created,
+                        "updated_at": p_updated,
+                    })
+        except Exception as exc:
+            import traceback
+            print(f"[Projects API] Discovery parse error: {exc}\n{traceback.format_exc()}")
+
+    if new_projs_created:
+        try:
+            await db.commit()
+        except Exception:
+            pass
 
     return items
 
