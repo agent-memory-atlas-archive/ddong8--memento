@@ -255,6 +255,10 @@ async def get_task(
     return _serialize(task)
 
 
+class TaskInputRequest(BaseModel):
+    input: str
+
+
 @router.post("/{task_id}/cancel")
 async def cancel_task(
     task_id: uuid.UUID,
@@ -270,14 +274,38 @@ async def cancel_task(
         raise HTTPException(status_code=404)
     if task.status in ("succeeded", "failed", "timeout", "cancelled"):
         return _serialize(task)
-    # A task already running on the device keeps running — the collector is
-    # not interrupted mid-process. This marks it cancelled so its result is
-    # discarded on arrival and the UI stops waiting.
+
+    from ..services.ws_manager import ws_manager
+    # Notify running collector process immediately to kill process tree
+    await ws_manager.send_cancel(task.device_id, str(task.id))
+
     task.status = "cancelled"
     task.finished_at = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(task)
     return _serialize(task)
+
+
+@router.post("/{task_id}/input")
+async def send_task_input(
+    task_id: uuid.UUID,
+    body: TaskInputRequest,
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(get_current_user),
+) -> dict:
+    task = (await db.execute(
+        select(DeviceTask).where(DeviceTask.id == task_id)
+    )).scalar_one_or_none()
+    if not task:
+        raise HTTPException(status_code=404)
+    if _user.role not in ("admin", "owner") and task.user_id != _user.id:
+        raise HTTPException(status_code=404)
+    if task.status != "running":
+        return {"ok": False, "reason": f"task status is {task.status}, not running"}
+
+    from ..services.ws_manager import ws_manager
+    sent = await ws_manager.send_input(task.device_id, str(task.id), body.input)
+    return {"ok": sent}
 
 
 # ---------------------------------------------------------------------------

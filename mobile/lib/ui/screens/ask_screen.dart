@@ -129,6 +129,56 @@ class _AskScreenState extends ConsumerState<AskScreen> {
     }
   }
 
+  Future<void> _handleDeviceChange(String? newDevId) async {
+    if (newDevId == null) return;
+    ref.read(deviceProvider.notifier).setSelectedDevice(newDevId);
+
+    // 1. Reload agent capabilities for this new device
+    _loadCapabilitiesForMode(_executionMode);
+
+    // 2. Reload projects for this new device
+    final toolId = _executionMode == 'antigravity'
+        ? 'antigravity'
+        : (_executionMode == 'claude' ? 'claude_code' : (_executionMode == 'codex' ? 'codex' : null));
+    try {
+      final projs = await ApiClient().getProjects(
+        toolId: toolId,
+        deviceId: newDevId,
+      );
+      if (!mounted) return;
+
+      setState(() {
+        _projects = projs;
+      });
+
+      // 3. If a project was already selected, smartly realign its CWD on the new device
+      if (_selectedProjectId != null && _selectedProjectId!.isNotEmpty) {
+        final currentProj = projs.firstWhere(
+          (p) => p['id']?.toString() == _selectedProjectId,
+          orElse: () => {},
+        );
+        if (currentProj.isNotEmpty) {
+          final sourcePath = currentProj['source_path']?.toString();
+          if (sourcePath != null && sourcePath.isNotEmpty) {
+            String clean = sourcePath.trim();
+            final match = RegExp(r'((?:[a-zA-Z]:[/\\]|/)[a-zA-Z0-9_\.-]+(?:[/\\][a-zA-Z0-9_\.-]+)*)').firstMatch(clean);
+            if (match != null) {
+              clean = match.group(1)!.replaceAll(RegExp(r'[/\\]+$'), '');
+            } else {
+              clean = clean.split(RegExp(r'[\r\n",]'))[0].trim().replaceAll(RegExp(r'[/\\]+$'), '');
+            }
+            _cwdController.text = clean;
+            _showCwd = true;
+          }
+        } else {
+          _cwdController.clear();
+        }
+      }
+    } catch (e) {
+      debugPrint('Failed to realign projects on device change: $e');
+    }
+  }
+
   Future<void> _handleProjectChange(String? projId) async {
     setState(() {
       _selectedProjectId = projId;
@@ -1590,11 +1640,7 @@ class _AskScreenState extends ConsumerState<AskScreen> {
                       dropdownColor: AuroraColors.surfaceElevated,
                       icon: const Icon(Icons.keyboard_arrow_down, size: 16, color: AuroraColors.fg3),
                       style: const TextStyle(fontSize: 12, color: AuroraColors.fg1),
-                      onChanged: (val) {
-                        if (val != null) {
-                          ref.read(deviceProvider.notifier).setSelectedDevice(val);
-                        }
-                      },
+                      onChanged: _handleDeviceChange,
                       items: [
                         const DropdownMenuItem(
                           value: 'auto',

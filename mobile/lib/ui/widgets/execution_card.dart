@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../../core/api_client.dart';
 import '../../core/theme/aurora_theme.dart';
 import '../../models/ask_turn.dart';
 import 'app_markdown.dart';
@@ -22,6 +23,46 @@ class _ExecutionCardState extends State<ExecutionCard> {
   bool _expanded = false;
   bool _copied = false;
   bool _showRawTerminal = false;
+  final TextEditingController _inputCtrl = TextEditingController();
+  bool _isSendingInput = false;
+  String? _feedbackMsg;
+
+  @override
+  void dispose() {
+    _inputCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _sendInput(String text) async {
+    final tId = widget.call.result?.taskId ?? widget.call.args['task_id']?.toString() ?? widget.call.id;
+    if (tId.isEmpty || text.trim().isEmpty) return;
+    setState(() => _isSendingInput = true);
+    final ok = await ApiClient().sendTaskInput(tId, text.trim());
+    if (mounted) {
+      setState(() {
+        _isSendingInput = false;
+        _feedbackMsg = ok ? '已发送: $text' : '发送失败';
+      });
+      _inputCtrl.clear();
+      Future.delayed(const Duration(seconds: 2), () {
+        if (mounted) setState(() => _feedbackMsg = null);
+      });
+    }
+  }
+
+  Future<void> _cancelTask() async {
+    final tId = widget.call.result?.taskId ?? widget.call.args['task_id']?.toString() ?? widget.call.id;
+    if (tId.isEmpty) return;
+    final ok = await ApiClient().cancelTask(tId);
+    if (mounted) {
+      setState(() {
+        _feedbackMsg = ok ? '已请求终止' : '终止请求失败';
+      });
+      Future.delayed(const Duration(seconds: 2), () {
+        if (mounted) setState(() => _feedbackMsg = null);
+      });
+    }
+  }
 
   bool _containsMarkdown(String text) {
     return text.contains('```') ||
@@ -488,10 +529,138 @@ class _ExecutionCardState extends State<ExecutionCard> {
                       ),
                     ),
                   ],
+                  // Interactive Stdin Bar (when running)
+                  if (isRunning) ...[
+                    const SizedBox(height: 10),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF0F172A),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: const Color(0xFF334155)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(Icons.input_rounded, size: 13, color: AuroraColors.accent),
+                              const SizedBox(width: 6),
+                              const Text(
+                                '人机协同 (向进程发送标准输入 stdin)',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                  color: AuroraColors.fg2,
+                                ),
+                              ),
+                              if (_feedbackMsg != null) ...[
+                                const SizedBox(width: 8),
+                                Text(
+                                  _feedbackMsg!,
+                                  style: const TextStyle(fontSize: 11, color: AuroraColors.accent),
+                                ),
+                              ],
+                              const Spacer(),
+                              // Quick action buttons
+                              _buildQuickInputBtn('y (确认)', 'y'),
+                              const SizedBox(width: 4),
+                              _buildQuickInputBtn('n (取消)', 'n'),
+                              const SizedBox(width: 4),
+                              InkWell(
+                                onTap: _isSendingInput ? null : _cancelTask,
+                                borderRadius: BorderRadius.circular(4),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0x28EF4444),
+                                    borderRadius: BorderRadius.circular(4),
+                                    border: Border.all(color: const Color(0x7FEF4444), width: 0.8),
+                                  ),
+                                  child: const Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.stop_circle_outlined, size: 11, color: Color(0xFFEF4444)),
+                                      SizedBox(width: 3),
+                                      Text('终止', style: TextStyle(fontSize: 10, color: Color(0xFFEF4444), fontWeight: FontWeight.bold)),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Container(
+                                  height: 30,
+                                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF020617),
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(color: const Color(0xFF1E293B)),
+                                  ),
+                                  child: TextField(
+                                    controller: _inputCtrl,
+                                    style: const TextStyle(fontSize: 11.5, fontFamily: 'monospace', color: Color(0xFFF1F5F9)),
+                                    decoration: const InputDecoration(
+                                      isDense: true,
+                                      contentPadding: EdgeInsets.symmetric(vertical: 6),
+                                      border: InputBorder.none,
+                                      hintText: '输入内容并回车发送到进程...',
+                                      hintStyle: TextStyle(fontSize: 11, color: AuroraColors.fg4),
+                                    ),
+                                    onSubmitted: _sendInput,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              SizedBox(
+                                height: 30,
+                                child: ElevatedButton(
+                                  onPressed: _isSendingInput ? null : () => _sendInput(_inputCtrl.text),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: AuroraColors.accent,
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                                    elevation: 0,
+                                  ),
+                                  child: _isSendingInput
+                                      ? const SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 1.5, color: Colors.white))
+                                      : const Text('发送', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildQuickInputBtn(String label, String value) {
+    return InkWell(
+      onTap: _isSendingInput ? null : () => _sendInput(value),
+      borderRadius: BorderRadius.circular(4),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        decoration: BoxDecoration(
+          color: AuroraColors.chip,
+          borderRadius: BorderRadius.circular(4),
+          border: Border.all(color: AuroraColors.border, width: 0.8),
+        ),
+        child: Text(
+          label,
+          style: const TextStyle(fontSize: 10, color: AuroraColors.fg2, fontWeight: FontWeight.w600),
+        ),
       ),
     );
   }

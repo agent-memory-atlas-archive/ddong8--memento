@@ -27,15 +27,32 @@ class WsTaskClient {
     stdout.writeln('[WsTaskClient] $msg');
   }
 
+  Future<void> _killTaskProcess(Process? proc) async {
+    if (proc == null) return;
+    try {
+      if (Platform.isWindows) {
+        // Recursively terminate entire process tree (node, python, git, powershell, etc.)
+        final res = await Process.run('taskkill', ['/F', '/T', '/PID', proc.pid.toString()]);
+        if (res.exitCode != 0) {
+          proc.kill(ProcessSignal.sigkill);
+        }
+      } else {
+        proc.kill(ProcessSignal.sigkill);
+      }
+    } catch (_) {
+      try {
+        proc.kill();
+      } catch (_) {}
+    }
+  }
+
   void dispose() {
     _disposed = true;
     _pingTimer?.cancel();
     _ws?.close();
-    // Kill any active tasks
+    // Kill any active tasks cleanly
     for (final entry in _runningTasks.entries) {
-      try {
-        entry.value.kill(ProcessSignal.sigterm);
-      } catch (_) {}
+      _killTaskProcess(entry.value);
     }
     _runningTasks.clear();
   }
@@ -107,9 +124,22 @@ class WsTaskClient {
               if (taskId != null && _runningTasks.containsKey(taskId)) {
                 _log('Cancelling task $taskId');
                 final proc = _runningTasks.remove(taskId);
-                try {
-                  proc?.kill(ProcessSignal.sigterm);
-                } catch (_) {}
+                unawaited(_killTaskProcess(proc));
+              }
+            } else if (type == 'task_input') {
+              final taskId = data['task_id']?.toString();
+              final input = data['input']?.toString();
+              if (taskId != null && input != null && _runningTasks.containsKey(taskId)) {
+                final proc = _runningTasks[taskId];
+                if (proc != null) {
+                  try {
+                    proc.stdin.writeln(input);
+                    unawaited(proc.stdin.flush());
+                    _log('Forwarded input to task $taskId: $input');
+                  } catch (e) {
+                    _log('Failed to write input to task $taskId: $e');
+                  }
+                }
               }
             }
           } catch (e) {
@@ -479,13 +509,12 @@ class WsTaskClient {
         environment: executionEnv,
         runInShell: useShell,
       );
-      // Close stdin immediately so CLI tools know no input is piped,
-      // avoiding "Warning: no stdin data received in 3s, proceeding without it."
-      await proc.stdin.close();
       _runningTasks[taskId] = proc;
 
+      const decoder = Utf8Decoder(allowMalformed: true);
+
       // Stream stdout chunks
-      proc.stdout.transform(utf8.decoder).listen((chunk) {
+      proc.stdout.transform(decoder).listen((chunk) {
         stdoutBuf.write(chunk);
         _sendJson(TaskChunk(
           taskId: taskId,
@@ -495,7 +524,7 @@ class WsTaskClient {
       });
 
       // Stream stderr chunks
-      proc.stderr.transform(utf8.decoder).listen((chunk) {
+      proc.stderr.transform(decoder).listen((chunk) {
         stderrBuf.write(chunk);
         _sendJson(TaskChunk(
           taskId: taskId,
@@ -508,7 +537,7 @@ class WsTaskClient {
       var exitCode = await proc.exitCode.timeout(
         Duration(seconds: task.timeoutSeconds),
         onTimeout: () {
-          proc?.kill(ProcessSignal.sigterm);
+          _killTaskProcess(proc);
           return -999;
         },
       );
@@ -556,11 +585,11 @@ class WsTaskClient {
         await retryProc.stdin.close();
         _runningTasks[taskId] = retryProc;
 
-        retryProc.stdout.transform(utf8.decoder).listen((chunk) {
+        retryProc.stdout.transform(decoder).listen((chunk) {
           stdoutBuf.write(chunk);
           _sendJson(TaskChunk(taskId: taskId, stream: 'stdout', text: chunk).toJson());
         });
-        retryProc.stderr.transform(utf8.decoder).listen((chunk) {
+        retryProc.stderr.transform(decoder).listen((chunk) {
           stderrBuf.write(chunk);
           _sendJson(TaskChunk(taskId: taskId, stream: 'stderr', text: chunk).toJson());
         });
@@ -568,7 +597,7 @@ class WsTaskClient {
         exitCode = await retryProc.exitCode.timeout(
           Duration(seconds: task.timeoutSeconds),
           onTimeout: () {
-            retryProc.kill(ProcessSignal.sigterm);
+            _killTaskProcess(retryProc);
             return -999;
           },
         );
@@ -631,14 +660,13 @@ class WsTaskClient {
           environment: executionEnv,
           runInShell: useShell,
         );
-        await freshProc.stdin.close();
         _runningTasks[taskId] = freshProc;
 
-        freshProc.stdout.transform(utf8.decoder).listen((chunk) {
+        freshProc.stdout.transform(decoder).listen((chunk) {
           stdoutBuf.write(chunk);
           _sendJson(TaskChunk(taskId: taskId, stream: 'stdout', text: chunk).toJson());
         });
-        freshProc.stderr.transform(utf8.decoder).listen((chunk) {
+        freshProc.stderr.transform(decoder).listen((chunk) {
           stderrBuf.write(chunk);
           _sendJson(TaskChunk(taskId: taskId, stream: 'stderr', text: chunk).toJson());
         });
@@ -646,7 +674,7 @@ class WsTaskClient {
         exitCode = await freshProc.exitCode.timeout(
           Duration(seconds: task.timeoutSeconds),
           onTimeout: () {
-            freshProc.kill(ProcessSignal.sigterm);
+            _killTaskProcess(freshProc);
             return -999;
           },
         );
@@ -691,7 +719,10 @@ class WsTaskClient {
         error: 'Execution failed to start: $e',
       ).toJson());
     } finally {
-      _runningTasks.remove(taskId);
+      final active = _runningTasks.remove(taskId);
+      try {
+        active?.stdin.close();
+      } catch (_) {}
     }
   }
 

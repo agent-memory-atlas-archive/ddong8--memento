@@ -44,12 +44,22 @@ async def list_projects(
         else:
             return []
 
-    # Auto-consolidate fragmented projects (e.g. claude_code/d-dev-2026-0707-pubchem -> claude_code/pubchem)
+    # Auto-consolidate fragmented projects & purge invalid projects (e.g. codex/file:)
     try:
+        from ..services.ingest_service import _IGNORE_PROJECT_NAMES
         all_projects = (await db.execute(select(Project))).scalars().all()
         has_changes = False
         for p in all_projects:
             raw_name = p.slug.split("/")[-1] if "/" in p.slug else p.slug
+            if _is_invalid_project_name(raw_name) or _is_invalid_project_name(p.title):
+                # Unassign orphaned documents
+                await db.execute(
+                    update(Document).where(Document.project_id == p.id).values(project_id=None)
+                )
+                await db.delete(p)
+                has_changes = True
+                continue
+
             prettified = _prettify_project_name(raw_name)
             if prettified != raw_name and not _is_invalid_project_name(prettified):
                 canonical_slug = f"{p.tool_id}/{prettified}"
@@ -65,18 +75,23 @@ async def list_projects(
                     p.title = prettified
                     has_changes = True
 
-        # Auto-adopt orphaned documents whose relative_path has projects/<dir_hash>
+        # Auto-adopt orphaned documents across all tools
         orphaned_docs = (await db.execute(
             select(Document).where(
                 Document.project_id.is_(None),
                 Document.category == "conversation",
-                Document.relative_path.like("projects/%"),
             )
         )).scalars().all()
         for od in orphaned_docs:
-            parts = od.relative_path.split("/")
-            if len(parts) >= 3 and parts[0] == "projects":
-                prettified = _prettify_project_name(parts[1])
+            p_cand = None
+            if isinstance(od.metadata_, dict):
+                p_cand = od.metadata_.get("project_hash")
+            if not p_cand and od.relative_path and od.relative_path.startswith("projects/"):
+                parts = od.relative_path.split("/")
+                if len(parts) >= 3:
+                    p_cand = parts[1]
+            if p_cand:
+                prettified = _prettify_project_name(p_cand)
                 if not _is_invalid_project_name(prettified):
                     c_slug = f"{od.tool_id}/{prettified}"
                     canon = (await db.execute(select(Project).where(Project.slug == c_slug))).scalar_one_or_none()
@@ -97,9 +112,15 @@ async def list_projects(
     elif mids is not None:
         join_cond = join_cond & Document.machine_id.in_(mids)
 
+    from ..services.ingest_service import _IGNORE_PROJECT_NAMES
     query = (
         select(Project, doc_count_col, local_path_col)
         .outerjoin(Document, join_cond)
+        .where(
+            ~Project.title.in_(list(_IGNORE_PROJECT_NAMES)),
+            ~Project.slug.like("%/file:"),
+            ~Project.slug.like("%/file"),
+        )
         .group_by(Project.id)
         .order_by(Project.updated_at.desc())
     )

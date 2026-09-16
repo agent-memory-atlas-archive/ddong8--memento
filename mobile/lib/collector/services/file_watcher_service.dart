@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:path/path.dart' as p;
 
+import '../discovery/tool_discovery_service.dart';
 import '../models/collector_config.dart';
 import '../models/tool_discovery.dart';
 import 'ingest_client.dart';
@@ -405,6 +406,77 @@ class FileWatcherService {
             : 'initial: ${sliceBytes.length}B';
         _log('Syncing $relPath ($toolId) $deltaDesc (file size: ${currentSize}B)');
 
+        // Extract project info from content / path for Claude Code, Antigravity, and Codex
+        String? sessionCwd;
+        String? sessionProjectName;
+
+        if (toolId == 'claude' || toolId == 'claude_code') {
+          final parts = relPath.split('/');
+          if (parts.length >= 2 && parts[0] == 'projects') {
+            final (projName, realPath) = ToolDiscoveryService.decodeClaudeDir(parts[1]);
+            sessionCwd = ToolDiscoveryService.cleanPath(realPath);
+            if (!ToolDiscoveryService.isInvalidProjectName(projName)) {
+              sessionProjectName = projName;
+            }
+          }
+        }
+
+        if (cleanLines.isNotEmpty) {
+          try {
+            // 1. Codex session_meta check
+            final firstObj = jsonDecode(cleanLines.first);
+            if (firstObj is Map) {
+              final payload = firstObj['payload'];
+              if (payload is Map && payload['cwd'] != null) {
+                final rawCwd = payload['cwd'].toString();
+                final cleanCwd = ToolDiscoveryService.cleanPath(rawCwd);
+                if (cleanCwd.isNotEmpty) {
+                  sessionCwd = cleanCwd;
+                  final bName = p.basename(cleanCwd);
+                  if (!ToolDiscoveryService.isInvalidProjectName(bName)) {
+                    sessionProjectName = bName;
+                  }
+                }
+              }
+            }
+          } catch (_) {}
+
+          // 2. Antigravity user_information / Cwd check in top lines
+          if (sessionCwd == null && toolId == 'antigravity') {
+            final topChunk = cleanLines.take(15).join('\n');
+            final userMatch = RegExp(
+              r'<user_information>[\s\S]*?((?:[a-zA-Z]:[/\\]|/)[a-zA-Z0-9_\.\-]+(?:[/\\][a-zA-Z0-9_\.\-]+)*)\s*->',
+            ).firstMatch(topChunk);
+            if (userMatch != null) {
+              final cand = ToolDiscoveryService.cleanPath(userMatch.group(1)!);
+              final bName = p.basename(cand);
+              if (!ToolDiscoveryService.isInvalidProjectName(bName)) {
+                sessionCwd = cand;
+                sessionProjectName = bName;
+              }
+            }
+            if (sessionCwd == null) {
+              final cwdMatch = RegExp(
+                r'"[Cc]wd"\s*:\s*"?\\?"?((?:[a-zA-Z]:[/\\]|/)[a-zA-Z0-9_\.\-]+(?:[/\\][a-zA-Z0-9_\.\-]+)*)',
+              ).firstMatch(topChunk);
+              if (cwdMatch != null) {
+                final cand = ToolDiscoveryService.cleanPath(cwdMatch.group(1)!);
+                final bName = p.basename(cand);
+                if (!ToolDiscoveryService.isInvalidProjectName(bName)) {
+                  sessionCwd = cand;
+                  sessionProjectName = bName;
+                }
+              }
+            }
+          }
+        }
+
+        final syncMetadata = {
+          'session_id': p.basenameWithoutExtension(filePath),
+          if (sessionCwd != null) 'project_path': sessionCwd,
+          if (sessionProjectName != null) 'project_hash': sessionProjectName,
+        };
+
         bool ok = await ingestClient.ingestDocument(
           toolId: toolId,
           category: 'conversation',
@@ -414,9 +486,7 @@ class FileWatcherService {
           contentHash: batchHash,
           offset: lastOffset,
           mode: mode,
-          metadata: {
-            'session_id': p.basenameWithoutExtension(filePath),
-          },
+          metadata: syncMetadata,
         );
 
         if (!ok && !_disposed) {
@@ -431,9 +501,7 @@ class FileWatcherService {
             contentHash: batchHash,
             offset: lastOffset,
             mode: mode,
-            metadata: {
-              'session_id': p.basenameWithoutExtension(filePath),
-            },
+            metadata: syncMetadata,
           );
         }
 

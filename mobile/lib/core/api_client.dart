@@ -278,4 +278,25 @@ class ApiClient {
     } catch (_) {}
     return {};
   }
+
+  Future<bool> sendTaskInput(String taskId, String input) async {
+    try {
+      final response = await _dio.post(
+        '/api/tasks/$taskId/input',
+        data: {'input': input},
+      );
+      return response.data?['ok'] == true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<bool> cancelTask(String taskId) async {
+    try {
+      final response = await _dio.post('/api/tasks/$taskId/cancel');
+      return response.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
+  }
 }

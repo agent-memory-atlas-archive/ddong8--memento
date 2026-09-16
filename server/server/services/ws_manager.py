@@ -73,6 +73,23 @@ class DeviceConnectionManager:
             logger.warning("Failed to send cancel for %s via WebSocket: %s", task_id, e)
             return False
 
+    async def send_input(self, device_id: str, task_id: str, input_text: str) -> bool:
+        """Send input frame to the device to forward stdin into the running subprocess."""
+        ws = self._connections.get(device_id)
+        if not ws:
+            return False
+        try:
+            await ws.send_json({
+                "type": "task_input",
+                "task_id": str(task_id),
+                "input": str(input_text),
+            })
+            logger.info("Sent task_input for %s to %s via WebSocket", task_id, device_id)
+            return True
+        except Exception as e:
+            logger.warning("Failed to send input for %s via WebSocket: %s", task_id, e)
+            return False
+
     def subscribe_task(self, task_id: str) -> asyncio.Queue:
         """Create a dedicated event queue for a running task's streaming output."""
         q: asyncio.Queue = asyncio.Queue(maxsize=1000)

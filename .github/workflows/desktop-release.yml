@@ -243,6 +243,6 @@ jobs:
           generate_release_notes: true
           make_latest: true
           files: |
-            dist/macos-release/*
             dist/windows-release/*
+            dist/macos-release/*
             dist/linux-release/*

@@ -168,14 +168,14 @@ def _resanitize(text: str) -> tuple[str, bool]:
 
 
 _WORKSPACE_PATTERNS = [
-    # d:/dev/2026/0123/project_name/... (with or without file:/// or e:/// prefix)
-    re.compile(r"([a-zA-Z]:/dev/\d{4}/\d+/[a-zA-Z0-9_\.\-]+)"),
+    # d:/dev/2026/0123/project_name/... (with or without file:/// or e:/// prefix, or backslash)
+    re.compile(r"([a-zA-Z]:[/\\]dev[/\\]\d{4}[/\\]\d+[/\\][a-zA-Z0-9_\.\-]+)"),
     # d:/dev/MMDD/project_name/...
-    re.compile(r"([a-zA-Z]:/dev/\d+/[a-zA-Z0-9_\.\-]+)"),
+    re.compile(r"([a-zA-Z]:[/\\]dev[/\\]\d+[/\\][a-zA-Z0-9_\.\-]+)"),
     # C:/Users/xxx/Desktop/project_name/...
-    re.compile(r"([a-zA-Z]:/Users/[a-zA-Z0-9_\.\-]+/Desktop/[a-zA-Z0-9_\.\-]+)"),
+    re.compile(r"([a-zA-Z]:[/\\]Users[/\\][a-zA-Z0-9_\.\-]+[/\\]Desktop[/\\][a-zA-Z0-9_\.\-]+)"),
     # [a-zA-Z]:/(?:dev|projects|workspace)/project_name
-    re.compile(r"([a-zA-Z]:/(?:dev|projects|workspace)/[a-zA-Z0-9_\.\-]+)"),
+    re.compile(r"([a-zA-Z]:[/\\](?:dev|projects|workspace)[/\\][a-zA-Z0-9_\.\-]+)"),
     # /Users/xxx/Desktop/dev/category/project or /Users/xxx/Desktop/dev/project
     re.compile(r"(/Users/[a-zA-Z0-9_\.\-]+/Desktop/dev/[a-zA-Z0-9_\.\-]+(?:/[a-zA-Z0-9_\.\-]+)?)"),
     # /Users/xxx/Desktop/project/...
@@ -185,7 +185,7 @@ _WORKSPACE_PATTERNS = [
     # /home/xxx/dev/project or /home/xxx/projects/project or /home/xxx/workspace/project
     re.compile(r"(/home/[a-zA-Z0-9_\.\-]+/(?:dev|projects|workspace)/[a-zA-Z0-9_\.\-]+)"),
     # F:/dev/project/...
-    re.compile(r"([a-zA-Z]:/dev/[a-zA-Z0-9_\.\-]+)"),
+    re.compile(r"([a-zA-Z]:[/\\]dev[/\\][a-zA-Z0-9_\.\-]+)"),
 ]
 
 _IGNORE_PATH_EXTS = {
@@ -199,42 +199,49 @@ _IGNORE_PATH_DIRS = {
 }
 _IGNORE_PROJECT_NAMES = {
     "...", "dev", "desktop", "tmp", "temp", "scratch", "projects", "workspace",
+    "file:", "file", "untitled", "unknown",
 }
 
 
 def _extract_workspace_from_content(content: str) -> tuple[str | None, str | None]:
     """Extract (project_name, full_path) from brain file content."""
     # 1. Antigravity system prompt <user_information> block:
-    # /Users/haixingdong/dev/memento -> ddong8/memento
+    # /Users/haixingdong/dev/memento -> ddong8/memento or d:\dev\2026\0914\memento -> ddong8/memento
     user_info_match = re.search(
-        r"<user_information>[\s\S]*?((?:/[a-zA-Z0-9_.\-]+)+|[a-zA-Z]:/[a-zA-Z0-9_.\-]+)\s*->",
+        r"<user_information>[\s\S]*?((?:/[a-zA-Z0-9_.\-]+)+|[a-zA-Z]:[/\\][^\s\r\n->]+)\s*->",
         content,
     )
     if user_info_match:
-        ws_path = user_info_match.group(1).replace("\\", "/").rstrip("/")
+        raw_path = user_info_match.group(1)
+        ws_path = _clean_source_path(raw_path) or raw_path.replace("\\", "/").rstrip("/")
         ws_name = ws_path.split("/")[-1]
         if (
             ws_name
             and not ws_name.isdigit()
-            and ws_name.lower() not in _IGNORE_PROJECT_NAMES
+            and not _is_invalid_project_name(ws_name)
             and "/antigravity/" not in ws_path
             and "/.gemini/" not in ws_path
         ):
             return ws_name, ws_path
 
     # 2. Tool call Cwd argument:
-    # "Cwd":"\"/Users/haixingdong/dev/memento\"" or "Cwd": "/Users/haixingdong/dev/memento"
+    # "Cwd":"\"/Users/haixingdong/dev/memento\"" or "Cwd": "d:\\dev\\2026\\0914\\memento"
     cwd_matches = re.findall(
-        r'"[Cc]wd"\s*:\s*"?\\?"?((?:/[a-zA-Z0-9_.\-]+)+|[a-zA-Z]:/[a-zA-Z0-9_.\-]+)\\?"?',
+        r'"[Cc]wd"\s*:\s*"?\\?"?((?:[a-zA-Z]:|/)[^",\r\n}]+)',
         content,
     )
     for raw_cwd in cwd_matches:
-        ws_path = raw_cwd.replace("\\", "/").rstrip("/")
+        clean_cand = raw_cwd.rstrip('\\"')
+        try:
+            decoded = json.loads(f'"{clean_cand}"')
+        except Exception:
+            decoded = clean_cand.replace("\\\\", "/").replace("\\", "/")
+        ws_path = _clean_source_path(decoded) or decoded.replace("\\", "/").rstrip("/")
         ws_name = ws_path.split("/")[-1]
         if (
             ws_name
             and not ws_name.isdigit()
-            and ws_name.lower() not in _IGNORE_PROJECT_NAMES
+            and not _is_invalid_project_name(ws_name)
             and "/antigravity/" not in ws_path
             and "/.gemini/" not in ws_path
         ):
@@ -299,10 +306,15 @@ def _is_invalid_project_name(name: str | None) -> bool:
     n = str(name).strip().lower()
     if not n or n in _IGNORE_PROJECT_NAMES:
         return True
+    if n.startswith("file:"):
+        return True
     if n.isdigit():
         return True
     # Reject drive letters e.g. "d:", "c:", "d", "c"
     if re.match(r"^[a-zA-Z]:?$", n):
+        return True
+    # Reject temp directories (macOS /var/folders/..., Linux /tmp, etc.)
+    if n in ("var", "folders", "tmp", "temp", "appdata", "local"):
         return True
     return False
 
@@ -360,22 +372,32 @@ def _clean_source_path(path: str | None) -> str | None:
     s = str(path).strip()
     if s.lower() in _IGNORE_PROJECT_NAMES:
         return None
-    # Strip file:/// URI prefix
-    if s.startswith("file:///"):
-        s = s[8:] if len(s) > 9 and s[9:10] == ":" else s[7:]
+    if re.match(r"^file:/*$", s.lower()):
+        return None
+    # Strip file:// or file:/// URI prefix
+    if s.lower().startswith("file:"):
+        s = re.sub(r"^file:/+", "", s)
+        if not re.match(r"^[a-zA-Z]:", s) and not s.startswith("/"):
+            s = "/" + s
     # URL decode
     from urllib.parse import unquote
     s = unquote(s)
+    # Normalize backslashes to forward slashes for clean cross-platform consistency
+    s = s.replace("\\", "/")
     # Strip \\?\
+    s = re.sub(r"^//\?/", "", s)
     s = re.sub(r"^\\\\?\?\\", "", s)
+    # Normalize Windows drive letter if prefixed with / (e.g. /D:/dev -> D:/dev)
+    if re.match(r"^/[a-zA-Z]:", s):
+        s = s[1:]
     # If path contains newline, quotes, commas or JSON braces, extract the true filesystem path
-    match = re.search(r"((?:[a-zA-Z]:[/\\]|/)[a-zA-Z0-9_\.\-]+(?:[/\\][a-zA-Z0-9_\.\-]+)*)", s)
+    match = re.search(r"((?:[a-zA-Z]:/|/)[a-zA-Z0-9_\.\-]+(?:/[a-zA-Z0-9_\.\-]+)*)", s)
     if match:
-        cand = match.group(1).rstrip("/\\")
+        cand = match.group(1).rstrip("/")
         if not _is_invalid_project_name(cand.split("/")[-1]):
             return cand
     # Fallback: strip after any quote, newline, or comma
-    cleaned = re.split(r'["\',\r\n]', s)[0].strip().rstrip("/\\")
+    cleaned = re.split(r'["\',\r\n]', s)[0].strip().rstrip("/")
     if _is_invalid_project_name(cleaned):
         return None
     return cleaned or None
@@ -386,6 +408,13 @@ async def ensure_project(
     source_path: str | None = None,
 ) -> Project:
     """Ensure a project record exists for a given hash/path."""
+    if _is_invalid_project_name(project_hash):
+        sp_cand = (source_path or "").replace("\\", "/").rstrip("/").split("/")[-1]
+        if not _is_invalid_project_name(sp_cand):
+            project_hash = sp_cand
+        else:
+            project_hash = "general"
+
     cleaned_hash = _prettify_project_name(project_hash)
     if not _is_invalid_project_name(cleaned_hash):
         if not source_path and cleaned_hash != project_hash:
@@ -575,10 +604,11 @@ async def ingest_file(
             except Exception:
                 decoded_cwd = raw_cwd.replace("\\\\", "/")
             raw_cwd = re.sub(r"^\\\\?\?\\", "", decoded_cwd)
-            cwd = raw_cwd.replace("\\", "/").rstrip("/")
+            cleaned_cwd = _clean_source_path(raw_cwd)
+            cwd = (cleaned_cwd or raw_cwd).replace("\\", "/").rstrip("/")
             candidate_hash = cwd.split("/")[-1]
             if not _is_invalid_project_name(candidate_hash):
-                project_path = project_path or raw_cwd
+                project_path = project_path or (cleaned_cwd or raw_cwd)
                 project_hash = candidate_hash
                 _needs_extract = False
         elif _looks_like_hash and project_hash:

@@ -25,10 +25,12 @@ import asyncio
 import json
 import logging
 import os
+import re
+import uuid
 from datetime import datetime, timezone
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db.models import DeviceTask, Machine, User
@@ -424,8 +426,37 @@ async def _tool_run_on_device(db: AsyncSession, user: User, args: dict):
                 payload["fork"] = args["fork"]
             if args.get("system_prompt_append"):
                 payload["system_prompt_append"] = args["system_prompt_append"]
-        if args.get("cwd"):
-            payload["cwd"] = args["cwd"]
+        raw_cwd = (args.get("cwd") or "").strip()
+        proj_id_val = args.get("project_id") or payload.get("project_id")
+        resolved_cwd = raw_cwd
+
+        # Check platform mismatch: e.g. Windows paths have ':\', Unix paths start with '/'
+        is_mach_win = bool(machine and ("win" in (machine.name or "").lower() or "windows" in (machine.name or "").lower()))
+        is_cwd_win = bool(re.match(r"^[a-zA-Z]:[/\\]", raw_cwd))
+        is_cwd_unix = raw_cwd.startswith("/")
+
+        platform_mismatch = (is_mach_win and is_cwd_unix) or (not is_mach_win and is_cwd_win and machine is not None)
+
+        if (not raw_cwd or platform_mismatch) and proj_id_val and machine:
+            try:
+                from ..db.models import Document
+                from ..services.ingest_service import _clean_source_path
+                parsed_pid = uuid.UUID(str(proj_id_val)) if isinstance(proj_id_val, str) else proj_id_val
+                doc_path_q = select(func.max(Document.metadata_["project_path"].astext)).where(
+                    Document.project_id == parsed_pid,
+                    Document.machine_id == machine.id,
+                )
+                mach_local_path = (await db.execute(doc_path_q)).scalar()
+                if mach_local_path:
+                    cleaned_mach_path = _clean_source_path(mach_local_path)
+                    if cleaned_mach_path:
+                        resolved_cwd = cleaned_mach_path
+                        logger.info("Auto-aligned cross-device cwd for project %s on %s: %s", proj_id_val, machine.name, resolved_cwd)
+            except Exception as e:
+                logger.warning("Failed to auto-align project cwd: %s", e)
+
+        if resolved_cwd:
+            payload["cwd"] = resolved_cwd
 
         # Determine timeout: shell defaults to 45s, agent defaults to TASK_WAIT_SECONDS (180s)
         default_timeout = 45 if action == "shell" else TASK_WAIT_SECONDS
