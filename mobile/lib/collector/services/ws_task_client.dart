@@ -395,12 +395,79 @@ class WsTaskClient {
     return null;
   }
 
+  Future<String?> _resolveWorkingDir(String? rawCwd, Map<String, dynamic> payload) async {
+    String? candidate = rawCwd?.trim();
+    final home = Platform.environment['HOME'] ?? Platform.environment['USERPROFILE'];
+
+    if (candidate != null && candidate.isNotEmpty) {
+      if (candidate.startsWith('~') && home != null) {
+        candidate = candidate.replaceFirst('~', home);
+      }
+      try {
+        if (await Directory(candidate).exists()) {
+          return candidate;
+        }
+      } catch (_) {}
+    }
+
+    // Candidate does not exist directly on this machine (e.g. cross-platform Windows path on Mac or vice versa)
+    String? projectName;
+    if (rawCwd != null && rawCwd.isNotEmpty) {
+      final clean = rawCwd.replaceAll(r'\', '/').replaceAll(RegExp(r'/+$'), '');
+      final parts = clean.split('/');
+      if (parts.isNotEmpty && parts.last.isNotEmpty) {
+        projectName = parts.last;
+      }
+    }
+
+    if (projectName != null && projectName.isNotEmpty && home != null) {
+      final probePaths = [
+        '$home/$projectName',
+        '$home/dev/$projectName',
+        '$home/Projects/$projectName',
+        '$home/Documents/$projectName',
+        '$home/Workspace/$projectName',
+        '$home/Desktop/$projectName',
+        '$home/code/$projectName',
+        '$home/src/$projectName',
+      ];
+      if (Platform.isWindows) {
+        probePaths.addAll([
+          'D:/dev/$projectName',
+          'D:/Projects/$projectName',
+          'E:/dev/$projectName',
+          'C:/dev/$projectName',
+        ]);
+      }
+      for (final p in probePaths) {
+        try {
+          if (await Directory(p).exists()) {
+            _log('Auto-aligned CWD to local directory: $p');
+            return p;
+          }
+        } catch (_) {}
+      }
+    }
+
+    // Safety fallback: User home directory (NEVER fall back to root "/" on macOS/Linux)
+    if (home != null) {
+      try {
+        if (await Directory(home).exists()) {
+          _log('CWD fallback to user home directory: $home');
+          return home;
+        }
+      } catch (_) {}
+    }
+
+    return null;
+  }
+
   Future<void> _executeTask(TaskDispatch task) async {
     final taskId = task.id;
     final action = task.action;
     final payload = task.payload;
     final cwd = payload['cwd']?.toString().trim();
-    final workingDir = (cwd != null && cwd.isNotEmpty && await Directory(cwd).exists()) ? cwd : null;
+    final workingDir = await _resolveWorkingDir(cwd, payload);
 
     String exe = '';
     List<String> args = [];
@@ -466,6 +533,9 @@ class WsTaskClient {
           '--dangerously-bypass-approvals-and-sandbox',
           '--skip-git-repo-check',
         ]);
+        if (workingDir != null && workingDir.isNotEmpty) {
+          args.addAll(['-C', workingDir]);
+        }
         if (effort.isNotEmpty) args.addAll(['-c', 'model_reasoning_effort="$effort"']);
         if (model.isNotEmpty) args.addAll(['-m', model]);
         if (sessionId.isNotEmpty) args.add(sessionId);
@@ -510,6 +580,11 @@ class WsTaskClient {
         runInShell: useShell,
       );
       _runningTasks[taskId] = proc;
+      if (action != 'shell') {
+        try {
+          await proc.stdin.close();
+        } catch (_) {}
+      }
 
       const decoder = Utf8Decoder(allowMalformed: true);
 
@@ -660,6 +735,9 @@ class WsTaskClient {
           environment: executionEnv,
           runInShell: useShell,
         );
+        try {
+          await freshProc.stdin.close();
+        } catch (_) {}
         _runningTasks[taskId] = freshProc;
 
         freshProc.stdout.transform(decoder).listen((chunk) {
@@ -702,6 +780,17 @@ class WsTaskClient {
           ? 'Task timed out after ${task.timeoutSeconds}s'
           : (exitCode != 0 ? (fullErr.isNotEmpty ? fullErr : 'Exit code $exitCode') : null);
 
+      // Extract session ID from stdout / stderr
+      String? extractedSessionId;
+      final sidMatch = RegExp(r'session id:\s*([0-9a-fA-F-]+)', caseSensitive: false).firstMatch(fullOut) ??
+          RegExp(r'session id:\s*([0-9a-fA-F-]+)', caseSensitive: false).firstMatch(fullErr) ??
+          RegExp(r'thread[_-]id:\s*([0-9a-fA-F-]+)', caseSensitive: false).firstMatch(fullOut);
+      if (sidMatch != null) {
+        extractedSessionId = sidMatch.group(1);
+      }
+      final resolvedSessionId = extractedSessionId ??
+          (payload['session_id']?.toString().isNotEmpty == true ? payload['session_id'].toString() : null);
+
       _sendJson(TaskFinished(
         taskId: taskId,
         status: status,
@@ -710,6 +799,7 @@ class WsTaskClient {
         stderr: fullErr,
         error: errorMsg,
         errorType: isPromptTooLong ? 'prompt_too_long' : null,
+        sessionId: resolvedSessionId,
       ).toJson());
     } catch (e) {
       _sendJson(TaskFinished(

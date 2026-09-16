@@ -430,23 +430,42 @@ async def _tool_run_on_device(db: AsyncSession, user: User, args: dict):
         proj_id_val = args.get("project_id") or payload.get("project_id")
         resolved_cwd = raw_cwd
 
-        # Check platform mismatch: e.g. Windows paths have ':\', Unix paths start with '/'
-        is_mach_win = bool(machine and ("win" in (machine.name or "").lower() or "windows" in (machine.name or "").lower()))
+        # Check machine OS accurately (using platform, os or machine name)
+        mach_plat_str = (
+            getattr(machine, "platform", "")
+            or getattr(machine, "os", "")
+            or (machine.name if machine else "")
+            or ""
+        ).lower()
+        is_mach_win = "win" in mach_plat_str
+        is_mach_unix = "darwin" in mach_plat_str or "mac" in mach_plat_str or "linux" in mach_plat_str
+
         is_cwd_win = bool(re.match(r"^[a-zA-Z]:[/\\]", raw_cwd))
         is_cwd_unix = raw_cwd.startswith("/")
 
-        platform_mismatch = (is_mach_win and is_cwd_unix) or (not is_mach_win and is_cwd_win and machine is not None)
+        platform_mismatch = (is_mach_win and is_cwd_unix) or (is_mach_unix and is_cwd_win)
 
-        if (not raw_cwd or platform_mismatch) and proj_id_val and machine:
+        if (not raw_cwd or platform_mismatch) and machine:
             try:
-                from ..db.models import Document
+                from ..db.models import Document, Project
                 from ..services.ingest_service import _clean_source_path
-                parsed_pid = uuid.UUID(str(proj_id_val)) if isinstance(proj_id_val, str) else proj_id_val
-                doc_path_q = select(func.max(Document.metadata_["project_path"].astext)).where(
-                    Document.project_id == parsed_pid,
-                    Document.machine_id == machine.id,
-                )
-                mach_local_path = (await db.execute(doc_path_q)).scalar()
+                mach_local_path = None
+                if proj_id_val:
+                    parsed_pid = uuid.UUID(str(proj_id_val)) if isinstance(proj_id_val, str) else proj_id_val
+                    doc_path_q = select(func.max(Document.metadata_["project_path"].astext)).where(
+                        Document.project_id == parsed_pid,
+                        Document.machine_id == machine.id,
+                    )
+                    mach_local_path = (await db.execute(doc_path_q)).scalar()
+                    if not mach_local_path:
+                        # Fallback to checking Project table itself
+                        proj_obj = (await db.execute(select(Project).where(Project.id == parsed_pid))).scalar_one_or_none()
+                        if proj_obj and proj_obj.source_path:
+                            p_src = proj_obj.source_path
+                            p_win = bool(re.match(r"^[a-zA-Z]:[/\\]", p_src))
+                            if (is_mach_win and p_win) or (is_mach_unix and not p_win):
+                                mach_local_path = p_src
+
                 if mach_local_path:
                     cleaned_mach_path = _clean_source_path(mach_local_path)
                     if cleaned_mach_path:
@@ -542,6 +561,13 @@ async def _tool_run_on_device(db: AsyncSession, user: User, args: dict):
                 ws_manager.unsubscribe_task(task_id_str)
 
         if done_ws:
+            ws_out = done_ws.get("stdout") or ""
+            ws_err = done_ws.get("stderr") or ""
+            ext_sid = done_ws.get("session_id")
+            if not ext_sid:
+                m = re.search(r"session id:\s*([0-9a-fA-F-]+)", ws_out + "\n" + ws_err, re.I)
+                if m:
+                    ext_sid = m.group(1)
             yield {
                 "type": "tool_result",
                 "name": "run_on_device",
@@ -552,9 +578,10 @@ async def _tool_run_on_device(db: AsyncSession, user: User, args: dict):
                     "action": action,
                     "status": done_ws.get("status", "succeeded"),
                     "exit_code": done_ws.get("exit_code"),
-                    "stdout": (done_ws.get("stdout") or "")[:MAX_TOOL_OUTPUT],
-                    "stderr": (done_ws.get("stderr") or "")[:MAX_TOOL_OUTPUT],
+                    "stdout": ws_out[:MAX_TOOL_OUTPUT],
+                    "stderr": ws_err[:MAX_TOOL_OUTPUT],
                     "error": done_ws.get("error"),
+                    "session_id": ext_sid,
                 },
             }
             return
@@ -574,6 +601,14 @@ async def _tool_run_on_device(db: AsyncSession, user: User, args: dict):
             }
             return
 
+        task_out = done_task.stdout or ""
+        task_err = done_task.stderr or ""
+        task_sid = getattr(done_task, "session_id", None)
+        if not task_sid:
+            m = re.search(r"session id:\s*([0-9a-fA-F-]+)", task_out + "\n" + task_err, re.I)
+            if m:
+                task_sid = m.group(1)
+
         yield {
             "type": "tool_result",
             "name": "run_on_device",
@@ -584,9 +619,10 @@ async def _tool_run_on_device(db: AsyncSession, user: User, args: dict):
                 "action": action,
                 "status": done_task.status,
                 "exit_code": done_task.exit_code,
-                "stdout": (done_task.stdout or "")[:MAX_TOOL_OUTPUT],
-                "stderr": (done_task.stderr or "")[:MAX_TOOL_OUTPUT],
+                "stdout": task_out[:MAX_TOOL_OUTPUT],
+                "stderr": task_err[:MAX_TOOL_OUTPUT],
                 "error": done_task.error,
+                "session_id": task_sid,
             },
         }
     except Exception as e:

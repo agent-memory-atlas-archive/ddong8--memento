@@ -896,6 +896,23 @@ class _AskScreenState extends ConsumerState<AskScreen> {
     );
   }
 
+  String? _getEffectiveCwd() {
+    final direct = _cwdController.text.trim();
+    if (direct.isNotEmpty) return direct;
+    if (_selectedProjectId != null && _selectedProjectId!.isNotEmpty) {
+      final proj = _projects.firstWhere(
+        (p) => p['id']?.toString() == _selectedProjectId,
+        orElse: () => {},
+      );
+      final sp = proj['source_path']?.toString().trim();
+      if (sp != null && sp.isNotEmpty) {
+        _cwdController.text = sp;
+        return sp;
+      }
+    }
+    return null;
+  }
+
   void _handleSend() {
     if (ref.read(askProvider).isStreaming) return;
     final text = _inputController.text.trim();
@@ -903,7 +920,7 @@ class _AskScreenState extends ConsumerState<AskScreen> {
 
     final deviceState = ref.read(deviceProvider);
     final selectedDevice = deviceState.selectedDeviceId;
-    final cwd = _showCwd ? _cwdController.text.trim() : null;
+    final cwd = _getEffectiveCwd();
 
     ref.read(askProvider.notifier).sendQuestion(
           question: text,
@@ -943,7 +960,7 @@ class _AskScreenState extends ConsumerState<AskScreen> {
     if (lastUserTurn.content.trim().isNotEmpty) {
       final deviceState = ref.read(deviceProvider);
       final selectedDevice = deviceState.selectedDeviceId;
-      final cwd = _showCwd ? _cwdController.text.trim() : null;
+      final cwd = _getEffectiveCwd();
 
       ref.read(askProvider.notifier).sendQuestion(
             question: lastUserTurn.content,
@@ -982,6 +999,24 @@ class _AskScreenState extends ConsumerState<AskScreen> {
       // 3. 流式响应刚结束，进行平滑收尾对齐
       if (previous?.isStreaming == true && !next.isStreaming) {
         _scrollToBottom(force: false, smooth: true);
+      }
+
+      // 4. 自动捕获最新任务回传的 session_id，无缝绑定为当前会话续接状态
+      if (next.turns.isNotEmpty) {
+        final lastTurn = next.turns.last;
+        for (final call in lastTurn.toolCalls.reversed) {
+          final sid = call.result?.sessionId;
+          if (sid != null && sid.isNotEmpty && sid != _selectedSessionId) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) {
+                setState(() {
+                  _selectedSessionId = sid;
+                });
+              }
+            });
+            break;
+          }
+        }
       }
     });
 

@@ -633,6 +633,7 @@ async def _direct_agent_stream(
     project_id: str | None = None,
     fork: bool | None = None,
     compact_mode: bool | None = None,
+    history: list[dict] | None = None,
 ):
     """Directly dispatch an agent/shell task to the user's online device without LLM intermediate step."""
     from ..services.orchestrator import _tool_run_on_device
@@ -684,8 +685,34 @@ async def _direct_agent_stream(
             "antigravity": "agy",
         }
         binary = binary_map.get(execution_mode, execution_mode)
+
+        # Context injection for multi-turn conversations
+        final_prompt = question
+        if history and "prompt" not in args:
+            prior_turns = []
+            msgs = history[:-1] if (history and history[-1].get("role") == "user" and (history[-1].get("content") or "").strip() == question.strip()) else history
+            for m in msgs:
+                r = m.get("role")
+                c = (m.get("content") or "").strip()
+                if not c:
+                    continue
+                if len(c) > 800:
+                    c = c[:750] + "\n...[输出过长已节略]..."
+                role_label = "用户" if r == "user" else "助手"
+                prior_turns.append(f"{role_label}: {c}")
+
+            if prior_turns:
+                ctx_summary = "\n\n".join(prior_turns[-6:])
+                final_prompt = (
+                    f"【前文对话历史】\n"
+                    f"{ctx_summary}\n\n"
+                    f"--------------------\n"
+                    f"【当前用户指令】\n"
+                    f"{question}"
+                )
+
         if "prompt" not in args:
-            args["prompt"] = question
+            args["prompt"] = final_prompt
         args["binary"] = binary
         if orig_session_id:
             tag = "compact" if compact_mode else ("fork" if fork else "resume")
@@ -828,6 +855,7 @@ async def ask(
                 project_id=body.project_id,
                 fork=body.fork,
                 compact_mode=body.compact_mode,
+                history=body.history,
             ),
             media_type="text/event-stream",
             headers={

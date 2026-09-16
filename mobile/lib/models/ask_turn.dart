@@ -10,6 +10,7 @@ class ToolCallResult {
   final String? note;
   final int? exitCode;
   final List<dynamic>? devices;
+  final String? sessionId;
 
   ToolCallResult({
     this.taskId,
@@ -23,6 +24,7 @@ class ToolCallResult {
     this.note,
     this.exitCode,
     this.devices,
+    this.sessionId,
   });
 
   factory ToolCallResult.fromJson(Map<String, dynamic> json) {
@@ -38,6 +40,7 @@ class ToolCallResult {
       note: json['note']?.toString(),
       exitCode: json['exit_code'] as int?,
       devices: json['devices'] as List<dynamic>?,
+      sessionId: json['session_id']?.toString(),
     );
   }
 
@@ -53,6 +56,7 @@ class ToolCallResult {
     String? note,
     int? exitCode,
     List<dynamic>? devices,
+    String? sessionId,
   }) {
     return ToolCallResult(
       taskId: taskId ?? this.taskId,
@@ -66,6 +70,7 @@ class ToolCallResult {
       note: note ?? this.note,
       exitCode: exitCode ?? this.exitCode,
       devices: devices ?? this.devices,
+      sessionId: sessionId ?? this.sessionId,
     );
   }
 }
