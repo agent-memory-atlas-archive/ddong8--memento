@@ -117,29 +117,28 @@ async def list_projects(
 
         # Auto-heal machine_id on documents where machine_id is NULL
         all_machines = (await db.execute(select(Machine))).scalars().all()
+        mac_mini_m = next((m for m in all_machines if "mac-mini" in m.name.lower() or "mini" in m.name.lower()), None)
+        macbook_m = next((m for m in all_machines if "macbook" in m.name.lower()), None)
+        win_m = next((m for m in all_machines if "windows" in m.name.lower()), None)
+
         null_docs = (await db.execute(
-            select(Document).where(Document.machine_id.is_(None)).limit(3000)
+            select(Document).where(Document.machine_id.is_(None)).limit(5000)
         )).scalars().all()
         for doc in null_docs:
             p_path = (
                 (doc.metadata_ or {}).get("project_path")
                 or doc.relative_path
                 or ""
-            )
-            for m in all_machines:
-                m_name = m.name.lower()
-                if "/haixingdong/" in p_path and "mac-mini" in m_name:
-                    doc.machine_id = m.id
-                    has_changes = True
-                    break
-                elif "/donghaixing/" in p_path and "macbook" in m_name:
-                    doc.machine_id = m.id
-                    has_changes = True
-                    break
-                elif (":/" in p_path or ":\\" in p_path or "/users/admin" in p_path.lower() or "d:/dev" in p_path.lower()) and "windows" in m_name:
-                    doc.machine_id = m.id
-                    has_changes = True
-                    break
+            ).lower()
+            if "haixingdong" in p_path and mac_mini_m:
+                doc.machine_id = mac_mini_m.id
+                has_changes = True
+            elif "donghaixing" in p_path and macbook_m:
+                doc.machine_id = macbook_m.id
+                has_changes = True
+            elif ("admin" in p_path or ":/" in p_path or ":\\" in p_path) and win_m:
+                doc.machine_id = win_m.id
+                has_changes = True
 
         if has_changes:
             await db.commit()
@@ -191,12 +190,16 @@ async def list_projects(
     ]
 
     # Incorporate discovered projects for target machine that may not have synced conversations yet
-    if target_mid is not None:
+    if target_mid is not None and target_machine is not None:
         disc_doc = (await db.execute(
             select(Document).where(
                 Document.tool_id == "system",
                 Document.category == "discovery",
-                Document.machine_id == target_mid,
+                or_(
+                    Document.machine_id == target_mid,
+                    Document.metadata_["device_id"].astext == str(target_machine.collector_token_hash),
+                    Document.relative_path == f"discovery/{target_machine.collector_token_hash}.json",
+                )
             ).order_by(Document.synced_at.desc()).limit(1)
         )).scalar_one_or_none()
         if disc_doc and disc_doc.content:
