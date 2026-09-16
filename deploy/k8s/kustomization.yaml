@@ -22,7 +22,7 @@ configMapGenerator:
 - literals:
   - MEMENTO_REDIS_URL=redis://redis:6379/0
   - MEMENTO_S3_ENDPOINT=http://minio:9000
-  - MEMENTO_EMBEDDING_SERVER_URL=http://192.168.1.87:18002
+  - MEMENTO_EMBEDDING_SERVER_URL=http://192.168.1.88:18002
   - MEMENTO_AI_BASE_URL=https://ark.cn-beijing.volces.com/api/coding/v3
   - MEMENTO_AI_MODEL=glm-5.2
   - MEMENTO_PORT=8000
