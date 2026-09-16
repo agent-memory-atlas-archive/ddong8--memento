@@ -52,12 +52,12 @@ def _workspace_to_cwd(workspace: str) -> str:
     """Convert file:// URI to a plain filesystem path."""
     if not workspace:
         return ""
-    cwd = unquote(workspace).replace("\\", "/")
+    cwd = unquote(workspace).replace("\\", "/").strip().strip("\"' ")
     if cwd.startswith("file:///"):
         # file:///Users/... → /Users/...
         # file:///C:/... → C:/...
         cwd = cwd[7:] if cwd[8:9] != ":" else cwd[8:]
-    return cwd
+    return cwd.strip("\"' ")
 
 
 def _load_title_map(force_refresh: bool = False) -> dict[str, str]:
@@ -148,7 +148,7 @@ def export_conversations(pb_files: list[Path] | None = None) -> list[dict]:
 
         workspace = decoded.get("workspace", "")
         cwd = _workspace_to_cwd(workspace)
-        project_name = cwd.rstrip("/").split("/")[-1] if cwd else None
+        project_name = cwd.rstrip("/").split("/")[-1].strip("\"' ") if cwd else None
 
         title = title_map.get(cascade_id) or _build_title_from_messages(messages)
 

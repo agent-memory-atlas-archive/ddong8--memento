@@ -28,10 +28,11 @@ def _linux_config() -> Path:
 
 
 def _clean_path(path: str) -> str:
-    """Strip Windows extended path prefix \\\\?\\ and URL-decode."""
+    """Strip Windows extended path prefix \\\\?\\ and URL-decode, and strip surrounding quotes."""
+    path = path.strip().strip("\"' ")
     if path.startswith("\\\\?\\"):
         path = path[4:]
-    path = unquote(path)
+    path = unquote(path).strip("\"' ")
     return path
 
 

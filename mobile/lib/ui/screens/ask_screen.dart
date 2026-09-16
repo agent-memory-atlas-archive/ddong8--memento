@@ -1975,7 +1975,7 @@ class _AskScreenState extends ConsumerState<AskScreen> {
                           ),
                           ..._projects.map((p) {
                             final id = p['id']?.toString() ?? '';
-                            final title = (p['title'] ?? p['slug'] ?? id).toString();
+                            final title = (p['title'] ?? p['slug'] ?? id).toString().replaceAll('"', '').replaceAll("'", '').trim();
                             return DropdownMenuItem<String>(
                               value: id,
                               child: Text('📁 $title', overflow: TextOverflow.ellipsis),

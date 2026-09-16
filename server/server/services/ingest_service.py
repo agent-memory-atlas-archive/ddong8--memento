@@ -328,8 +328,9 @@ def _prettify_project_name(raw: str) -> str:
       'D--dev-2026-0104-yicaigou-bulk-import' → 'bulk-import'
       'd-dev-2026-0707-pubchem' → 'pubchem'
       'd--dev-1106-chembook' → 'chembook'
+      'dataset-platform"' → 'dataset-platform'
     """
-    name = raw.strip("-")
+    name = raw.strip("-\"'` ")
 
     # Known path prefix patterns to strip (greedy match)
     # Pattern: optional drive + common dirs + optional date folders
@@ -343,8 +344,8 @@ def _prettify_project_name(raw: str) -> str:
         r"(?:\d{2,4}-?)?",                           # or just MMDD-
         re.IGNORECASE,
     )
-    cleaned = prefix_re.sub("", name).strip("-")
-    return cleaned if cleaned else raw
+    cleaned = prefix_re.sub("", name).strip("-\"'` ")
+    return cleaned if cleaned else raw.strip("-\"'` ")
 
 
 def _hash_to_path(project_hash: str) -> str:
@@ -354,7 +355,7 @@ def _hash_to_path(project_hash: str) -> str:
     'D--dev-2026-0104-yicaigou' → 'D:/dev/2026/0104/yicaigou'
     'd-dev-2026-0707-pubchem' → 'd:/dev/2026/0707/pubchem'
     """
-    raw = project_hash.strip("-")
+    raw = project_hash.strip("-\"'` ")
     # Windows drive: 'D--dev-...' or 'd-dev-...' → 'D:/dev/...'
     m = re.match(r"^([A-Za-z])--?(.+)$", raw)
     if m:
@@ -369,8 +370,8 @@ def _hash_to_path(project_hash: str) -> str:
 def _clean_source_path(path: str | None) -> str | None:
     if not path:
         return path
-    s = str(path).strip()
-    if s.lower() in _IGNORE_PROJECT_NAMES:
+    s = str(path).strip().strip("\"'\\` ")
+    if not s or s.lower() in _IGNORE_PROJECT_NAMES:
         return None
     if re.match(r"^file:/*$", s.lower()):
         return None
@@ -379,6 +380,10 @@ def _clean_source_path(path: str | None) -> str | None:
         s = re.sub(r"^file:/+", "", s)
         if not re.match(r"^[a-zA-Z]:", s) and not s.startswith("/"):
             s = "/" + s
+    # Strip vscode-remote / cursor-remote / antigravity prefix
+    s = re.sub(r"^[a-zA-Z0-9_\-]+://", "", s)
+    # Strip surrounding quotes and delimiters
+    s = s.strip("\"'\\` ")
     # URL decode
     from urllib.parse import unquote
     s = unquote(s)
@@ -390,14 +395,16 @@ def _clean_source_path(path: str | None) -> str | None:
     # Normalize Windows drive letter if prefixed with / (e.g. /D:/dev -> D:/dev)
     if re.match(r"^/[a-zA-Z]:", s):
         s = s[1:]
+    # Strip quotes again after decoding/normalization
+    s = s.strip("\"'\\` ")
     # If path contains newline, quotes, commas or JSON braces, extract the true filesystem path
     match = re.search(r"((?:[a-zA-Z]:/|/)[a-zA-Z0-9_\.\-]+(?:/[a-zA-Z0-9_\.\-]+)*)", s)
     if match:
-        cand = match.group(1).rstrip("/")
-        if not _is_invalid_project_name(cand.split("/")[-1]):
+        cand = match.group(1).rstrip("/").strip("\"'\\` ")
+        if not _is_invalid_project_name(cand.split("/")[-1].strip("-\"'` ")):
             return cand
     # Fallback: strip after any quote, newline, or comma
-    cleaned = re.split(r'["\',\r\n]', s)[0].strip().rstrip("/")
+    cleaned = re.split(r'["\',\r\n]', s)[0].strip("\"'\\` ").rstrip("/")
     if _is_invalid_project_name(cleaned):
         return None
     return cleaned or None
@@ -408,14 +415,15 @@ async def ensure_project(
     source_path: str | None = None,
 ) -> Project:
     """Ensure a project record exists for a given hash/path."""
+    project_hash = (project_hash or "").strip("-\"'` ")
     if _is_invalid_project_name(project_hash):
-        sp_cand = (source_path or "").replace("\\", "/").rstrip("/").split("/")[-1]
+        sp_cand = (source_path or "").replace("\\", "/").rstrip("/").split("/")[-1].strip("-\"'` ")
         if not _is_invalid_project_name(sp_cand):
             project_hash = sp_cand
         else:
             project_hash = "general"
 
-    cleaned_hash = _prettify_project_name(project_hash)
+    cleaned_hash = _prettify_project_name(project_hash).strip("-\"'` ")
     if not _is_invalid_project_name(cleaned_hash):
         if not source_path and cleaned_hash != project_hash:
             source_path = _hash_to_path(project_hash)
@@ -603,10 +611,10 @@ async def ingest_file(
                 decoded_cwd = json.loads(f'"{raw_cwd}"')
             except Exception:
                 decoded_cwd = raw_cwd.replace("\\\\", "/")
-            raw_cwd = re.sub(r"^\\\\?\?\\", "", decoded_cwd)
+            raw_cwd = re.sub(r"^\\\\?\?\\", "", decoded_cwd).strip("\"'\\` ")
             cleaned_cwd = _clean_source_path(raw_cwd)
-            cwd = (cleaned_cwd or raw_cwd).replace("\\", "/").rstrip("/")
-            candidate_hash = cwd.split("/")[-1]
+            cwd = (cleaned_cwd or raw_cwd).replace("\\", "/").rstrip("/").strip("\"'\\` ")
+            candidate_hash = cwd.split("/")[-1].strip("-\"'` ")
             if not _is_invalid_project_name(candidate_hash):
                 project_path = project_path or (cleaned_cwd or raw_cwd)
                 project_hash = candidate_hash
@@ -639,8 +647,8 @@ async def ingest_file(
                 project_path = extracted_path
 
     if project_hash:
-        # Sanitize: strip control characters and null bytes
-        project_hash = re.sub(r"[\x00-\x1f].*", "", project_hash).strip()
+        # Sanitize: strip control characters, null bytes, and quotes
+        project_hash = re.sub(r"[\x00-\x1f].*", "", project_hash).strip("-\"'` ")
     if project_hash:
         if not project_path:
             project_path = metadata.get("project_path")

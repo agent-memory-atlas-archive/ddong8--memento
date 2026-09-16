@@ -86,3 +86,17 @@ def test_extract_windows_json_cwd():
     assert not _is_invalid_project_name(proj)
 
 
+def test_strips_quotes_from_project_name_and_path():
+    from server.services.ingest_service import _prettify_project_name, _clean_source_path
+
+    # Project names with trailing or surrounding quotes
+    assert _prettify_project_name('dataset-platform"') == "dataset-platform"
+    assert _prettify_project_name('"aiphacas-portal"') == "aiphacas-portal"
+    assert _prettify_project_name('\'aiphacas-portal\'') == "aiphacas-portal"
+
+    # Source paths with quotes
+    assert _clean_source_path('"D:/dev/dataset-platform"') == "D:/dev/dataset-platform"
+    assert _clean_source_path('file:///D:/dev/dataset-platform"') == "D:/dev/dataset-platform"
+
+
+

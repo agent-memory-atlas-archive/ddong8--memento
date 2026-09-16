@@ -30,8 +30,19 @@ class ToolDiscoveryService {
     return '';
   }
 
+  static String _stripQuotes(String s) {
+    var str = s.trim();
+    while (str.isNotEmpty && (str.startsWith('"') || str.startsWith("'") || str.startsWith('`'))) {
+      str = str.substring(1).trim();
+    }
+    while (str.isNotEmpty && (str.endsWith('"') || str.endsWith("'") || str.endsWith('`'))) {
+      str = str.substring(0, str.length - 1).trim();
+    }
+    return str;
+  }
+
   static String cleanPath(String path) {
-    var cleaned = path.trim();
+    var cleaned = _stripQuotes(path);
     if (cleaned.startsWith(r'\\?\')) {
       cleaned = cleaned.substring(4);
     }
@@ -53,11 +64,11 @@ class ToolDiscoveryService {
     try {
       cleaned = Uri.decodeComponent(cleaned);
     } catch (_) {}
-    return cleaned;
+    return _stripQuotes(cleaned);
   }
 
   static bool isInvalidProjectName(String name) {
-    final lower = name.trim().toLowerCase();
+    final lower = _stripQuotes(name).toLowerCase();
     return lower.isEmpty ||
         lower == 'file:' ||
         lower == 'file' ||
@@ -106,7 +117,8 @@ class ToolDiscoveryService {
   }
 
   static String _prettifyProjectName(String name) {
-    return name.replaceFirst(RegExp(r'^\d{4}-?\d{2,4}-?'), '');
+    final cleaned = _stripQuotes(name).replaceFirst(RegExp(r'^\d{4}-?\d{2,4}-?'), '');
+    return _stripQuotes(cleaned);
   }
 
   /// Discover Claude Code (~/.claude)

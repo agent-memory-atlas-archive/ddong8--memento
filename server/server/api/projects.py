@@ -60,8 +60,18 @@ async def list_projects(
                 has_changes = True
                 continue
 
-            prettified = _prettify_project_name(raw_name)
-            if prettified != raw_name and not _is_invalid_project_name(prettified):
+            clean_name = raw_name.strip("-\"'` ")
+            prettified = _prettify_project_name(clean_name).strip("-\"'` ")
+            clean_title = (p.title or "").strip("-\"'` ")
+            is_dirty = (
+                prettified != raw_name
+                or p.title != clean_title
+                or '"' in (p.title or "")
+                or "'" in (p.title or "")
+                or '"' in p.slug
+                or "'" in p.slug
+            )
+            if is_dirty and not _is_invalid_project_name(prettified):
                 canonical_slug = f"{p.tool_id}/{prettified}"
                 canonical = (await db.execute(select(Project).where(Project.slug == canonical_slug))).scalar_one_or_none()
                 if canonical and canonical.id != p.id:
@@ -70,7 +80,7 @@ async def list_projects(
                     )
                     await db.delete(p)
                     has_changes = True
-                elif not canonical:
+                else:
                     p.slug = canonical_slug
                     p.title = prettified
                     has_changes = True

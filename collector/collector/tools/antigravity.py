@@ -52,9 +52,9 @@ def _extract_brain_metadata(cascade_id: str, transcript_path: Path) -> dict[str,
                                 raw_ws = raw_uri[7:].rstrip("/")
                                 if re.match(r"^/[a-zA-Z]:/", raw_ws):
                                     raw_ws = raw_ws[1:]
-                                cand_name = Path(raw_ws).name
+                                cand_name = Path(raw_ws).name.strip("\"' ")
                                 if cand_name and not cand_name.isdigit() and cand_name.lower() not in ("...", "dev", "desktop", "tmp", "temp", "scratch"):
-                                    meta["project_path"] = raw_ws
+                                    meta["project_path"] = raw_ws.strip("\"' ")
                                     meta["project_hash"] = cand_name
                     except Exception:
                         pass
@@ -76,10 +76,10 @@ def _extract_brain_metadata(cascade_id: str, transcript_path: Path) -> dict[str,
                     data = row[0]
                     m = re.search(rb'file://(/[a-zA-Z]:/[a-zA-Z0-9_.-]+(?:/[a-zA-Z0-9_.-]+)*|/[a-zA-Z0-9_.-]+(?:/[a-zA-Z0-9_.-]+)*)', data)
                     if m:
-                        raw_ws = m.group(1).decode("utf-8", errors="ignore").rstrip("R").rstrip("/")
+                        raw_ws = m.group(1).decode("utf-8", errors="ignore").rstrip("R").rstrip("/").strip("\"' ")
                         if re.match(r"^/[a-zA-Z]:/", raw_ws):
                             raw_ws = raw_ws[1:]  # /C:/foo -> C:/foo
-                        cand_name = Path(raw_ws).name
+                        cand_name = Path(raw_ws).name.strip("\"' ")
                         if cand_name and not cand_name.isdigit() and cand_name.lower() not in ("...", "dev", "desktop", "tmp", "temp", "scratch"):
                             meta["project_path"] = raw_ws
                             meta["project_hash"] = cand_name
@@ -96,8 +96,8 @@ def _extract_brain_metadata(cascade_id: str, transcript_path: Path) -> dict[str,
                     if "<user_information>" in line:
                         u_match = re.search(r"<user_information>[\s\S]*?((?:/[a-zA-Z0-9_.\-]+)+|[a-zA-Z]:/[a-zA-Z0-9_.\-]+)\s*->", line)
                         if u_match:
-                            ws = u_match.group(1).replace("\\", "/").rstrip("/")
-                            c_name = ws.split("/")[-1]
+                            ws = u_match.group(1).replace("\\", "/").rstrip("/").strip("\"' ")
+                            c_name = ws.split("/")[-1].strip("\"' ")
                             if c_name and not c_name.isdigit() and c_name.lower() not in ("...", "dev", "desktop", "tmp", "temp", "scratch"):
                                 meta["project_path"] = ws
                                 meta["project_hash"] = c_name
@@ -105,8 +105,8 @@ def _extract_brain_metadata(cascade_id: str, transcript_path: Path) -> dict[str,
                     if '"Cwd"' in line or '"cwd"' in line:
                         c_match = re.search(r'"[Cc]wd"\s*:\s*"?\\?"?((?:/[a-zA-Z0-9_.\-]+)+|[a-zA-Z]:/[a-zA-Z0-9_.\-]+)\\?"?', line)
                         if c_match:
-                            ws = c_match.group(1).replace("\\", "/").rstrip("/")
-                            c_name = ws.split("/")[-1]
+                            ws = c_match.group(1).replace("\\", "/").rstrip("/").strip("\"' ")
+                            c_name = ws.split("/")[-1].strip("\"' ")
                             if (
                                 c_name
                                 and not c_name.isdigit()
