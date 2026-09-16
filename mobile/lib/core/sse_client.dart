@@ -25,6 +25,7 @@ class AskSseClient {
     String? projectId,
     String? sessionId,
     bool? compactMode,
+    int? timeoutSeconds,
     required void Function(String id, String? title) onConversationId,
     required void Function(List<AskSource> sources) onSources,
     required void Function(ToolCallItem item) onToolCall,
@@ -77,10 +78,12 @@ class AskSseClient {
           if (projectId != null && projectId.isNotEmpty) 'project_id': projectId,
           if (sessionId != null && sessionId.isNotEmpty) 'session_id': sessionId,
           if (compactMode == true) 'compact_mode': true,
+          if (timeoutSeconds != null && timeoutSeconds > 0)
+            'timeout_seconds': timeoutSeconds,
         },
         options: Options(
           responseType: ResponseType.stream,
-          receiveTimeout: const Duration(minutes: 10),
+          receiveTimeout: const Duration(hours: 2),
           headers: {
             'Content-Type': 'application/json',
             'Accept': 'text/event-stream',

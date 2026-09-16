@@ -68,6 +68,7 @@ class _AskScreenState extends ConsumerState<AskScreen> {
   bool _showSessionContext = true;
   bool _isConfigCollapsed = false;
   bool _compactMode = false;
+  int? _selectedTimeoutSeconds;
   bool _isUserScrolledUp = false;
   bool _isAutoScrolling = false;
 
@@ -932,6 +933,7 @@ class _AskScreenState extends ConsumerState<AskScreen> {
           projectId: _selectedProjectId,
           sessionId: _selectedSessionId,
           compactMode: _compactMode,
+          timeoutSeconds: _selectedTimeoutSeconds,
         );
 
     _inputController.clear();
@@ -972,6 +974,7 @@ class _AskScreenState extends ConsumerState<AskScreen> {
             projectId: _selectedProjectId,
             sessionId: sidToUse,
             compactMode: true,
+            timeoutSeconds: _selectedTimeoutSeconds,
           );
       if (Platform.isIOS || Platform.isAndroid) {
         _inputFocusNode.unfocus();
@@ -1564,6 +1567,30 @@ class _AskScreenState extends ConsumerState<AskScreen> {
                         ),
                       ),
                     ],
+
+                    // Custom Timeout Chip (if set)
+                    if (_selectedTimeoutSeconds != null && _selectedTimeoutSeconds! > 0) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: AuroraColors.surface,
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: AuroraColors.border, width: 0.8),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.timer_outlined, size: 11, color: AuroraColors.accent),
+                            const SizedBox(width: 3),
+                            Text(
+                              '${(_selectedTimeoutSeconds! ~/ 60)}m',
+                              style: const TextStyle(fontSize: 10.5, color: AuroraColors.accent, fontWeight: FontWeight.w600),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -2017,6 +2044,62 @@ class _AskScreenState extends ConsumerState<AskScreen> {
                 ),
               ),
             ],
+
+            // Execution Timeout Row (Smart Auto, 5m, 15m, 30m, 60m)
+            const SizedBox(height: 6),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  const Icon(Icons.timer_outlined, size: 13, color: AuroraColors.fg3),
+                  const SizedBox(width: 4),
+                  const Text('超时:', style: TextStyle(fontSize: 11, color: AuroraColors.fg3, fontWeight: FontWeight.w500)),
+                  const SizedBox(width: 6),
+                  ...[
+                    {'id': 0, 'name': '⚡ 智能自适应 (默认 10~30m)'},
+                    {'id': 300, 'name': '⏱️ 5 分钟 (快速)'},
+                    {'id': 900, 'name': '⏱️ 15 分钟 (常规)'},
+                    {'id': 1800, 'name': '⏱️ 30 分钟 (大文件/迁移)'},
+                    {'id': 3600, 'name': '⏱️ 60 分钟 (超长)'},
+                  ].map((opt) {
+                    final isSelected = (_selectedTimeoutSeconds == null || _selectedTimeoutSeconds == 0)
+                        ? opt['id'] == 0
+                        : _selectedTimeoutSeconds == opt['id'];
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 6),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(6),
+                        onTap: () {
+                          setState(() {
+                            final val = opt['id'] as int;
+                            _selectedTimeoutSeconds = val == 0 ? null : val;
+                          });
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3.5),
+                          decoration: BoxDecoration(
+                            color: isSelected ? AuroraColors.accentSoft : AuroraColors.chip,
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(
+                              color: isSelected ? AuroraColors.accent : AuroraColors.border,
+                              width: 1,
+                            ),
+                          ),
+                          child: Text(
+                            opt['name'] as String,
+                            style: TextStyle(
+                              fontSize: 10.5,
+                              color: isSelected ? AuroraColors.accent : AuroraColors.fg2,
+                              fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  }),
+                ],
+              ),
+            ),
             // Session selector under the selected project
             if (_selectedProjectId != null && _selectedProjectId!.isNotEmpty) ...[
               const SizedBox(height: 6),

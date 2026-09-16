@@ -86,6 +86,8 @@ class AskRequest(BaseModel):
     fork: bool | None = None
     # Smart sliding-window hierarchical context compaction
     compact_mode: bool | None = None
+    # Optional execution timeout override in seconds (up to 3600)
+    timeout_seconds: int | None = None
 
 
 async def _retrieve(
@@ -634,19 +636,29 @@ async def _direct_agent_stream(
     fork: bool | None = None,
     compact_mode: bool | None = None,
     history: list[dict] | None = None,
+    timeout_seconds: int | None = None,
 ):
     """Directly dispatch an agent/shell task to the user's online device without LLM intermediate step."""
-    from ..services.orchestrator import _tool_run_on_device
+    from ..services.orchestrator import _tool_run_on_device, is_likely_long_running_task
 
     yield f"data: {json.dumps({'type': 'conversation_id', 'id': str(conv_id), 'title': conv_title}, ensure_ascii=False)}\n\n"
     yield f"data: {json.dumps({'type': 'sources', 'sources': []}, ensure_ascii=False)}\n\n"
 
     action = "shell" if execution_mode == "shell" else "agent"
+
+    # Determine effective timeout: respect user choice; otherwise auto-expand for heavy migration/sync/build tasks
+    effective_timeout = timeout_seconds
+    if not effective_timeout or effective_timeout <= 0:
+        if is_likely_long_running_task(question):
+            effective_timeout = 1800  # 30 minutes for migration/archive/build tasks
+        else:
+            effective_timeout = 600 if action == "agent" else 45
+
     args = {
         "action": action,
         "device_id": device_id or "",
         "cwd": cwd or "",
-        "timeout_seconds": 300,
+        "timeout_seconds": effective_timeout,
     }
     if model:
         args["model"] = model
@@ -856,6 +868,7 @@ async def ask(
                 fork=body.fork,
                 compact_mode=body.compact_mode,
                 history=body.history,
+                timeout_seconds=body.timeout_seconds,
             ),
             media_type="text/event-stream",
             headers={

@@ -49,8 +49,9 @@ logger = logging.getLogger("server.orchestrator")
 # Tool-call rounds before we stop and let the model summarize. Each round is
 # one LLM call plus however long the dispatched tasks take.
 MAX_ROUNDS = int(os.environ.get("MEMENTO_MAX_ROUNDS", "8"))
-# How long to wait inline for a dispatched task.
-TASK_WAIT_SECONDS = int(os.environ.get("MEMENTO_TASK_WAIT_SECONDS", "180"))
+# How long to wait inline for a dispatched task: default 600s (10 min), max 3600s (1 hour).
+TASK_WAIT_SECONDS = int(os.environ.get("MEMENTO_TASK_WAIT_SECONDS", "600"))
+MAX_TASK_TIMEOUT = int(os.environ.get("MEMENTO_MAX_TASK_TIMEOUT", "3600"))
 TASK_POLL_INTERVAL = 1.5
 # Trim tool output before it goes back into the prompt — a 100k-char build log
 # would blow the context and bury the signal.
@@ -58,6 +59,20 @@ MAX_TOOL_OUTPUT = 6000
 # A device that hasn't checked in for this long is reported as likely offline,
 # so the model can pick a different machine instead of waiting on a dead one.
 OFFLINE_AFTER_SECONDS = 180
+
+
+def is_likely_long_running_task(text: str) -> bool:
+    """Detect if a command/prompt involves heavy I/O, network migration, or compilation."""
+    if not text:
+        return False
+    long_keywords = [
+        "迁移", "同步", "备份", "归档", "nas", "rsync", "scp",
+        "打包", "编译", "构建", "build", "dist", "安装依赖",
+        "下载", "download", "全量", "大数据", "训练", "train", "清理到"
+    ]
+    t = text.lower()
+    return any(k in t for k in long_keywords)
+
 
 TOOLS = [
     {
@@ -92,7 +107,7 @@ TOOLS = [
                         "enum": ["claude", "codex", "agy"],
                     },
                     "cwd": {"type": "string", "description": "工作目录，可选"},
-                    "timeout_seconds": {"type": "integer", "description": "执行超时时间（秒），shell 默认 45，agent 默认 180，最大 300"},
+                    "timeout_seconds": {"type": "integer", "description": "执行超时时间（秒），shell 默认 45，agent 默认 600（大任务智能放宽至 1800，上限 3600）"},
                 },
                 "required": ["device_id", "action"],
             },
@@ -477,11 +492,19 @@ async def _tool_run_on_device(db: AsyncSession, user: User, args: dict):
         if resolved_cwd:
             payload["cwd"] = resolved_cwd
 
-        # Determine timeout: shell defaults to 45s, agent defaults to TASK_WAIT_SECONDS (180s)
-        default_timeout = 45 if action == "shell" else TASK_WAIT_SECONDS
+        # Determine timeout: shell defaults to 45s, agent defaults to TASK_WAIT_SECONDS (600s)
+        # If the task prompt/command involves long-running operations (migration/archive/sync/build), auto-expand to 1800s (30m)
+        cmd_or_prompt = args.get("command") or args.get("prompt") or payload.get("prompt") or ""
+        is_long = is_likely_long_running_task(cmd_or_prompt)
+
+        if action == "shell":
+            default_timeout = 180 if is_long else 45
+        else:
+            default_timeout = 1800 if is_long else TASK_WAIT_SECONDS
+
         req_timeout = args.get("timeout_seconds")
         if req_timeout and isinstance(req_timeout, int) and req_timeout > 0:
-            device_timeout = min(req_timeout, 300)
+            device_timeout = min(req_timeout, MAX_TASK_TIMEOUT)
         else:
             device_timeout = default_timeout
 
@@ -596,7 +619,7 @@ async def _tool_run_on_device(db: AsyncSession, user: User, args: dict):
                     "device_name": mach_name,
                     "action": action,
                     "status": "still_running",
-                    "note": f"任务执行已超过 {device_timeout}s，设备端已尝试终止或仍在后台，请勿重复执行相同命令，建议换用更精准快速的查询方式。",
+                    "note": f"任务执行已达到安全保护上限（{device_timeout}s）被终止。若任务涉及大文件网络迁移、大型项目编译构建，建议在前端配置放宽超时或在后台异步执行（如 nohup rsync）。",
                 },
             }
             return
