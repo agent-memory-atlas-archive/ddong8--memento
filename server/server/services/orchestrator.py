@@ -527,6 +527,16 @@ async def _tool_run_on_device(db: AsyncSession, user: User, args: dict):
         task_id_str = str(task.id)
         logger.info("orchestrator dispatched task %s (%s, timeout=%ds) to %s", task.id, action, device_timeout, device_id)
 
+        # Immediately yield task_progress so frontend gets the UUID task_id right away
+        yield {
+            "type": "task_progress",
+            "task_id": task_id_str,
+            "device_id": device_id,
+            "device_name": mach_name,
+            "action": action,
+            "status": "queued",
+        }
+
         task_q = None
         # Try WebSocket dispatch by all candidate aliases
         target_ws_id = None

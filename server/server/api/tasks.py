@@ -261,12 +261,17 @@ class TaskInputRequest(BaseModel):
 
 @router.post("/{task_id}/cancel")
 async def cancel_task(
-    task_id: uuid.UUID,
+    task_id: str,
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(get_current_user),
 ) -> dict:
+    try:
+        t_uuid = uuid.UUID(task_id)
+    except (ValueError, AttributeError):
+        raise HTTPException(status_code=400, detail=f"invalid task id format: {task_id}")
+
     task = (await db.execute(
-        select(DeviceTask).where(DeviceTask.id == task_id)
+        select(DeviceTask).where(DeviceTask.id == t_uuid)
     )).scalar_one_or_none()
     if not task:
         raise HTTPException(status_code=404)
@@ -288,19 +293,24 @@ async def cancel_task(
 
 @router.post("/{task_id}/input")
 async def send_task_input(
-    task_id: uuid.UUID,
+    task_id: str,
     body: TaskInputRequest,
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(get_current_user),
 ) -> dict:
+    try:
+        t_uuid = uuid.UUID(task_id)
+    except (ValueError, AttributeError):
+        return {"ok": False, "reason": f"invalid task id format: {task_id}"}
+
     task = (await db.execute(
-        select(DeviceTask).where(DeviceTask.id == task_id)
+        select(DeviceTask).where(DeviceTask.id == t_uuid)
     )).scalar_one_or_none()
     if not task:
         raise HTTPException(status_code=404)
     if _user.role not in ("admin", "owner") and task.user_id != _user.id:
         raise HTTPException(status_code=404)
-    if task.status != "running":
+    if task.status not in ("queued", "running"):
         return {"ok": False, "reason": f"task status is {task.status}, not running"}
 
     from ..services.ws_manager import ws_manager

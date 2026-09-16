@@ -67,6 +67,23 @@ class ToolDiscoveryService {
         lower == 'temp';
   }
 
+  /// On macOS, check if /Volumes/<name> is currently mounted to avoid triggering TCC network volume prompts.
+  static bool isVolumeMountedOnMac(String path) {
+    if (!Platform.isMacOS || !path.startsWith('/Volumes/')) return true;
+    try {
+      final parts = path.split('/');
+      if (parts.length < 3) return false;
+      final volName = parts[2];
+      if (volName.isEmpty) return false;
+      final volDir = Directory('/Volumes');
+      if (!volDir.existsSync()) return false;
+      final mounted = volDir.listSync().map((e) => p.basename(e.path)).toSet();
+      return mounted.contains(volName);
+    } catch (_) {
+      return false;
+    }
+  }
+
   static (String name, String path) decodeClaudeDir(String dirName) {
     var raw = dirName.trim();
     if (raw.startsWith('-')) {
@@ -106,7 +123,7 @@ class ToolDiscoveryService {
           final dirName = p.basename(entity.path);
           final (projName, realPath) = decodeClaudeDir(dirName);
           final cleanRealPath = cleanPath(realPath);
-          if (cleanRealPath.isNotEmpty && seenPaths.add(cleanRealPath)) {
+          if (cleanRealPath.isNotEmpty && isVolumeMountedOnMac(cleanRealPath) && seenPaths.add(cleanRealPath)) {
             if (!isInvalidProjectName(projName)) {
               projects.add(DiscoveredProject(
                 name: projName,
@@ -150,7 +167,7 @@ class ToolDiscoveryService {
                 final rootPaths = entry['rootPaths'] as List? ?? [];
                 for (final r in rootPaths) {
                   final pathStr = cleanPath(r.toString());
-                  if (pathStr.isNotEmpty && seenPaths.add(pathStr)) {
+                  if (pathStr.isNotEmpty && isVolumeMountedOnMac(pathStr) && seenPaths.add(pathStr)) {
                     final projName = name.isNotEmpty ? name : p.basename(pathStr);
                     if (!isInvalidProjectName(projName)) {
                       projects.add(DiscoveredProject(
@@ -171,7 +188,7 @@ class ToolDiscoveryService {
           ];
           for (final r in roots) {
             final pathStr = cleanPath(r.toString());
-            if (pathStr.isNotEmpty && seenPaths.add(pathStr)) {
+            if (pathStr.isNotEmpty && isVolumeMountedOnMac(pathStr) && seenPaths.add(pathStr)) {
               final projName = p.basename(pathStr);
               if (!isInvalidProjectName(projName)) {
                 projects.add(DiscoveredProject(
@@ -211,7 +228,7 @@ class ToolDiscoveryService {
 
     void addPath(String rawUri) {
       final cleaned = cleanPath(rawUri);
-      if (cleaned.isNotEmpty && !isInvalidProjectName(p.basename(cleaned))) {
+      if (cleaned.isNotEmpty && isVolumeMountedOnMac(cleaned) && !isInvalidProjectName(p.basename(cleaned))) {
         final lower = cleaned.toLowerCase();
         if (lower.contains('/.gemini/antigravity/playground/') ||
             lower.contains(r'\.gemini\antigravity\playground\') ||

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:path/path.dart' as p;
 
 import '../models/collector_config.dart';
 import '../models/task_message.dart';
@@ -15,6 +16,7 @@ class WsTaskClient {
   WebSocket? _ws;
   Timer? _pingTimer;
   final Map<String, Process> _runningTasks = {};
+  final Map<String, StringBuffer> _activeStdoutBuffers = {};
 
   WsTaskClient({
     required this.config,
@@ -55,6 +57,7 @@ class WsTaskClient {
       _killTaskProcess(entry.value);
     }
     _runningTasks.clear();
+    _activeStdoutBuffers.clear();
   }
 
   /// Start persistent connection loop with automatic reconnect.
@@ -136,6 +139,15 @@ class WsTaskClient {
                     proc.stdin.writeln(input);
                     unawaited(proc.stdin.flush());
                     _log('Forwarded input to task $taskId: $input');
+
+                    // Echo input to stream and active buffer so user sees immediate terminal feedback
+                    final echoMsg = '\n[输入] $input\n';
+                    _activeStdoutBuffers[taskId]?.write(echoMsg);
+                    _sendJson(TaskChunk(
+                      taskId: taskId,
+                      stream: 'stdout',
+                      text: echoMsg,
+                    ).toJson());
                   } catch (e) {
                     _log('Failed to write input to task $taskId: $e');
                   }
@@ -395,6 +407,23 @@ class WsTaskClient {
     return null;
   }
 
+  /// On macOS, check if /Volumes/<name> is currently mounted to avoid triggering TCC network volume prompts.
+  static bool isVolumeMountedOnMac(String path) {
+    if (!Platform.isMacOS || !path.startsWith('/Volumes/')) return true;
+    try {
+      final parts = path.split('/');
+      if (parts.length < 3) return false;
+      final volName = parts[2];
+      if (volName.isEmpty) return false;
+      final volDir = Directory('/Volumes');
+      if (!volDir.existsSync()) return false;
+      final mounted = volDir.listSync().map((e) => p.basename(e.path)).toSet();
+      return mounted.contains(volName);
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<String?> _resolveWorkingDir(String? rawCwd, Map<String, dynamic> payload) async {
     String? candidate = rawCwd?.trim();
     final home = Platform.environment['HOME'] ?? Platform.environment['USERPROFILE'];
@@ -403,11 +432,16 @@ class WsTaskClient {
       if (candidate.startsWith('~') && home != null) {
         candidate = candidate.replaceFirst('~', home);
       }
-      try {
-        if (await Directory(candidate).exists()) {
-          return candidate;
-        }
-      } catch (_) {}
+      if (Platform.isMacOS && candidate.startsWith('/Volumes/') && !isVolumeMountedOnMac(candidate)) {
+        _log('Skipping unmounted macOS volume path: $candidate');
+        candidate = null;
+      } else {
+        try {
+          if (await Directory(candidate).exists()) {
+            return candidate;
+          }
+        } catch (_) {}
+      }
     }
 
     // Candidate does not exist directly on this machine (e.g. cross-platform Windows path on Mac or vice versa)
@@ -566,6 +600,7 @@ class WsTaskClient {
 
     final stdoutBuf = StringBuffer();
     final stderrBuf = StringBuffer();
+    _activeStdoutBuffers[taskId] = stdoutBuf;
     Process? proc;
 
     try {
@@ -580,11 +615,6 @@ class WsTaskClient {
         runInShell: useShell,
       );
       _runningTasks[taskId] = proc;
-      if (action != 'shell') {
-        try {
-          await proc.stdin.close();
-        } catch (_) {}
-      }
 
       const decoder = Utf8Decoder(allowMalformed: true);
 
@@ -809,9 +839,10 @@ class WsTaskClient {
         error: 'Execution failed to start: $e',
       ).toJson());
     } finally {
+      _activeStdoutBuffers.remove(taskId);
       final active = _runningTasks.remove(taskId);
       try {
-        active?.stdin.close();
+        await active?.stdin.close();
       } catch (_) {}
     }
   }

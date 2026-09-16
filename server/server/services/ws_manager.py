@@ -22,6 +22,8 @@ class DeviceConnectionManager:
         self._connections: dict[str, WebSocket] = {}
         # task_id (str) -> asyncio.Queue
         self._task_queues: dict[str, asyncio.Queue] = {}
+        # task_id (str) -> WebSocket (exact active connection running this task)
+        self._task_connections: dict[str, WebSocket] = {}
 
     def register(self, device_id: str, ws: WebSocket) -> None:
         self._connections[device_id] = ws
@@ -33,6 +35,9 @@ class DeviceConnectionManager:
             keys_to_remove = [k for k, v in self._connections.items() if v is target_ws]
             for k in keys_to_remove:
                 self._connections.pop(k, None)
+            task_keys_to_remove = [k for k, v in self._task_connections.items() if v is target_ws]
+            for k in task_keys_to_remove:
+                self._task_connections.pop(k, None)
         else:
             self._connections.pop(device_id, None)
         logger.info("Device disconnected from WebSocket: %s", device_id)
@@ -50,7 +55,10 @@ class DeviceConnectionManager:
                 "type": "task_dispatch",
                 "task": task,
             })
-            logger.info("Dispatched task %s to %s via WebSocket", task.get("id"), device_id)
+            tid = str(task.get("id") or "")
+            if tid:
+                self._task_connections[tid] = ws
+            logger.info("Dispatched task %s to %s via WebSocket", tid, device_id)
             return True
         except Exception as e:
             logger.warning("Failed to dispatch task to %s via WebSocket: %s", device_id, e)
@@ -59,35 +67,39 @@ class DeviceConnectionManager:
 
     async def send_cancel(self, device_id: str, task_id: str) -> bool:
         """Send cancellation frame to the device to kill the running subprocess."""
-        ws = self._connections.get(device_id)
+        tid = str(task_id)
+        ws = self._task_connections.get(tid) or self._connections.get(device_id)
         if not ws:
+            logger.warning("Cannot cancel task %s: no WebSocket connection found for device %s or task", tid, device_id)
             return False
         try:
             await ws.send_json({
                 "type": "task_cancel",
-                "task_id": str(task_id),
+                "task_id": tid,
             })
-            logger.info("Sent task_cancel for %s to %s via WebSocket", task_id, device_id)
+            logger.info("Sent task_cancel for %s to device via WebSocket", tid)
             return True
         except Exception as e:
-            logger.warning("Failed to send cancel for %s via WebSocket: %s", task_id, e)
+            logger.warning("Failed to send cancel for %s via WebSocket: %s", tid, e)
             return False
 
     async def send_input(self, device_id: str, task_id: str, input_text: str) -> bool:
         """Send input frame to the device to forward stdin into the running subprocess."""
-        ws = self._connections.get(device_id)
+        tid = str(task_id)
+        ws = self._task_connections.get(tid) or self._connections.get(device_id)
         if not ws:
+            logger.warning("Cannot forward input to task %s: no WebSocket connection found for device %s or task", tid, device_id)
             return False
         try:
             await ws.send_json({
                 "type": "task_input",
-                "task_id": str(task_id),
+                "task_id": tid,
                 "input": str(input_text),
             })
-            logger.info("Sent task_input for %s to %s via WebSocket", task_id, device_id)
+            logger.info("Sent task_input for %s via WebSocket: %s", tid, input_text)
             return True
         except Exception as e:
-            logger.warning("Failed to send input for %s via WebSocket: %s", task_id, e)
+            logger.warning("Failed to send input for %s via WebSocket: %s", tid, e)
             return False
 
     def subscribe_task(self, task_id: str) -> asyncio.Queue:
@@ -98,6 +110,7 @@ class DeviceConnectionManager:
 
     def unsubscribe_task(self, task_id: str) -> None:
         self._task_queues.pop(task_id, None)
+        self._task_connections.pop(task_id, None)
 
     def push_chunk(self, task_id: str, stream: str, text: str) -> None:
         q = self._task_queues.get(task_id)
@@ -125,6 +138,7 @@ class DeviceConnectionManager:
                 pass
 
     def push_finished(self, task_id: str, result: dict[str, Any]) -> None:
+        self._task_connections.pop(task_id, None)
         q = self._task_queues.get(task_id)
         if q:
             try:
