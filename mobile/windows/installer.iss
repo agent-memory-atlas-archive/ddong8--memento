@@ -1,7 +1,7 @@
 ; Inno Setup Script for Memento Windows Client
 #define MyAppName "Memento"
 #ifndef MyAppVersion
-  #define MyAppVersion "1.0.9"
+  #define MyAppVersion "1.0.10"
 #endif
 #define MyAppPublisher "Memento"
 #define MyAppURL "https://github.com/ddong8/memento"

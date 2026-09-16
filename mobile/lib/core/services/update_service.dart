@@ -7,7 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../storage.dart';
 
 /// Current application version
-const String kAppCurrentVersion = '1.0.9';
+const String kAppCurrentVersion = '1.0.10';
 
 class UpdateInfo {
   final String version;
@@ -194,30 +194,43 @@ class UpdateService {
       final aSize = (raw['size'] is int) ? raw['size'] as int : null;
 
       if (Platform.isWindows) {
-        if (aName.endsWith('.zip') || aName.endsWith('.exe') || aName.endsWith('.msi')) {
-          downloadUrl = aUrl;
-          assetName = raw['name']?.toString();
-          assetSize = aSize;
-          break;
+        if (aName.contains('win') || aName.contains('windows')) {
+          // Prefer .zip for fastest in-place hot auto-update; fallback to .exe
+          if (aName.endsWith('.zip')) {
+            downloadUrl = aUrl;
+            assetName = raw['name']?.toString();
+            assetSize = aSize;
+            break;
+          } else if ((aName.endsWith('.exe') || aName.endsWith('.msi')) && downloadUrl == null) {
+            downloadUrl = aUrl;
+            assetName = raw['name']?.toString();
+            assetSize = aSize;
+          }
         }
       } else if (Platform.isMacOS) {
         // Prefer .zip for fastest in-place hot auto-update; fallback to .dmg
-        if (aName.contains('mac') && aName.endsWith('.zip')) {
+        if ((aName.contains('mac') || aName.contains('darwin')) && aName.endsWith('.zip')) {
           downloadUrl = aUrl;
           assetName = raw['name']?.toString();
           assetSize = aSize;
           break;
-        } else if (aName.endsWith('.dmg') && downloadUrl == null) {
+        } else if ((aName.contains('mac') || aName.contains('darwin')) && aName.endsWith('.dmg') && downloadUrl == null) {
           downloadUrl = aUrl;
           assetName = raw['name']?.toString();
           assetSize = aSize;
         }
       } else if (Platform.isLinux) {
-        if (aName.endsWith('.appimage') || aName.endsWith('.deb') || aName.endsWith('.tar.gz')) {
-          downloadUrl = aUrl;
-          assetName = raw['name']?.toString();
-          assetSize = aSize;
-          break;
+        if (aName.contains('linux')) {
+          if (aName.endsWith('.tar.gz') || aName.endsWith('.appimage')) {
+            downloadUrl = aUrl;
+            assetName = raw['name']?.toString();
+            assetSize = aSize;
+            break;
+          } else if (aName.endsWith('.deb') && downloadUrl == null) {
+            downloadUrl = aUrl;
+            assetName = raw['name']?.toString();
+            assetSize = aSize;
+          }
         }
       }
     }
@@ -509,6 +522,17 @@ rm -f "\$0"
       final currentExe = Platform.resolvedExecutable;
       final appDir = p.dirname(currentExe);
       final currentPid = pid;
+
+      if (Platform.isWindows) {
+        final expectedExeName = p.basename(currentExe).toLowerCase();
+        final hasValidExe = Directory(sourceDir)
+            .listSync(recursive: true)
+            .any((f) => f.path.toLowerCase().endsWith(expectedExeName) || f.path.toLowerCase().endsWith('.exe'));
+        if (!hasValidExe) {
+          debugPrint('[UpdateService] Extracted package does not contain $expectedExeName! Aborting invalid hot-swap.');
+          return false;
+        }
+      }
 
       debugPrint('[UpdateService] Ready to hot-swap. Source: $sourceDir, AppDir: $appDir, PID: $currentPid');
 
