@@ -98,8 +98,14 @@ class UpdateService {
           publishedAt = DateTime.tryParse(data['published_at'].toString());
         }
 
-        // If server says no update or not hosted
-        if (!hasUpdate && downloadUrl == null && (latestVersion.isEmpty || latestVersion == kAppCurrentVersion)) {
+        // If server indicates update available but has no download url and no asset, fallback to GitHub
+        if (hasUpdate && (downloadUrl == null || downloadUrl.isEmpty)) {
+          debugPrint('[UpdateService] Server reported update but missing downloadUrl, falling back to GitHub');
+          return null;
+        }
+
+        // If server says no update
+        if (!hasUpdate && downloadUrl == null) {
           // If server explicitly confirms current version is up to date
           if (latestVersion == kAppCurrentVersion) {
             return UpdateInfo(
@@ -114,8 +120,11 @@ class UpdateService {
               isFromCustomServer: true,
             );
           }
-          // Server does not host updates, return null to fallback to GitHub
-          return null;
+          // If server data is stale (version older than client) or not hosted, fallback to GitHub
+          if (latestVersion.isEmpty || isNewerVersion(kAppCurrentVersion, latestVersion)) {
+            debugPrint('[UpdateService] Server version ($latestVersion) is older than client ($kAppCurrentVersion) or empty, falling back to GitHub');
+            return null;
+          }
         }
 
         return UpdateInfo(

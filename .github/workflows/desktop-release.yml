@@ -246,3 +246,77 @@ jobs:
             dist/windows-release/*
             dist/macos-release/*
             dist/linux-release/*
+
+      - name: Checkout repo for version metadata update
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Update data/updates/version.json
+        run: |
+          TAG="${{ steps.release_meta.outputs.tag }}"
+          VER="${TAG#v}"
+          python3 -c "
+          import json, os, glob
+          from pathlib import Path
+
+          ver_file = Path('data/updates/version.json')
+          ver_file.parent.mkdir(parents=True, exist_ok=True)
+          meta = {}
+          if ver_file.exists():
+              try:
+                  with open(ver_file, 'r', encoding='utf-8') as f:
+                      meta = json.load(f)
+              except Exception:
+                  meta = {}
+
+          meta['version'] = '$VER'
+          meta['title'] = f'Memento v$VER'
+          if 'platforms' not in meta:
+              meta['platforms'] = {}
+
+          # Find windows asset (prefer .zip for hot-update)
+          for p in glob.glob('dist/windows-release/*'):
+              fn = os.path.basename(p)
+              if fn.endswith('.zip'):
+                  meta['platforms']['windows'] = {'asset_name': fn, 'size': os.path.getsize(p)}
+                  break
+
+          # Find macos asset (prefer .zip for hot-update, fallback .dmg)
+          for p in glob.glob('dist/macos-release/*'):
+              fn = os.path.basename(p)
+              if fn.endswith('.zip') or fn.endswith('.dmg'):
+                  meta['platforms']['macos'] = {'asset_name': fn, 'size': os.path.getsize(p)}
+                  if fn.endswith('.zip'):
+                      break
+
+          # Find linux asset (prefer .tar.gz, fallback .deb)
+          for p in glob.glob('dist/linux-release/*'):
+              fn = os.path.basename(p)
+              if fn.endswith('.tar.gz') or fn.endswith('.zip') or fn.endswith('.deb'):
+                  meta['platforms']['linux'] = {'asset_name': fn, 'size': os.path.getsize(p)}
+                  if fn.endswith('.tar.gz'):
+                      break
+
+          with open(ver_file, 'w', encoding='utf-8') as f:
+              json.dump(meta, f, ensure_ascii=False, indent=2)
+          "
+
+      - name: Commit and push updated version metadata
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add data/updates/version.json
+          if git diff --cached --quiet; then
+            echo "Version metadata unchanged, skipping commit."
+          else
+            git commit -m "ci(release): bump update distribution metadata to ${{ steps.release_meta.outputs.tag }} [skip ci]"
+            for i in 1 2 3; do
+              if git pull --rebase origin main && git push origin main; then
+                echo "Successfully updated version.json"
+                break
+              fi
+              sleep 3
+            done
+          fi
+

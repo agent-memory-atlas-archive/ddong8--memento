@@ -23,6 +23,7 @@ on:
       - "server/**"
       - "mcp_server/**"
       - "web/**"
+      - "data/updates/**"
       - ".github/workflows/deploy.yml"
   workflow_dispatch:
 
