@@ -10,6 +10,7 @@ import '../../state/collector_state.dart';
 import '../../collector/models/collector_config.dart';
 import '../../collector/services/autostart_service.dart';
 import '../../core/services/update_service.dart';
+import '../../core/services/windows_registry_service.dart';
 import '../widgets/update_dialog.dart';
 import 'ask_screen.dart';
 import 'daily_screen.dart';
@@ -36,6 +37,8 @@ class _ShellScreenState extends ConsumerState<ShellScreen> with WidgetsBindingOb
       _autoStartCollectorIfDesktop();
       // Auto-heal autostart path if previously pointing to stale executables
       AutostartService.ensureCorrectPath();
+      // Register in Windows "Installed apps" with uninstaller support
+      WindowsRegistryService.register();
       // Check for app updates in background after startup
       Future.delayed(const Duration(seconds: 4), () {
         if (!mounted) return;
