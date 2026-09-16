@@ -89,6 +89,16 @@ class ApiClient {
     return response.data as Map<String, dynamic>;
   }
 
+  Future<Map<String, dynamic>> refreshToken() async {
+    final response = await _dio.post('/api/auth/refresh');
+    final data = response.data as Map<String, dynamic>;
+    final token = data['access_token'] ?? data['token'];
+    if (token != null && token.toString().isNotEmpty) {
+      await AppStorage.setToken(token.toString());
+    }
+    return data;
+  }
+
   // --- Devices ---
 
   Future<List<Map<String, dynamic>>> getDevices() async {

@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/api_client.dart';
 import '../core/storage.dart';
@@ -36,12 +37,11 @@ class AuthState {
 
 class AuthNotifier extends StateNotifier<AuthState> {
   AuthNotifier()
-      : super(AuthState(serverUrl: AppStorage.defaultServerUrl)) {
+      : super(AuthState(serverUrl: AppStorage.defaultServerUrl, isLoading: true)) {
     checkInitialAuth();
   }
 
   Future<void> checkInitialAuth() async {
-    state = state.copyWith(isLoading: true);
     final serverUrl = await AppStorage.getServerUrl();
     final token = await AppStorage.getToken();
     final username = await AppStorage.getUsername();
@@ -49,6 +49,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
     if (token != null && token.isNotEmpty) {
       try {
         await ApiClient().getMe();
+        // Slide token forward silently
+        ApiClient().refreshToken().catchError((_) => {});
         state = state.copyWith(
           isLoading: false,
           isAuthenticated: true,
@@ -56,9 +58,36 @@ class AuthNotifier extends StateNotifier<AuthState> {
           serverUrl: serverUrl,
         );
         return;
+      } on DioException catch (e) {
+        // ONLY clear session if server explicitly returned HTTP 401 Unauthorized
+        if (e.response?.statusCode == 401) {
+          await AppStorage.clearSession();
+          state = state.copyWith(
+            isLoading: false,
+            isAuthenticated: false,
+            serverUrl: serverUrl,
+          );
+          return;
+        } else {
+          // Network error, DNS resolution after reboot, server starting up, or offline:
+          // NEVER clear session! Stay logged in with saved token and username.
+          state = state.copyWith(
+            isLoading: false,
+            isAuthenticated: true,
+            username: username,
+            serverUrl: serverUrl,
+          );
+          return;
+        }
       } catch (_) {
-        // Token invalid
-        await AppStorage.clearSession();
+        // Any non-auth error -> stay logged in!
+        state = state.copyWith(
+          isLoading: false,
+          isAuthenticated: true,
+          username: username,
+          serverUrl: serverUrl,
+        );
+        return;
       }
     }
 
