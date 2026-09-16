@@ -117,40 +117,84 @@ async def list_projects(
 
         # Auto-heal machine_id on documents where machine_id is NULL
         all_machines = (await db.execute(select(Machine))).scalars().all()
-        mac_mini_m = next((m for m in all_machines if "mac-mini" in m.name.lower() or "mini" in m.name.lower()), None)
-        macbook_m = next((m for m in all_machines if "macbook" in m.name.lower()), None)
-        win_m = next((m for m in all_machines if "windows" in m.name.lower()), None)
+        mac_mini_m = next((m for m in all_machines if "mac-mini" in (m.name or "").lower() or "mini" in (m.name or "").lower()), None)
+        macbook_m = next((m for m in all_machines if "macbook" in (m.name or "").lower()), None)
+        win_m = next((m for m in all_machines if "windows" in (m.name or "").lower()), None)
 
-        null_docs = (await db.execute(
-            select(Document).where(Document.machine_id.is_(None)).limit(5000)
-        )).scalars().all()
-        for doc in null_docs:
-            p_path = (
-                (doc.metadata_ or {}).get("project_path")
-                or doc.relative_path
-                or ""
-            ).lower()
-            if "haixingdong" in p_path and mac_mini_m:
-                doc.machine_id = mac_mini_m.id
-                has_changes = True
-            elif "donghaixing" in p_path and macbook_m:
-                doc.machine_id = macbook_m.id
-                has_changes = True
-            elif ("admin" in p_path or ":/" in p_path or ":\\" in p_path) and win_m:
-                doc.machine_id = win_m.id
-                has_changes = True
+        if mac_mini_m:
+            await db.execute(
+                update(Document)
+                .where(
+                    Document.machine_id.is_(None),
+                    or_(
+                        Document.relative_path.ilike("%haixingdong%"),
+                        Document.metadata_["project_path"].astext.ilike("%haixingdong%"),
+                    ),
+                )
+                .values(machine_id=mac_mini_m.id)
+            )
+            has_changes = True
+        if macbook_m:
+            await db.execute(
+                update(Document)
+                .where(
+                    Document.machine_id.is_(None),
+                    or_(
+                        Document.relative_path.ilike("%donghaixing%"),
+                        Document.metadata_["project_path"].astext.ilike("%donghaixing%"),
+                    ),
+                )
+                .values(machine_id=macbook_m.id)
+            )
+            has_changes = True
+        if win_m:
+            await db.execute(
+                update(Document)
+                .where(
+                    Document.machine_id.is_(None),
+                    or_(
+                        Document.relative_path.ilike("%users-admin%"),
+                        Document.metadata_["project_path"].astext.ilike("%users/admin%"),
+                        Document.metadata_["project_path"].astext.ilike("%d:/%"),
+                        Document.metadata_["project_path"].astext.ilike("%c:/%"),
+                    ),
+                )
+                .values(machine_id=win_m.id)
+            )
+            has_changes = True
 
         if has_changes:
             await db.commit()
-    except Exception:
-        pass
+    except Exception as exc:
+        import traceback
+        print(f"[Projects API] Consolidation error: {exc}\n{traceback.format_exc()}")
 
     # Single query: projects LEFT JOIN documents, GROUP BY, count documents
     doc_count_col = func.count(Document.id).label("doc_count")
     local_path_col = func.max(Document.metadata_["project_path"].astext).label("local_path")
     join_cond = Document.project_id == Project.id
     if target_mid is not None:
-        join_cond = join_cond & (Document.machine_id == target_mid)
+        if target_machine and "mac-mini" in (target_machine.name or "").lower():
+            join_cond = join_cond & (
+                (Document.machine_id == target_mid)
+                | Document.relative_path.ilike("%haixingdong%")
+                | Document.metadata_["project_path"].astext.ilike("%haixingdong%")
+            )
+        elif target_machine and "macbook" in (target_machine.name or "").lower():
+            join_cond = join_cond & (
+                (Document.machine_id == target_mid)
+                | Document.relative_path.ilike("%donghaixing%")
+                | Document.metadata_["project_path"].astext.ilike("%donghaixing%")
+            )
+        elif target_machine and "windows" in (target_machine.name or "").lower():
+            join_cond = join_cond & (
+                (Document.machine_id == target_mid)
+                | Document.metadata_["project_path"].astext.ilike("%d:/%")
+                | Document.metadata_["project_path"].astext.ilike("%c:/%")
+                | Document.relative_path.ilike("%users-admin%")
+            )
+        else:
+            join_cond = join_cond & (Document.machine_id == target_mid)
     elif mids is not None:
         join_cond = join_cond & Document.machine_id.in_(mids)
 
