@@ -615,6 +615,9 @@ class WsTaskClient {
         runInShell: useShell,
       );
       _runningTasks[taskId] = proc;
+      try {
+        await proc.stdin.close();
+      } catch (_) {}
 
       const decoder = Utf8Decoder(allowMalformed: true);
 
