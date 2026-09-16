@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db.models import (
     ConversationMessage, Document, KnowledgeEntity, KnowledgeObservation,
-    KnowledgeRelation, Project, Tool, User,
+    KnowledgeRelation, Machine, Project, Tool, User,
 )
 from ..db.session import get_db
 from ..middleware.auth import get_current_user
@@ -21,7 +21,8 @@ from ..services.conversation_parser import parse_conversation
 from ..services.user_filter import user_machine_ids, apply_user_filter, find_machine_by_id_or_hash
 from ..services.ingest_service import (
     _clean_source_path, _is_junk_or_uuid_title, _title_from_user_messages,
-    _prettify_project_name, _is_invalid_project_name,
+    _prettify_project_name, _is_invalid_project_name, ensure_project,
+    _IGNORE_PROJECT_NAMES,
 )
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
@@ -46,12 +47,17 @@ async def list_projects(
 
     # Auto-consolidate fragmented projects & purge invalid projects (e.g. codex/file:)
     try:
-        from ..services.ingest_service import _IGNORE_PROJECT_NAMES
         all_projects = (await db.execute(select(Project))).scalars().all()
         has_changes = False
         for p in all_projects:
             raw_name = p.slug.split("/")[-1] if "/" in p.slug else p.slug
-            if _is_invalid_project_name(raw_name) or _is_invalid_project_name(p.title):
+            if (
+                _is_invalid_project_name(raw_name)
+                or _is_invalid_project_name(p.title)
+                or p.title in _IGNORE_PROJECT_NAMES
+                or p.title.strip("-_./\\\"'` ") == ""
+                or raw_name.strip("-_./\\\"'` ") == ""
+            ):
                 # Unassign orphaned documents
                 await db.execute(
                     update(Document).where(Document.project_id == p.id).values(project_id=None)
@@ -108,6 +114,33 @@ async def list_projects(
                     if canon:
                         od.project_id = canon.id
                         has_changes = True
+
+        # Auto-heal machine_id on documents where machine_id is NULL
+        all_machines = (await db.execute(select(Machine))).scalars().all()
+        null_docs = (await db.execute(
+            select(Document).where(Document.machine_id.is_(None)).limit(3000)
+        )).scalars().all()
+        for doc in null_docs:
+            p_path = (
+                (doc.metadata_ or {}).get("project_path")
+                or doc.relative_path
+                or ""
+            )
+            for m in all_machines:
+                m_name = m.name.lower()
+                if "/haixingdong/" in p_path and "mac-mini" in m_name:
+                    doc.machine_id = m.id
+                    has_changes = True
+                    break
+                elif "/donghaixing/" in p_path and "macbook" in m_name:
+                    doc.machine_id = m.id
+                    has_changes = True
+                    break
+                elif (":/" in p_path or ":\\" in p_path or "/users/admin" in p_path.lower() or "d:/dev" in p_path.lower()) and "windows" in m_name:
+                    doc.machine_id = m.id
+                    has_changes = True
+                    break
+
         if has_changes:
             await db.commit()
     except Exception:
@@ -142,7 +175,7 @@ async def list_projects(
     result = await db.execute(query)
     rows = result.all()
 
-    return [
+    items = [
         {
             "id": str(p.id),
             "slug": p.slug,
@@ -156,6 +189,54 @@ async def list_projects(
         }
         for p, count, local_path in rows
     ]
+
+    # Incorporate discovered projects for target machine that may not have synced conversations yet
+    if target_mid is not None:
+        disc_doc = (await db.execute(
+            select(Document).where(
+                Document.tool_id == "system",
+                Document.category == "discovery",
+                Document.machine_id == target_mid,
+            ).order_by(Document.synced_at.desc()).limit(1)
+        )).scalar_one_or_none()
+        if disc_doc and disc_doc.content:
+            try:
+                tools_map = json.loads(disc_doc.content)
+                target_tools = [tool_id] if tool_id else list(tools_map.keys())
+                existing_slugs = {item["slug"] for item in items}
+                for t in target_tools:
+                    tool_info = tools_map.get(t, {})
+                    for p_entry in tool_info.get("projects", []):
+                        if not isinstance(p_entry, dict):
+                            continue
+                        p_name = p_entry.get("name") or (p_entry.get("path") or "").replace("\\", "/").rstrip("/").split("/")[-1]
+                        p_path = p_entry.get("path")
+                        if not p_name:
+                            continue
+                        clean_name = _prettify_project_name(p_name).strip("-\"'` ")
+                        if not clean_name or _is_invalid_project_name(clean_name):
+                            continue
+                        c_slug = f"{t}/{clean_name}"
+                        if c_slug in existing_slugs:
+                            continue
+                        # Ensure project exists
+                        proj_obj = await ensure_project(db, t, clean_name, source_path=p_path)
+                        existing_slugs.add(c_slug)
+                        items.append({
+                            "id": str(proj_obj.id),
+                            "slug": proj_obj.slug,
+                            "title": proj_obj.title,
+                            "tool_id": proj_obj.tool_id,
+                            "source_path": _clean_source_path(p_path or proj_obj.source_path),
+                            "visibility": proj_obj.visibility,
+                            "document_count": 0,
+                            "created_at": proj_obj.created_at.isoformat() if proj_obj.created_at else None,
+                            "updated_at": proj_obj.updated_at.isoformat() if proj_obj.updated_at else None,
+                        })
+            except Exception:
+                pass
+
+    return items
 
 
 @router.get("/{project_id}")

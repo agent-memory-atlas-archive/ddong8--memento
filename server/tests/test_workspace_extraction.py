@@ -99,4 +99,14 @@ def test_strips_quotes_from_project_name_and_path():
     assert _clean_source_path('file:///D:/dev/dataset-platform"') == "D:/dev/dataset-platform"
 
 
+def test_rejects_hyphen_and_empty_project_names():
+    from server.services.ingest_service import _is_invalid_project_name, _prettify_project_name
 
+    assert _is_invalid_project_name("-") is True
+    assert _is_invalid_project_name("--") is True
+    assert _is_invalid_project_name("---") is True
+    assert _is_invalid_project_name("...") is True
+    assert _is_invalid_project_name("   -  ") is True
+    assert _is_invalid_project_name("none") is True
+    assert _is_invalid_project_name("null") is True
+    assert _is_invalid_project_name("memento") is False

@@ -231,22 +231,36 @@ async def ingest_discovery(
     machine = await ensure_device(db, device_id, req.get("device_name", ""), req.get("platform", ""), user_id=_collector_user.id)
 
     # Clean up paths in discovery data (URL decode, strip \\?\)
+    import hashlib
     from urllib.parse import unquote
     import re as _re
+    from ..services.ingest_service import ensure_project, _is_invalid_project_name, _prettify_project_name
+
     tools_data = req.get("tools", {})
-    for tool_info in tools_data.values():
+    for t_id, tool_info in tools_data.items():
         if isinstance(tool_info, dict):
             if "root" in tool_info:
                 tool_info["root"] = _re.sub(r"^\\\\?\?\\", "", unquote(tool_info["root"]))
             for proj in tool_info.get("projects", []):
-                if "path" in proj:
-                    proj["path"] = _re.sub(r"^\\\\?\?\\", "", unquote(proj["path"]))
+                if isinstance(proj, dict):
+                    if "path" in proj:
+                        proj["path"] = _re.sub(r"^\\\\?\?\\", "", unquote(proj["path"]))
+                    p_name = proj.get("name") or (proj.get("path") or "").replace("\\", "/").rstrip("/").split("/")[-1]
+                    p_path = proj.get("path")
+                    if p_name:
+                        clean_name = _prettify_project_name(p_name)
+                        if clean_name and not _is_invalid_project_name(clean_name):
+                            try:
+                                await ensure_project(db, t_id, clean_name, source_path=p_path)
+                            except Exception:
+                                pass
 
     discovery_content = json.dumps(tools_data, indent=2, ensure_ascii=False)
+    content_hash = hashlib.sha256(discovery_content.encode("utf-8")).hexdigest()
     doc = await ingest_file(
         db=db, tool_id="system", category="discovery", content_type="json",
         relative_path=f"discovery/{device_id}.json",
-        content=discovery_content, content_hash=f"discovery-{device_id}",
+        content=discovery_content, content_hash=content_hash,
         file_size=len(discovery_content), mode="full", offset=0,
         metadata={"device_id": device_id, "device_name": req.get("device_name", ""),
                   "platform": req.get("platform", ""), "tool_count": len(req.get("tools", {}))},

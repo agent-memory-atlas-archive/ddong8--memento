@@ -68,14 +68,23 @@ class ToolDiscoveryService {
   }
 
   static bool isInvalidProjectName(String name) {
-    final lower = _stripQuotes(name).toLowerCase();
+    var lower = _stripQuotes(name).toLowerCase();
+    lower = lower.replaceAll(RegExp(r'^[_\-\./\\]+|[_\-\./\\]+$'), '');
     return lower.isEmpty ||
+        lower == '-' ||
+        lower == '--' ||
+        lower == '...' ||
+        lower == 'none' ||
+        lower == 'null' ||
         lower == 'file:' ||
         lower == 'file' ||
         lower == 'untitled' ||
         lower == 'unknown' ||
         lower == 'tmp' ||
-        lower == 'temp';
+        lower == 'temp' ||
+        lower == 'dev' ||
+        lower == 'desktop' ||
+        lower == 'workspace';
   }
 
   /// On macOS, check if /Volumes/<name> is currently mounted to avoid triggering TCC network volume prompts.
@@ -97,10 +106,17 @@ class ToolDiscoveryService {
 
   static (String name, String path) decodeClaudeDir(String dirName) {
     var raw = dirName.trim();
+    if (raw == '-' || raw.replaceAll(RegExp(r'^[_\-]+|[_\-]+$'), '').isEmpty) {
+      return ('', '');
+    }
     if (raw.startsWith('-')) {
       raw = raw.substring(1);
       final decodedPath = '/${raw.replaceAll('-', '/')}';
-      final name = _prettifyProjectName(p.basename(decodedPath));
+      final bName = p.basename(decodedPath);
+      final name = _prettifyProjectName(bName);
+      if (name == '-' || isInvalidProjectName(name)) {
+        return ('', '');
+      }
       return (name, decodedPath);
     }
     final winMatch = RegExp(r'^([a-zA-Z])--?(.+)$').firstMatch(raw);
@@ -111,6 +127,9 @@ class ToolDiscoveryService {
       final parts = rest.split('/');
       var name = parts.isNotEmpty ? parts.last : raw;
       name = _prettifyProjectName(name);
+      if (name == '-' || isInvalidProjectName(name)) {
+        return ('', '');
+      }
       return (name, decodedPath);
     }
     return (raw, raw);
@@ -251,39 +270,51 @@ class ToolDiscoveryService {
             lower.endsWith('.md')) {
           return;
         }
+        try {
+          final dir = Directory(cleaned);
+          if (!dir.existsSync()) return;
+        } catch (_) {
+          return;
+        }
         if (seen.add(cleaned)) {
           paths.add(cleaned);
         }
       }
     }
 
-    // 1. Read storage.json backupWorkspaces
+    // 1. Read storage.json: backupWorkspaces, profileAssociations, and recent items
     final storageFile = File(p.join(globalStorageDir.path, 'storage.json'));
     if (await storageFile.exists()) {
       try {
-        final data = jsonDecode(await storageFile.readAsString());
+        final raw = await storageFile.readAsString();
+        final data = jsonDecode(raw);
         final folders = data['backupWorkspaces']?['folders'] as List? ?? [];
         for (final f in folders) {
           final uri = f['folderUri']?.toString() ?? '';
           if (uri.isNotEmpty) addPath(uri);
         }
+        final profWorkspaces = data['profileAssociations']?['workspaces'] as Map? ?? {};
+        for (final k in profWorkspaces.keys) {
+          addPath(k.toString());
+        }
+        final recentMatches = RegExp(r'"(?:folderUri|path)"\s*:\s*"([^"]+)"').allMatches(raw);
+        for (final m in recentMatches) {
+          final pth = m.group(1);
+          if (pth != null && pth.isNotEmpty) addPath(pth);
+        }
       } catch (_) {}
     }
 
-    // 2. Read state.vscdb for history.recentlyOpenedPathsList & file URIs
+    // 2. Read state.vscdb for folderUri & file URIs across all records
     final vscdbFile = File(p.join(globalStorageDir.path, 'state.vscdb'));
     if (await vscdbFile.exists()) {
       try {
         final bytes = await vscdbFile.readAsBytes();
         final content = utf8.decode(bytes, allowMalformed: true);
-        final keyIdx = content.indexOf('history.recentlyOpenedPathsList');
-        if (keyIdx != -1) {
-          final chunk = content.substring(keyIdx, (keyIdx + 32768 > content.length) ? content.length : keyIdx + 32768);
-          final matches = RegExp(r'"folderUri"\s*:\s*"([^"]+)"').allMatches(chunk);
-          for (final m in matches) {
-            final uri = m.group(1);
-            if (uri != null && uri.isNotEmpty) addPath(uri);
-          }
+        final folderMatches = RegExp(r'"folderUri"\s*:\s*"([^"]+)"').allMatches(content);
+        for (final m in folderMatches) {
+          final uri = m.group(1);
+          if (uri != null && uri.isNotEmpty) addPath(uri);
         }
         final allUris = RegExp(r'file:///[a-zA-Z0-9_%/\.\-]+').allMatches(content);
         for (final m in allUris) {

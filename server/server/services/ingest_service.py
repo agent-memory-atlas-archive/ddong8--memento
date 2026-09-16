@@ -198,8 +198,8 @@ _IGNORE_PATH_DIRS = {
     "subagents", "workflows", "conversations", "logs",
 }
 _IGNORE_PROJECT_NAMES = {
-    "...", "dev", "desktop", "tmp", "temp", "scratch", "projects", "workspace",
-    "file:", "file", "untitled", "unknown",
+    "-", "--", "...", "dev", "desktop", "tmp", "temp", "scratch", "projects", "workspace",
+    "file:", "file", "untitled", "unknown", "none", "null",
 }
 
 
@@ -305,6 +305,10 @@ def _is_invalid_project_name(name: str | None) -> bool:
         return True
     n = str(name).strip().lower()
     if not n or n in _IGNORE_PROJECT_NAMES:
+        return True
+    # Reject strings that are just punctuation/dashes/slashes
+    stripped = n.strip("-_./\\\"'` \t\r\n")
+    if not stripped or stripped in _IGNORE_PROJECT_NAMES:
         return True
     if n.startswith("file:"):
         return True
@@ -482,7 +486,8 @@ async def ingest_file(
         )
     )).scalar_one_or_none()
     if (
-        sync_row is not None
+        category != "discovery"
+        and sync_row is not None
         and sync_row.last_hash == content_hash
         and (mode != "delta" or sync_row.last_offset == offset)
     ):
@@ -496,6 +501,9 @@ async def ingest_file(
             )
         )).scalar_one_or_none()
         if existing_doc is not None:
+            if machine_id and not existing_doc.machine_id:
+                existing_doc.machine_id = machine_id
+                await db.flush()
             new_title = metadata.get("title")
             if new_title:
                 new_title = str(new_title).strip()

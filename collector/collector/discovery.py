@@ -52,10 +52,11 @@ def discover_claude_code() -> dict | None:
     projects_dir = root / "projects"
     if projects_dir.exists():
         for d in projects_dir.iterdir():
-            if d.is_dir() and d.name.startswith("-"):
+            if d.is_dir() and d.name.startswith("-") and d.name.strip("-_") != "":
                 # Decode path: -Users-haixingdong-dev-foo -> /Users/haixingdong/dev/foo
                 decoded = "/" + d.name.lstrip("-").replace("-", "/")
-                info["projects"].append({"path": _clean_path(decoded), "hash": d.name})
+                if decoded.strip("/") != "":
+                    info["projects"].append({"path": _clean_path(decoded), "hash": d.name})
 
     # Config
     config_file = HOME / ".claude.json"
