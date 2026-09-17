@@ -1,7 +1,7 @@
 {
-  "version": "1.0.14",
-  "title": "Memento v1.0.14",
-  "release_notes": "1. 移动端优化：彻底屏蔽 iOS/Android 误触发桌面更新弹窗的问题，iOS 端增加友好的自签与安装指引\n2. 多模态对话支持：支持拍照上传、相册选图、剪贴板截图粘贴与任意文件附件发送\n3. 工作区与设备发现修复：修复 Antigravity 工作区检测及 Mac mini 历史项目完整性恢复\n4. 桌面端鉴权增强：电脑重启后无需重新登录，支持离线静默认证与永久记住登录状态",
+  "version": "1.0.15",
+  "title": "Memento v1.0.15",
+  "release_notes": "1. 跨设备媒体流智能发现：修复 Artifacts 工作台视频在切换/自动设备模式下 404 找不到视频的问题，服务端支持全网关自动发现并中继在线设备视频\n2. iOS Xcode 构建修复：完整集成 CocoaPods 与 libmpv/media_kit 依赖规范，彻底解决 Xcode 编译 Module not found 报错\n3. 移动端优化：彻底屏蔽 iOS/Android 误触发桌面更新弹窗\n4. 多模态对话支持：支持拍照、相册选图、截图与任意文件附件发送",
   "platforms": {
     "windows": {
       "asset_name": "Memento-windows-x64-setup.exe",
