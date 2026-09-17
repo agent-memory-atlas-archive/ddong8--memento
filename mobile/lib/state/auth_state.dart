@@ -50,7 +50,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
       try {
         await ApiClient().getMe();
         // Slide token forward silently
-        ApiClient().refreshToken().catchError((_) => {});
+        ApiClient().refreshToken().catchError((_) => <String, dynamic>{});
         state = state.copyWith(
           isLoading: false,
           isAuthenticated: true,
