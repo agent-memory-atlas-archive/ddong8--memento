@@ -186,7 +186,7 @@ async def list_projects(
                 | Document.relative_path.ilike("%donghaixing%")
                 | Document.metadata_["project_path"].astext.ilike("%donghaixing%")
             )
-        elif target_machine and "windows" in (target_machine.name or "").lower():
+        elif target_machine and any(k in (target_machine.name or "").lower() for k in ("windows", "desktop-", "laptop-", "win-", "admin")):
             join_cond = join_cond & (
                 (Document.machine_id == target_mid)
                 | Document.metadata_["project_path"].astext.ilike("%d:/%")
@@ -718,6 +718,11 @@ async def _reconcile_project_documents(
                 Document.content.ilike(f"%/{clean_title}\"%"),
                 Document.content.ilike(f"%/{clean_title}/%"),
                 Document.content.ilike(f"%/{clean_title}\\n%"),
+                Document.content.ilike(f"%/{clean_title}%"),
+                Document.content.ilike(f"%\\{clean_title}\"%"),
+                Document.content.ilike(f"%\\{clean_title}\\%"),
+                Document.content.ilike(f"%\\\\{clean_title}\"%"),
+                Document.content.ilike(f"%\\\\{clean_title}\\\\%"),
             )
         if frag_ids:
             adopt_cond = adopt_cond | Document.project_id.in_(frag_ids)
@@ -732,13 +737,20 @@ async def _reconcile_project_documents(
             adopt_cond,
         )
         if target_mid is not None:
-            match_docs_q = match_docs_q.where(Document.machine_id == target_mid)
+            match_docs_q = match_docs_q.where(
+                or_(
+                    Document.machine_id == target_mid,
+                    Document.machine_id.is_(None),
+                )
+            )
 
         docs_to_adopt = (await db.execute(match_docs_q)).scalars().all()
         adopted_count = len(docs_to_adopt)
         if docs_to_adopt:
             for doc in docs_to_adopt:
                 doc.project_id = target_project.id
+                if target_mid is not None and doc.machine_id is None:
+                    doc.machine_id = target_mid
             # Also adopt any associated state/plan documents sharing session_id
             adopted_sids = [
                 d.metadata_.get("session_id")
@@ -932,7 +944,42 @@ async def get_project_conversations(
         )
     )
     if target_mid is not None:
-        conv_q = conv_q.where(Document.machine_id == target_mid)
+        if target_machine and any(k in (target_machine.name or "").lower() for k in ("windows", "desktop-", "laptop-", "win-", "admin")):
+            conv_q = conv_q.where(
+                (Document.machine_id == target_mid)
+                | (
+                    Document.machine_id.is_(None)
+                    & (
+                        Document.metadata_["project_path"].astext.ilike("%d:/%")
+                        | Document.metadata_["project_path"].astext.ilike("%c:/%")
+                        | Document.relative_path.ilike("%users-admin%")
+                    )
+                )
+            )
+        elif target_machine and "mac-mini" in (target_machine.name or "").lower():
+            conv_q = conv_q.where(
+                (Document.machine_id == target_mid)
+                | (
+                    Document.machine_id.is_(None)
+                    & (
+                        Document.relative_path.ilike("%haixingdong%")
+                        | Document.metadata_["project_path"].astext.ilike("%haixingdong%")
+                    )
+                )
+            )
+        elif target_machine and "macbook" in (target_machine.name or "").lower():
+            conv_q = conv_q.where(
+                (Document.machine_id == target_mid)
+                | (
+                    Document.machine_id.is_(None)
+                    & (
+                        Document.relative_path.ilike("%donghaixing%")
+                        | Document.metadata_["project_path"].astext.ilike("%donghaixing%")
+                    )
+                )
+            )
+        else:
+            conv_q = conv_q.where(Document.machine_id == target_mid)
     else:
         conv_q = apply_user_filter(conv_q, mids, Document.machine_id)
     if as_of is not None:

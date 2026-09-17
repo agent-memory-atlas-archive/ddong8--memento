@@ -174,6 +174,8 @@ class _AskScreenState extends ConsumerState<AskScreen> {
         } else {
           _cwdController.clear();
         }
+        // Re-fetch sessions strictly for the newly selected device
+        _handleProjectChange(_selectedProjectId);
       }
     } catch (e) {
       debugPrint('Failed to realign projects on device change: $e');
@@ -215,24 +217,6 @@ class _AskScreenState extends ConsumerState<AskScreen> {
         deviceId: dev.selectedDeviceId,
       );
       var rawList = res['sessions'] as List<dynamic>? ?? [];
-
-      // If the selected execution device has no local sessions for this project yet,
-      // gracefully show project-wide historical sessions so the user has full context
-      if (rawList.isEmpty &&
-          dev.selectedDeviceId.isNotEmpty &&
-          dev.selectedDeviceId != 'auto' &&
-          dev.selectedDeviceId != 'all') {
-        try {
-          final allRes = await ApiClient().getProjectConversations(
-            projId,
-            maxMessagesPerSession: 5,
-          );
-          final allList = allRes['sessions'] as List<dynamic>? ?? [];
-          if (allList.isNotEmpty) {
-            rawList = allList;
-          }
-        } catch (_) {}
-      }
 
       if (mounted && _selectedProjectId == projId) {
         setState(() {
@@ -2118,7 +2102,9 @@ class _AskScreenState extends ConsumerState<AskScreen> {
                     isExpanded: true,
                     value: _selectedSessionId,
                     hint: Text(
-                      _loadingSessions ? '⏳ 加载历史会话中...' : '➕ 新建独立会话',
+                      _loadingSessions
+                          ? '⏳ 加载历史会话中...'
+                          : (_sessions.isEmpty ? '➕ 新建独立会话 (该设备暂无历史)' : '➕ 新建独立会话'),
                       style: const TextStyle(fontSize: 11.5, color: AuroraColors.fg2),
                       overflow: TextOverflow.ellipsis,
                     ),
