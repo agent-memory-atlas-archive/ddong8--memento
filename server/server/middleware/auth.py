@@ -7,7 +7,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 import bcrypt
-from fastapi import Depends, Header, HTTPException, status
+from fastapi import Depends, Header, HTTPException, Query, status
 from jose import JWTError, jwt
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -79,6 +79,37 @@ async def get_current_user(
 
     token = authorization[7:]
     payload = decode_token(token)
+    user_id = payload.get("sub")
+    if not user_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token payload")
+
+    result = await db.execute(select(User).where(User.id == uuid.UUID(user_id)))
+    user = result.scalar_one_or_none()
+    if user is None or user.status != "active":
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found or inactive")
+
+    return user
+
+
+async def get_current_user_flexible(
+    authorization: str = Header(None),
+    token_query: str = Query(None, alias="token"),
+    token_bearer: str = Query(None, alias="access_token"),
+    db: AsyncSession = Depends(get_db),
+) -> User:
+    """Extract and validate the current user from Header OR Query param (token/access_token)."""
+    raw_token = None
+    if authorization and authorization.startswith("Bearer "):
+        raw_token = authorization[7:]
+    elif token_query:
+        raw_token = token_query
+    elif token_bearer:
+        raw_token = token_bearer
+
+    if not raw_token:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing authorization")
+
+    payload = decode_token(raw_token)
     user_id = payload.get("sub")
     if not user_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token payload")

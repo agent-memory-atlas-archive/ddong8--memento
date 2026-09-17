@@ -22,6 +22,7 @@ class ArtifactCard extends StatefulWidget {
 
 class _ArtifactCardState extends State<ArtifactCard> {
   String? _serverUrl;
+  String? _token;
   bool _copied = false;
 
   @override
@@ -32,13 +33,17 @@ class _ArtifactCardState extends State<ArtifactCard> {
 
   Future<void> _loadServerUrl() async {
     final url = await AppStorage.getServerUrl();
+    final token = await AppStorage.getToken();
     if (mounted) {
-      setState(() => _serverUrl = url);
+      setState(() {
+        _serverUrl = url;
+        _token = token;
+      });
     }
   }
 
   Future<void> _handlePlayOrOpen() async {
-    final streamUrl = widget.artifact.getStreamUrl(_serverUrl ?? 'https://mem.ihasy.com');
+    final streamUrl = widget.artifact.getStreamUrl(_serverUrl ?? 'https://mem.ihasy.com', token: _token);
     
     // If desktop and workspace callback provided, open directly in side canvas
     if (widget.onOpenWorkspace != null) {

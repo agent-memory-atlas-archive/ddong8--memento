@@ -4,16 +4,16 @@
   "release_notes": "1. 全功能 Agent Artifacts 工作台上线，支持多产物 Tabs 切换、放映厅视窗与外部原生播放器联动\n2. 跨设备媒体流中继代理（HTTP 206 Partial Content），实现 NAS / 远端设备视频秒开与任意拖动进度条\n3. 气泡内嵌富媒体卡片（ArtifactCard）与智能嗅探引擎，自动提取音视频与产物路径\n4. 桌面端支持类似 Claude Artifacts 响应式左右分屏，移动端支持交互式工作台抽屉\n5. 优化 Windows 下划线与连字符项目名去重及超大历史会话拉取性能",
   "platforms": {
     "windows": {
-      "asset_name": "Memento-windows-x64.zip",
-      "size": 13398415
+      "asset_name": "Memento-windows-x64-setup.exe",
+      "size": 11523878
     },
     "macos": {
       "asset_name": "Memento-macos-arm64.dmg",
-      "size": 23403537
+      "size": 23513347
     },
     "linux": {
       "asset_name": "Memento-linux-x64.tar.gz",
-      "size": 11052194
+      "size": 11105662
     }
   }
 }

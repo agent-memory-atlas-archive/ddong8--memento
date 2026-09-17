@@ -204,13 +204,13 @@ class UpdateService {
 
       if (Platform.isWindows) {
         if (aName.contains('win') || aName.contains('windows')) {
-          // Prefer .zip for fastest in-place hot auto-update; fallback to .exe
-          if (aName.endsWith('.zip')) {
+          // Prefer setup.exe for reliable UAC installer upgrade; fallback to .zip
+          if (aName.endsWith('setup.exe') || aName.endsWith('.exe') || aName.endsWith('.msi')) {
             downloadUrl = aUrl;
             assetName = raw['name']?.toString();
             assetSize = aSize;
             break;
-          } else if ((aName.endsWith('.exe') || aName.endsWith('.msi')) && downloadUrl == null) {
+          } else if (aName.endsWith('.zip') && downloadUrl == null) {
             downloadUrl = aUrl;
             assetName = raw['name']?.toString();
             assetSize = aSize;
@@ -575,14 +575,33 @@ if ($TargetPid -gt 0) {
 # Buffer to ensure all file handles (dll, exe) are fully released
 Start-Sleep -Milliseconds 800
 
-# 2. Overwrite files into target app directory
+# 2. Check write permission on target directory
+$testFile = Join-Path $DestDir (".memento_test_" + [Guid]::NewGuid().ToString("N"))
+$hasPermission = $false
+try {
+    [IO.File]::WriteAllText($testFile, "test")
+    if (Test-Path $testFile) {
+        Remove-Item $testFile -Force -ErrorAction SilentlyContinue
+        $hasPermission = $true
+    }
+} catch {
+    $hasPermission = $false
+}
+
+if (-not $hasPermission) {
+    # Relaunch updater with Administrator privileges (UAC prompt) to overwrite Program Files safely
+    Start-Process powershell.exe -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$($MyInvocation.MyCommand.Path)`" 0 `"$SourceDir`" `"$DestDir`" `"$ExePath`""
+    exit 0
+}
+
+# 3. Overwrite files into target app directory
 try {
     Copy-Item -Path "$SourceDir\*" -Destination "$DestDir" -Recurse -Force -ErrorAction Stop
 } catch {
     robocopy "$SourceDir" "$DestDir" /E /IS /IT /NP /R:3 /W:1 *>$null
 }
 
-# 3. Relaunch new version of the application
+# 4. Relaunch new version of the application
 Start-Process -FilePath "$ExePath" -WorkingDirectory "$DestDir"
 
 # 4. Clean up temporary extracted folder and updater scripts

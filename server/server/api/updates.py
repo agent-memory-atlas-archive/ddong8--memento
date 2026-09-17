@@ -93,14 +93,14 @@ def _match_github_asset(assets: list[dict[str, Any]], platform: str) -> dict[str
     plat = platform.lower()
 
     if "win" in plat:
-        # Prefer .zip for fastest in-place update; fallback to .exe
+        # Prefer setup.exe for robust UAC-compliant upgrade; fallback to .zip
         for a in assets:
             name = a.get("name", "").lower()
-            if ("win" in name or "windows" in name) and name.endswith(".zip"):
+            if ("win" in name or "windows" in name) and (name.endswith("setup.exe") or name.endswith(".exe") or name.endswith(".msi")):
                 return a
         for a in assets:
             name = a.get("name", "").lower()
-            if ("win" in name or "windows" in name) and (name.endswith(".exe") or name.endswith(".msi")):
+            if ("win" in name or "windows" in name) and name.endswith(".zip"):
                 return a
 
     elif "mac" in plat or "darwin" in plat:

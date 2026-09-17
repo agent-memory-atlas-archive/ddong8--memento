@@ -26,6 +26,7 @@ class ArtifactsWorkspace extends StatefulWidget {
 class _ArtifactsWorkspaceState extends State<ArtifactsWorkspace> {
   late AgentArtifact _selectedArtifact;
   String? _serverUrl;
+  String? _token;
 
   @override
   void initState() {
@@ -52,13 +53,17 @@ class _ArtifactsWorkspaceState extends State<ArtifactsWorkspace> {
 
   Future<void> _loadServerUrl() async {
     final url = await AppStorage.getServerUrl();
+    final token = await AppStorage.getToken();
     if (mounted) {
-      setState(() => _serverUrl = url);
+      setState(() {
+        _serverUrl = url;
+        _token = token;
+      });
     }
   }
 
   Future<void> _handleLaunchExternal() async {
-    final streamUrl = _selectedArtifact.getStreamUrl(_serverUrl ?? 'https://mem.ihasy.com');
+    final streamUrl = _selectedArtifact.getStreamUrl(_serverUrl ?? 'https://mem.ihasy.com', token: _token);
     final uri = Uri.parse(streamUrl);
     try {
       if (await canLaunchUrl(uri)) {
@@ -73,7 +78,7 @@ class _ArtifactsWorkspaceState extends State<ArtifactsWorkspace> {
   }
 
   void _copyStreamUrl() {
-    final streamUrl = _selectedArtifact.getStreamUrl(_serverUrl ?? 'https://mem.ihasy.com');
+    final streamUrl = _selectedArtifact.getStreamUrl(_serverUrl ?? 'https://mem.ihasy.com', token: _token);
     Clipboard.setData(ClipboardData(text: streamUrl));
     _showFeedback('已复制媒体流 URL');
   }
@@ -91,7 +96,7 @@ class _ArtifactsWorkspaceState extends State<ArtifactsWorkspace> {
   @override
   Widget build(BuildContext context) {
     final a = _selectedArtifact;
-    final streamUrl = a.getStreamUrl(_serverUrl ?? 'https://mem.ihasy.com');
+    final streamUrl = a.getStreamUrl(_serverUrl ?? 'https://mem.ihasy.com', token: _token);
 
     return Container(
       decoration: const BoxDecoration(

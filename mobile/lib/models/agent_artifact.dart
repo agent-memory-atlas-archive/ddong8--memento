@@ -68,14 +68,18 @@ class AgentArtifact {
   });
 
   /// Generate playable or streamable URL via Memento Server media proxy.
-  String getStreamUrl(String serverBaseUrl) {
+  String getStreamUrl(String serverBaseUrl, {String? token}) {
     if (rawPath.startsWith('http://') || rawPath.startsWith('https://')) {
       return rawPath;
     }
     final cleanPath = rawPath.replaceFirst(RegExp(r'^file://'), '');
     final base = serverBaseUrl.replaceAll(RegExp(r'/+$'), '');
     final dev = deviceId != null && deviceId!.isNotEmpty ? deviceId! : 'auto';
-    return '$base/api/devices/$dev/files/stream?path=${Uri.encodeComponent(cleanPath)}';
+    var url = '$base/api/devices/$dev/files/stream?path=${Uri.encodeComponent(cleanPath)}';
+    if (token != null && token.isNotEmpty) {
+      url += '&token=${Uri.encodeComponent(token)}';
+    }
+    return url;
   }
 
   /// Sniff and extract artifacts from agent message turns.

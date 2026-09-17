@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db.models import AccessLog, ConversationMessage, Document, DocumentVersion, Machine, Project, SyncState, User
 from ..db.session import get_db
-from ..middleware.auth import get_current_user
+from ..middleware.auth import get_current_user, get_current_user_flexible
 from ..services.user_filter import user_machine_ids
 
 router = APIRouter(prefix="/api/devices", tags=["devices"])
@@ -397,7 +397,7 @@ async def stream_device_file(
     path: str = Query(..., description="Absolute path on the device or NAS"),
     request: Request = None,
     db: AsyncSession = Depends(get_db),
-    _user: User = Depends(get_current_user),
+    _user: User = Depends(get_current_user_flexible),
 ):
     """Stream a media or artifact file directly from the target device with HTTP 206 Range support."""
     from ..services.user_filter import find_machine_by_id_or_hash, user_machine_ids
