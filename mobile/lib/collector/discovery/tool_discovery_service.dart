@@ -122,10 +122,33 @@ class ToolDiscoveryService {
     final winMatch = RegExp(r'^([a-zA-Z])--?(.+)$').firstMatch(raw);
     if (winMatch != null) {
       final drive = winMatch.group(1)!.toUpperCase();
-      final rest = winMatch.group(2)!.replaceAll('-', '/');
-      final decodedPath = '$drive:/$rest';
-      final parts = rest.split('/');
-      var name = parts.isNotEmpty ? parts.last : raw;
+      final rest = winMatch.group(2)!;
+      String decodedPath = '$drive:/${rest.replaceAll('-', '/')}';
+      String name = rest.split('-').last;
+
+      // Smart path recovery for Windows paths like dev-YYYY-MMDD-project-name
+      final devMatch = RegExp(r'^dev-(\d{4})-(\d{2,4})-(.+)$').firstMatch(rest);
+      if (devMatch != null) {
+        final year = devMatch.group(1)!;
+        final date = devMatch.group(2)!;
+        final projPart = devMatch.group(3)!;
+        final candUnderscore = '$drive:/dev/$year/$date/${projPart.replaceAll("-", "_")}';
+        final candHyphen = '$drive:/dev/$year/$date/$projPart';
+        if (Directory(candUnderscore).existsSync()) {
+          decodedPath = candUnderscore;
+          name = projPart.replaceAll("-", "_");
+        } else if (Directory(candHyphen).existsSync()) {
+          decodedPath = candHyphen;
+          name = projPart;
+        } else {
+          decodedPath = candHyphen;
+          name = projPart;
+        }
+      } else {
+        final parts = rest.split('/');
+        name = parts.isNotEmpty ? parts.last : raw;
+      }
+
       name = _prettifyProjectName(name);
       if (name == '-' || isInvalidProjectName(name)) {
         return ('', '');
@@ -152,7 +175,44 @@ class ToolDiscoveryService {
       await for (final entity in projectsDir.list()) {
         if (entity is Directory) {
           final dirName = p.basename(entity.path);
-          final (projName, realPath) = decodeClaudeDir(dirName);
+          String projName = '';
+          String realPath = '';
+
+          // 1. Inspect first jsonl in directory for true `cwd`
+          try {
+            final files = entity.listSync();
+            for (final f in files) {
+              if (f is File && f.path.endsWith('.jsonl')) {
+                final lines = f.openRead()
+                    .transform(utf8.decoder)
+                    .transform(const LineSplitter())
+                    .take(10);
+                await for (final line in lines) {
+                  if (line.contains('"cwd"') || line.contains('"type":"init"')) {
+                    try {
+                      final obj = jsonDecode(line);
+                      if (obj is Map && obj['cwd'] is String && (obj['cwd'] as String).isNotEmpty) {
+                        final rawCwd = (obj['cwd'] as String).replaceAll('\\', '/');
+                        realPath = rawCwd;
+                        final bName = p.basename(rawCwd);
+                        projName = _prettifyProjectName(bName);
+                        break;
+                      }
+                    } catch (_) {}
+                  }
+                }
+                if (realPath.isNotEmpty) break;
+              }
+            }
+          } catch (_) {}
+
+          // 2. Fallback to decodeClaudeDir
+          if (projName.isEmpty || realPath.isEmpty) {
+            final decoded = decodeClaudeDir(dirName);
+            projName = decoded.$1;
+            realPath = decoded.$2;
+          }
+
           final cleanRealPath = cleanPath(realPath);
           if (cleanRealPath.isNotEmpty && isVolumeMountedOnMac(cleanRealPath) && seenPaths.add(cleanRealPath)) {
             if (!isInvalidProjectName(projName)) {

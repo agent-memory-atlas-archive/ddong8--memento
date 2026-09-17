@@ -91,6 +91,28 @@ async def list_projects(
                     p.title = prettified
                     has_changes = True
 
+        # Deduplicate hyphen vs underscore equivalent projects (e.g. favorite_chat vs favorite-chat)
+        all_cur_projs = (await db.execute(select(Project))).scalars().all()
+        proj_by_equiv: dict[tuple[str, str], list[Project]] = {}
+        for p in all_cur_projs:
+            equiv_key = (p.tool_id, p.slug.split("/")[-1].replace("-", "_").lower())
+            proj_by_equiv.setdefault(equiv_key, []).append(p)
+        for equiv_key, plist in proj_by_equiv.items():
+            if len(plist) > 1:
+                # Count docs for each project to pick canonical
+                p_counts = []
+                for p_item in plist:
+                    cnt = (await db.execute(select(func.count(Document.id)).where(Document.project_id == p_item.id))).scalar() or 0
+                    p_counts.append((cnt, p_item))
+                p_counts.sort(key=lambda x: x[0], reverse=True)
+                canonical_p = p_counts[0][1]
+                for cnt, redundant_p in p_counts[1:]:
+                    await db.execute(
+                        update(Document).where(Document.project_id == redundant_p.id).values(project_id=canonical_p.id)
+                    )
+                    await db.delete(redundant_p)
+                    has_changes = True
+
         # Auto-adopt orphaned documents across all tools
         orphaned_docs = (await db.execute(
             select(Document).where(
@@ -691,39 +713,57 @@ async def _reconcile_project_documents(
         if _is_invalid_project_name(clean_title):
             return 0
 
-        # 1. Find fragmented projects for this tool whose slug/title reduces to clean_title or is a drive letter
+        # 1. Expand candidate aliases (hyphen and underscore variants)
+        cand_titles = {
+            clean_title,
+            clean_title.replace("_", "-"),
+            clean_title.replace("-", "_"),
+        }
+        cand_titles = {t for t in cand_titles if t and not _is_invalid_project_name(t)}
+
+        frag_conditions = [
+            Project.slug.in_([f"{tool_id}/d:", f"{tool_id}/c:", f"{tool_id}/d", f"{tool_id}/c"]),
+        ]
+        for ct in cand_titles:
+            frag_conditions.extend([
+                Project.slug.ilike(f"%-{ct}"),
+                Project.slug.ilike(f"%/{ct}"),
+                Project.title.ilike(f"%-{ct}"),
+                Project.title.ilike(ct),
+                Project.slug.ilike(f"{tool_id}/{ct}"),
+            ])
+
         frag_q = select(Project).where(
             Project.tool_id == tool_id,
             Project.id != target_project.id,
-            or_(
-                Project.slug.ilike(f"%-{clean_title}"),
-                Project.slug.ilike(f"%/{clean_title}"),
-                Project.title.ilike(f"%-{clean_title}"),
-                Project.slug.in_([f"{tool_id}/d:", f"{tool_id}/c:", f"{tool_id}/d", f"{tool_id}/c"]),
-            ),
+            or_(*frag_conditions),
         )
         frag_rows = (await db.execute(frag_q)).scalars().all()
         frag_ids = [fp.id for fp in frag_rows]
 
         # 2. Build match conditions for documents that belong to this project
-        adopt_cond = or_(
-            Document.relative_path.ilike(f"%/{clean_title}/%"),
-            Document.relative_path.ilike(f"%-{clean_title}/%"),
-            Document.metadata_["project_hash"].astext == clean_title,
-            Document.metadata_["project_path"].astext.ilike(f"%{clean_title}"),
-            Document.metadata_["project_path"].astext.ilike(f"%{clean_title}/%"),
-        )
-        if tool_id == "antigravity":
-            adopt_cond = adopt_cond | or_(
-                Document.content.ilike(f"%/{clean_title}\"%"),
-                Document.content.ilike(f"%/{clean_title}/%"),
-                Document.content.ilike(f"%/{clean_title}\\n%"),
-                Document.content.ilike(f"%/{clean_title}%"),
-                Document.content.ilike(f"%\\{clean_title}\"%"),
-                Document.content.ilike(f"%\\{clean_title}\\%"),
-                Document.content.ilike(f"%\\\\{clean_title}\"%"),
-                Document.content.ilike(f"%\\\\{clean_title}\\\\%"),
-            )
+        doc_conds = []
+        for ct in cand_titles:
+            doc_conds.extend([
+                Document.relative_path.ilike(f"%/{ct}/%"),
+                Document.relative_path.ilike(f"%-{ct}/%"),
+                Document.metadata_["project_hash"].astext == ct,
+                Document.metadata_["project_path"].astext.ilike(f"%{ct}"),
+                Document.metadata_["project_path"].astext.ilike(f"%{ct}/%"),
+                Document.metadata_["project_path"].astext.ilike(f"%{ct}\\%"),
+            ])
+            if tool_id == "antigravity":
+                doc_conds.extend([
+                    Document.content.ilike(f"%/{ct}\"%"),
+                    Document.content.ilike(f"%/{ct}/%"),
+                    Document.content.ilike(f"%/{ct}\\n%"),
+                    Document.content.ilike(f"%/{ct}%"),
+                    Document.content.ilike(f"%\\{ct}\"%"),
+                    Document.content.ilike(f"%\\{ct}\\%"),
+                    Document.content.ilike(f"%\\\\{ct}\"%"),
+                    Document.content.ilike(f"%\\\\{ct}\\\\%"),
+                ])
+        adopt_cond = or_(*doc_conds)
         if frag_ids:
             adopt_cond = adopt_cond | Document.project_id.in_(frag_ids)
 
@@ -1092,16 +1132,17 @@ async def get_project_conversations(
     # Paginate by main session (subagents folded into parents)
     page_convs = main_convs[session_offset:session_offset + session_limit]
 
-    # For paginated docs, find any that need a real title (junk, UUID, or Claude Code aiTitle check)
+    # For paginated docs, find any that need a real title (junk, UUID, or empty)
     docs_needing_title = [
         d for d in page_convs
         if _is_junk_or_uuid_title(d.title, (d.metadata_ or {}).get("session_id"))
-        or d.tool_id in ("claude_code", "codex", "antigravity")
+        or (not d.title or not d.title.strip())
     ]
     doc_contents: dict[uuid.UUID, str] = {}
     if docs_needing_title:
+        # Avoid pulling 300MB+ content into memory: slice the first 64KB using func.substr
         c_rows = await db.execute(
-            select(Document.id, Document.content).where(
+            select(Document.id, func.substr(Document.content, 1, 65536)).where(
                 Document.id.in_([d.id for d in docs_needing_title])
             )
         )
@@ -1175,7 +1216,10 @@ async def get_project_conversations(
                 or content.startswith("[Result]")
             ):
                 continue
-            msgs_by_doc.setdefault(did, []).append({
+            doc_msg_list = msgs_by_doc.setdefault(did, [])
+            if max_messages_per_session > 0 and len(doc_msg_list) >= max(max_messages_per_session * 5, 50):
+                continue
+            doc_msg_list.append({
                 "role": role,
                 "content": content,
                 "thinking": (meta or {}).get("thinking") if meta else None,
