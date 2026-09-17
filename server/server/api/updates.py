@@ -182,6 +182,16 @@ async def check_update(
     version: str = Query("1.0.0", description="Current client version"),
 ) -> UpdateCheckResponse:
     """Check if the server or upstream repository hosts a newer version of the client."""
+    plat_lower = (platform or "").lower()
+    if any(m in plat_lower for m in ("ios", "iphone", "ipad", "android", "mobile")):
+        return UpdateCheckResponse(
+            has_update=False,
+            latest_version=version,
+            current_version=version,
+            title="Memento Mobile",
+            release_notes="移动端请在 GitHub Release 发布页查看安装说明。",
+        )
+
     updates_dir = _UPDATES_DIR
     version_file = updates_dir / "version.json"
 

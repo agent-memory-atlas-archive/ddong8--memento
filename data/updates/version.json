@@ -1,7 +1,7 @@
 {
-  "version": "1.0.13",
-  "title": "Memento v1.0.13",
-  "release_notes": "1. 内置集成高性能硬件加速内嵌视频播放器（EmbeddedVideoPlayer），直接在工作台与对话弹层中秒播，彻底告别跳转浏览器\n2. 具备完整的原生播放条：播放/暂停、精准拖拽进度条、当前时间/总时长、缓冲指示与备用外接播放器切换\n3. 修复流媒体直链鉴权与 Windows/Mac/Linux 客户端更新安装体验",
+  "version": "1.0.14",
+  "title": "Memento v1.0.14",
+  "release_notes": "1. 移动端优化：彻底屏蔽 iOS/Android 误触发桌面更新弹窗的问题，iOS 端增加友好的自签与安装指引\n2. 多模态对话支持：支持拍照上传、相册选图、剪贴板截图粘贴与任意文件附件发送\n3. 工作区与设备发现修复：修复 Antigravity 工作区检测及 Mac mini 历史项目完整性恢复\n4. 桌面端鉴权增强：电脑重启后无需重新登录，支持离线静默认证与永久记住登录状态",
   "platforms": {
     "windows": {
       "asset_name": "Memento-windows-x64-setup.exe",

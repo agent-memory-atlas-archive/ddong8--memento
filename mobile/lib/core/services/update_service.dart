@@ -7,7 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../storage.dart';
 
 /// Current application version — MUST match pubspec.yaml `version` on every release!
-const String kAppCurrentVersion = '1.0.13';
+const String kAppCurrentVersion = '1.0.14';
 
 class UpdateInfo {
   final String version;
@@ -50,6 +50,12 @@ class UpdateService {
 
   /// Check update from primary Memento Server, with fallback to GitHub Releases
   static Future<UpdateInfo?> checkUpdate({String? customServerUrl, String? customRepo}) async {
+    // Only desktop platforms (Windows, macOS, Linux) support in-app binary updates.
+    // iOS and Android do not allow in-place binary execution or self-update.
+    if (!Platform.isWindows && !Platform.isMacOS && !Platform.isLinux) {
+      return null;
+    }
+
     // 1. Try Memento Server first
     try {
       final serverUrl = (customServerUrl ?? await AppStorage.getServerUrl()).trim().replaceAll(RegExp(r'/+$'), '');
@@ -798,9 +804,12 @@ rm -f "\$0"
   }
 
   /// Open release webpage in default browser
-  static Future<void> openReleasePage(String url) async {
+  static Future<void> openReleasePage([String? url]) async {
     try {
-      final uri = Uri.parse(url);
+      final target = (url != null && url.isNotEmpty)
+          ? url
+          : 'https://github.com/ddong8/memento/releases';
+      final uri = Uri.parse(target);
       if (await canLaunchUrl(uri)) {
         await launchUrl(uri, mode: LaunchMode.externalApplication);
       }

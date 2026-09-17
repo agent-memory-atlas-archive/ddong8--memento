@@ -40,14 +40,17 @@ class _ShellScreenState extends ConsumerState<ShellScreen> with WidgetsBindingOb
       // Register in Windows "Installed apps" with uninstaller support
       WindowsRegistryService.register();
       // Check for app updates in background after startup
-      Future.delayed(const Duration(seconds: 4), () {
-        if (!mounted) return;
-        UpdateService.checkUpdate().then((info) {
-          if (info != null && info.hasUpdate && mounted) {
-            UpdateDialog.show(context, info);
-          }
-        }).catchError((_) {});
-      });
+      // Only desktop platforms (macOS, Windows, Linux) support in-app auto updates and hot replacement.
+      if (Platform.isMacOS || Platform.isWindows || Platform.isLinux) {
+        Future.delayed(const Duration(seconds: 4), () {
+          if (!mounted) return;
+          UpdateService.checkUpdate().then((info) {
+            if (info != null && info.hasUpdate && mounted) {
+              UpdateDialog.show(context, info);
+            }
+          }).catchError((_) {});
+        });
+      }
     });
   }
 

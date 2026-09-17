@@ -72,6 +72,30 @@ class _CollectorScreenState extends State<CollectorScreen> {
 
   Future<void> _checkUpdate() async {
     if (_checkingUpdate) return;
+    if (Platform.isIOS) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('当前版本为 v$kAppCurrentVersion。iOS 端请通过免费自签或 TestFlight 安装新版本。'),
+          action: SnackBarAction(
+            label: '发布主页',
+            onPressed: () => UpdateService.openReleasePage(),
+          ),
+        ),
+      );
+      return;
+    }
+    if (Platform.isAndroid) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('当前版本为 v$kAppCurrentVersion。安卓端请在 GitHub 发布页下载最新 APK 安装。'),
+          action: SnackBarAction(
+            label: '发布主页',
+            onPressed: () => UpdateService.openReleasePage(),
+          ),
+        ),
+      );
+      return;
+    }
     setState(() => _checkingUpdate = true);
     try {
       final info = await UpdateService.checkUpdate();
