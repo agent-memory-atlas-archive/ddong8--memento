@@ -1,8 +1,13 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:pasteboard/pasteboard.dart';
+import '../../models/chat_attachment.dart';
 import '../../core/api_client.dart';
 import '../../core/theme/aurora_theme.dart';
 import '../../models/ask_conversation.dart';
@@ -78,6 +83,9 @@ class _AskScreenState extends ConsumerState<AskScreen> {
   // Artifacts Workspace State
   bool _isWorkspaceOpen = false;
   AgentArtifact? _selectedWorkspaceArtifact;
+
+  // Chat Attachments (Images, Screenshots, Code/Text files)
+  final List<ChatAttachment> _attachedFiles = [];
 
   String? _findTurnDeviceId(AskTurn turn) {
     for (final call in turn.toolCalls.reversed) {
@@ -354,6 +362,9 @@ class _AskScreenState extends ConsumerState<AskScreen> {
   }
 
   String _getHintText() {
+    if (_attachedFiles.isNotEmpty) {
+      return '输入关于附件的问题，或直接点击发送分析附件...';
+    }
     switch (_executionMode) {
       case 'claude':
         return '向 Claude Code 派发编码任务...';
@@ -454,6 +465,16 @@ class _AskScreenState extends ConsumerState<AskScreen> {
     }
 
     final key = event.logicalKey;
+
+    // 快捷键检测：Ctrl+V (Windows/Linux) 或 Cmd+V (macOS) 检查并粘贴剪贴板截图
+    final isControl = HardwareKeyboard.instance.isControlPressed;
+    final isMeta = HardwareKeyboard.instance.isMetaPressed;
+    if ((isControl || isMeta) && key == LogicalKeyboardKey.keyV) {
+      _tryPasteImageFromClipboard();
+      // 不返回 handled，让系统同时尝试文本粘贴；若剪贴板仅为图像，TextField 不会产生文字
+      return KeyEventResult.ignored;
+    }
+
     if (key == LogicalKeyboardKey.enter || key == LogicalKeyboardKey.numpadEnter) {
       // 1. 若正在使用拼音等输入法（处于选词上屏 Composing 状态），不拦截回车，避免误触发送
       final isComposing = _inputController.value.composing.isValid &&
@@ -498,6 +519,254 @@ class _AskScreenState extends ConsumerState<AskScreen> {
         selection: TextSelection.collapsed(offset: newText.length),
       );
     }
+  }
+
+  // 附件操作：拍照、相册选图、文件/代码选取、剪贴板截图
+  Future<void> _pickFromCamera() async {
+    try {
+      final picker = ImagePicker();
+      final photo = await picker.pickImage(
+        source: ImageSource.camera,
+        maxWidth: 2048,
+        maxHeight: 2048,
+        imageQuality: 85,
+      );
+      if (photo != null) {
+        final file = File(photo.path);
+        final att = await ChatAttachment.fromFile(file, isImageOverride: true);
+        if (mounted) {
+          setState(() {
+            _attachedFiles.add(att);
+          });
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('拍照失败: $e'), backgroundColor: AuroraColors.danger),
+        );
+      }
+    }
+  }
+
+  Future<void> _pickFromGallery() async {
+    try {
+      final picker = ImagePicker();
+      final images = await picker.pickMultiImage(
+        maxWidth: 2048,
+        maxHeight: 2048,
+        imageQuality: 85,
+      );
+      if (images.isNotEmpty) {
+        for (final img in images) {
+          final att = await ChatAttachment.fromFile(File(img.path), isImageOverride: true);
+          if (mounted) {
+            setState(() {
+              _attachedFiles.add(att);
+            });
+          }
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('选择图片失败: $e'), backgroundColor: AuroraColors.danger),
+        );
+      }
+    }
+  }
+
+  Future<void> _pickFiles() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        allowMultiple: true,
+        withData: true,
+      );
+      if (result != null && result.files.isNotEmpty) {
+        for (final f in result.files) {
+          ChatAttachment? att;
+          if (f.path != null) {
+            att = await ChatAttachment.fromFile(File(f.path!));
+          } else if (f.bytes != null) {
+            final isImg = const ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp']
+                .any((ext) => f.name.toLowerCase().endsWith(ext));
+            att = ChatAttachment(
+              id: 'att_${DateTime.now().millisecondsSinceEpoch}_${f.name.hashCode}',
+              name: f.name,
+              type: isImg ? AttachmentType.image : AttachmentType.file,
+              size: f.size,
+              bytes: f.bytes,
+              mimeType: isImg ? null : 'application/octet-stream',
+            );
+          }
+          if (att != null && mounted) {
+            setState(() {
+              _attachedFiles.add(att!);
+            });
+          }
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('选择文件失败: $e'), backgroundColor: AuroraColors.danger),
+        );
+      }
+    }
+  }
+
+  Future<bool> _tryPasteImageFromClipboard() async {
+    try {
+      final imageBytes = await Pasteboard.image;
+      if (imageBytes != null && imageBytes.isNotEmpty) {
+        final att = ChatAttachment.fromImageBytes(imageBytes);
+        if (mounted) {
+          setState(() {
+            _attachedFiles.add(att);
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('已从剪贴板添加截图附件'),
+              duration: Duration(seconds: 1),
+            ),
+          );
+        }
+        return true;
+      }
+    } catch (e) {
+      debugPrint('读取剪贴板图片错误: $e');
+    }
+    return false;
+  }
+
+  void _showMobileAttachmentSheet() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AuroraColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 36,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                    color: AuroraColors.border,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                ListTile(
+                  leading: const CircleAvatar(
+                    backgroundColor: AuroraColors.chip,
+                    child: Icon(Icons.camera_alt_rounded, color: AuroraColors.accent),
+                  ),
+                  title: const Text('拍照', style: TextStyle(color: AuroraColors.fg1, fontWeight: FontWeight.w500)),
+                  subtitle: const Text('使用系统相机拍摄照片', style: TextStyle(color: AuroraColors.fg3, fontSize: 12)),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _pickFromCamera();
+                  },
+                ),
+                ListTile(
+                  leading: const CircleAvatar(
+                    backgroundColor: AuroraColors.chip,
+                    child: Icon(Icons.photo_library_rounded, color: AuroraColors.accent),
+                  ),
+                  title: const Text('从相册选择', style: TextStyle(color: AuroraColors.fg1, fontWeight: FontWeight.w500)),
+                  subtitle: const Text('支持选择单张或多张图片', style: TextStyle(color: AuroraColors.fg3, fontSize: 12)),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _pickFromGallery();
+                  },
+                ),
+                ListTile(
+                  leading: const CircleAvatar(
+                    backgroundColor: AuroraColors.chip,
+                    child: Icon(Icons.folder_open_rounded, color: AuroraColors.accent),
+                  ),
+                  title: const Text('浏览文件 / 代码', style: TextStyle(color: AuroraColors.fg1, fontWeight: FontWeight.w500)),
+                  subtitle: const Text('选取本地文档、日志、代码文件等', style: TextStyle(color: AuroraColors.fg3, fontSize: 12)),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _pickFiles();
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _showImagePreviewDialog(BuildContext context, {String? imageSource, Uint8List? imageBytes}) {
+    showDialog(
+      context: context,
+      barrierColor: Colors.black87,
+      builder: (ctx) {
+        Widget content;
+        if (imageBytes != null) {
+          content = Image.memory(imageBytes, fit: BoxFit.contain);
+        } else if (imageSource != null) {
+          if (imageSource.startsWith('data:image/')) {
+            try {
+              final b64 = imageSource.split(',').last;
+              content = Image.memory(base64Decode(b64), fit: BoxFit.contain);
+            } catch (_) {
+              content = const Center(child: Text('无法解析图片数据', style: TextStyle(color: Colors.white)));
+            }
+          } else if (imageSource.startsWith('http://') || imageSource.startsWith('https://')) {
+            content = Image.network(imageSource, fit: BoxFit.contain);
+          } else {
+            final f = File(imageSource);
+            if (f.existsSync()) {
+              content = Image.file(f, fit: BoxFit.contain);
+            } else {
+              content = const Center(child: Text('图片文件不存在', style: TextStyle(color: Colors.white)));
+            }
+          }
+        } else {
+          content = const SizedBox.shrink();
+        }
+
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.all(12),
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              InteractiveViewer(
+                minScale: 0.5,
+                maxScale: 4.0,
+                child: Center(child: content),
+              ),
+              Positioned(
+                top: 10,
+                right: 10,
+                child: IconButton(
+                  onPressed: () => Navigator.of(ctx).pop(),
+                  style: IconButton.styleFrom(backgroundColor: Colors.black54),
+                  icon: const Icon(Icons.close, color: Colors.white, size: 20),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  static String _formatSize(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
   }
 
   void _checkAutoRestoreLastConversation() async {
@@ -965,11 +1234,12 @@ class _AskScreenState extends ConsumerState<AskScreen> {
   void _handleSend() {
     if (ref.read(askProvider).isStreaming) return;
     final text = _inputController.text.trim();
-    if (text.isEmpty) return;
+    if (text.isEmpty && _attachedFiles.isEmpty) return;
 
     final deviceState = ref.read(deviceProvider);
     final selectedDevice = deviceState.selectedDeviceId;
     final cwd = _getEffectiveCwd();
+    final attachmentsToSend = List<ChatAttachment>.from(_attachedFiles);
 
     ref.read(askProvider.notifier).sendQuestion(
           question: text,
@@ -982,9 +1252,13 @@ class _AskScreenState extends ConsumerState<AskScreen> {
           sessionId: _selectedSessionId,
           compactMode: _compactMode,
           timeoutSeconds: _selectedTimeoutSeconds,
+          attachments: attachmentsToSend.isNotEmpty ? attachmentsToSend : null,
         );
 
     _inputController.clear();
+    setState(() {
+      _attachedFiles.clear();
+    });
     // iOS/Android: 发送消息后自动收起键盘
     if (Platform.isIOS || Platform.isAndroid) {
       _inputFocusNode.unfocus();
@@ -1406,8 +1680,106 @@ class _AskScreenState extends ConsumerState<AskScreen> {
     );
   }
 
+  Widget _buildUserTurnMedia(AskTurn turn) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (turn.images.isNotEmpty)
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            alignment: WrapAlignment.end,
+            children: turn.images.map((img) {
+              return GestureDetector(
+                onTap: () => _showImagePreviewDialog(context, imageSource: img),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Container(
+                    width: 140,
+                    height: 105,
+                    decoration: BoxDecoration(
+                      color: AuroraColors.chip,
+                      border: Border.all(color: AuroraColors.border),
+                    ),
+                    child: _buildImageThumbnail(img),
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        if (turn.attachments.isNotEmpty) ...[
+          if (turn.images.isNotEmpty) const SizedBox(height: 6),
+          ...turn.attachments
+              .where((att) => att['type'] != 'image')
+              .map((att) {
+            final name = att['name']?.toString() ?? '文件附件';
+            final size = att['size'] is int ? att['size'] as int : null;
+            return Container(
+              margin: const EdgeInsets.only(top: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: AuroraColors.surface.withOpacity(0.6),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: AuroraColors.border),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.insert_drive_file_outlined, size: 16, color: AuroraColors.accent),
+                  const SizedBox(width: 6),
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 200),
+                    child: Text(
+                      name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 12, color: AuroraColors.fg1),
+                    ),
+                  ),
+                  if (size != null && size > 0) ...[
+                    const SizedBox(width: 6),
+                    Text(
+                      _formatSize(size),
+                      style: const TextStyle(fontSize: 10, color: AuroraColors.fg3),
+                    ),
+                  ],
+                ],
+              ),
+            );
+          }),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildImageThumbnail(String source) {
+    if (source.startsWith('data:image/')) {
+      try {
+        final b64 = source.split(',').last;
+        final bytes = base64Decode(b64);
+        return Image.memory(bytes, fit: BoxFit.cover);
+      } catch (_) {
+        return const Center(child: Icon(Icons.broken_image, color: AuroraColors.fg3));
+      }
+    } else if (source.startsWith('http://') || source.startsWith('https://')) {
+      return Image.network(
+        source,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => const Center(child: Icon(Icons.broken_image, color: AuroraColors.fg3)),
+      );
+    } else {
+      final file = File(source);
+      if (file.existsSync()) {
+        return Image.file(file, fit: BoxFit.cover);
+      }
+      return const Center(child: Icon(Icons.image, color: AuroraColors.fg3));
+    }
+  }
+
   Widget _buildTurnItem(AskTurn turn, int index, bool isGlobalStreaming) {
     if (turn.role == 'user') {
+      final hasMedia = turn.images.isNotEmpty || turn.attachments.isNotEmpty;
       return RepaintBoundary(
         child: Align(
           alignment: Alignment.centerRight,
@@ -1419,13 +1791,24 @@ class _AskScreenState extends ConsumerState<AskScreen> {
               borderRadius: BorderRadius.circular(16),
               border: Border.all(color: AuroraColors.accent.withOpacity(0.3)),
             ),
-            child: Text(
-              turn.content,
-              style: const TextStyle(
-                fontSize: 14,
-                color: AuroraColors.fg1,
-                height: 1.45,
-              ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (hasMedia) ...[
+                  _buildUserTurnMedia(turn),
+                  if (turn.content.isNotEmpty) const SizedBox(height: 8),
+                ],
+                if (turn.content.isNotEmpty)
+                  SelectableText(
+                    turn.content,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      color: AuroraColors.fg1,
+                      height: 1.45,
+                    ),
+                  ),
+              ],
             ),
           ),
         ),
@@ -2510,53 +2893,226 @@ class _AskScreenState extends ConsumerState<AskScreen> {
         ],
         const SizedBox(height: 8),
 
-          // Prompt input row
-          Row(
+        if (_attachedFiles.isNotEmpty) ...[
+          _buildAttachedFilesBar(),
+          const SizedBox(height: 6),
+        ],
+
+        // Prompt input row
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            _buildAttachmentMenuButton(),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Container(
+                decoration: BoxDecoration(
+                  color: AuroraColors.chip,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AuroraColors.border),
+                ),
+                child: TextField(
+                  controller: _inputController,
+                  focusNode: _inputFocusNode,
+                  autofocus: !Platform.isIOS && !Platform.isAndroid,
+                  minLines: 1,
+                  maxLines: 4,
+                  textInputAction: TextInputAction.send,
+                  style: const TextStyle(color: AuroraColors.fg1, fontSize: 14),
+                  decoration: InputDecoration(
+                    hintText: _getHintText(),
+                    border: InputBorder.none,
+                    enabledBorder: InputBorder.none,
+                    focusedBorder: InputBorder.none,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  ),
+                  onSubmitted: (_) => _handleSend(),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            if (askState.isStreaming)
+              IconButton.filled(
+                onPressed: () => ref.read(askProvider.notifier).abort(),
+                style: IconButton.styleFrom(backgroundColor: AuroraColors.danger),
+                tooltip: '中止生成',
+                icon: const Icon(Icons.stop, color: Colors.white, size: 20),
+              )
+            else
+              IconButton.filled(
+                onPressed: _handleSend,
+                style: IconButton.styleFrom(backgroundColor: AuroraColors.accent),
+                tooltip: '发送消息 (Enter，Shift+Enter 换行)',
+                icon: const Icon(Icons.send_rounded, color: Colors.black, size: 18),
+              ),
+          ],
+        ),
+      ],
+    ),
+  );
+}
+
+  Widget _buildAttachedFilesBar() {
+    return Container(
+      height: 70,
+      margin: const EdgeInsets.only(bottom: 4),
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: _attachedFiles.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        itemBuilder: (context, index) {
+          final att = _attachedFiles[index];
+          return Stack(
+            clipBehavior: Clip.none,
             children: [
-              Expanded(
+              GestureDetector(
+                onTap: att.isImage
+                    ? () => _showImagePreviewDialog(
+                          context,
+                          imageBytes: att.bytes,
+                          imageSource: att.path,
+                        )
+                    : null,
                 child: Container(
+                  width: att.isImage ? 70 : 140,
+                  height: 70,
                   decoration: BoxDecoration(
                     color: AuroraColors.chip,
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(10),
                     border: Border.all(color: AuroraColors.border),
                   ),
-                  child: TextField(
-                    controller: _inputController,
-                    focusNode: _inputFocusNode,
-                    autofocus: !Platform.isIOS && !Platform.isAndroid,
-                    minLines: 1,
-                    maxLines: 4,
-                    textInputAction: TextInputAction.send,
-                    style: const TextStyle(color: AuroraColors.fg1, fontSize: 14),
-                    decoration: InputDecoration(
-                      hintText: _getHintText(),
-                      border: InputBorder.none,
-                      enabledBorder: InputBorder.none,
-                      focusedBorder: InputBorder.none,
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  clipBehavior: Clip.antiAlias,
+                  child: att.isImage
+                      ? (att.bytes != null
+                          ? Image.memory(att.bytes!, fit: BoxFit.cover)
+                          : (att.path != null && File(att.path!).existsSync()
+                              ? Image.file(File(att.path!), fit: BoxFit.cover)
+                              : const Icon(Icons.image, color: AuroraColors.fg3)))
+                      : Padding(
+                          padding: const EdgeInsets.all(8),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Icon(Icons.insert_drive_file_outlined, size: 20, color: AuroraColors.accent),
+                              const SizedBox(height: 4),
+                              Text(
+                                att.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 11, color: AuroraColors.fg1, fontWeight: FontWeight.w500),
+                              ),
+                              Text(
+                                att.formattedSize,
+                                style: const TextStyle(fontSize: 9, color: AuroraColors.fg3),
+                              ),
+                            ],
+                          ),
+                        ),
+                ),
+              ),
+              Positioned(
+                top: -4,
+                right: -4,
+                child: GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      _attachedFiles.removeAt(index);
+                    });
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.all(2),
+                    decoration: const BoxDecoration(
+                      color: AuroraColors.danger,
+                      shape: BoxShape.circle,
                     ),
-                    onSubmitted: (_) => _handleSend(),
+                    child: const Icon(Icons.close, size: 12, color: Colors.white),
                   ),
                 ),
               ),
-              const SizedBox(width: 8),
-              if (askState.isStreaming)
-                IconButton.filled(
-                  onPressed: () => ref.read(askProvider.notifier).abort(),
-                  style: IconButton.styleFrom(backgroundColor: AuroraColors.danger),
-                  tooltip: '中止生成',
-                  icon: const Icon(Icons.stop, color: Colors.white, size: 20),
-                )
-              else
-                IconButton.filled(
-                  onPressed: _handleSend,
-                  style: IconButton.styleFrom(backgroundColor: AuroraColors.accent),
-                  tooltip: '发送消息 (Enter，Shift+Enter 换行)',
-                  icon: const Icon(Icons.send_rounded, color: Colors.black, size: 18),
-                ),
             ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildAttachmentMenuButton() {
+    final isMobile = Platform.isIOS || Platform.isAndroid;
+
+    if (isMobile) {
+      return Container(
+        height: 44,
+        width: 40,
+        alignment: Alignment.center,
+        child: IconButton(
+          onPressed: _showMobileAttachmentSheet,
+          tooltip: '拍照 / 选图 / 附件',
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(),
+          icon: const Icon(Icons.add_circle_outline_rounded, color: AuroraColors.accent, size: 24),
+        ),
+      );
+    }
+
+    return Container(
+      height: 44,
+      width: 40,
+      alignment: Alignment.center,
+      child: PopupMenuButton<String>(
+        tooltip: '添加附件 / 截图',
+        offset: const Offset(0, -120),
+        color: AuroraColors.surface,
+        elevation: 4,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+          side: const BorderSide(color: AuroraColors.border),
+        ),
+        onSelected: (value) {
+          if (value == 'paste') {
+            _tryPasteImageFromClipboard();
+          } else if (value == 'image') {
+            _pickFromGallery();
+          } else if (value == 'file') {
+            _pickFiles();
+          }
+        },
+        itemBuilder: (context) => [
+          const PopupMenuItem(
+            value: 'paste',
+            height: 36,
+            child: Row(
+              children: [
+                Icon(Icons.content_paste_rounded, size: 16, color: AuroraColors.accent),
+                SizedBox(width: 8),
+                Text('粘贴剪贴板截图 (Ctrl+V)', style: TextStyle(fontSize: 12.5, color: AuroraColors.fg1)),
+              ],
+            ),
+          ),
+          const PopupMenuItem(
+            value: 'image',
+            height: 36,
+            child: Row(
+              children: [
+                Icon(Icons.image_outlined, size: 16, color: AuroraColors.accent),
+                SizedBox(width: 8),
+                Text('选择图片...', style: TextStyle(fontSize: 12.5, color: AuroraColors.fg1)),
+              ],
+            ),
+          ),
+          const PopupMenuItem(
+            value: 'file',
+            height: 36,
+            child: Row(
+              children: [
+                Icon(Icons.attach_file_rounded, size: 16, color: AuroraColors.accent),
+                SizedBox(width: 8),
+                Text('选择文件 / 代码...', style: TextStyle(fontSize: 12.5, color: AuroraColors.fg1)),
+              ],
+            ),
           ),
         ],
+        child: const Icon(Icons.add_circle_outline_rounded, color: AuroraColors.accent, size: 24),
       ),
     );
   }

@@ -23,6 +23,9 @@ dependencies:
   media_kit_video: ^2.0.1
   media_kit_libs_windows_video: ^1.0.11
   media_kit_libs_video: ^1.0.7
+  image_picker: ^1.1.2
+  file_picker: ^8.1.7
+  pasteboard: ^0.2.0
 
 dev_dependencies:
   flutter_test:

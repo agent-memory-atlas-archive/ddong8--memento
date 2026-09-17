@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/api_client.dart';
 import '../core/sse_client.dart';
 import '../models/ask_turn.dart';
+import '../models/chat_attachment.dart';
 
 class AskState {
   final List<AskTurn> turns;
@@ -178,13 +179,38 @@ class AskNotifier extends StateNotifier<AskState> {
     String? sessionId,
     bool? compactMode,
     int? timeoutSeconds,
+    List<ChatAttachment>? attachments,
   }) async {
-    if (question.trim().isEmpty || state.isStreaming) return;
+    final effectiveQuestion = question.trim().isNotEmpty
+        ? question.trim()
+        : (attachments != null && attachments.isNotEmpty
+            ? '请查看并分析我发送的附件与截图。'
+            : '');
+
+    if (effectiveQuestion.isEmpty || state.isStreaming) return;
 
     _flushPending();
 
-    // 1. Add user turn
-    final userTurn = AskTurn(role: 'user', content: question.trim());
+    final imageList = <String>[];
+    final attachmentDataList = <Map<String, dynamic>>[];
+
+    if (attachments != null && attachments.isNotEmpty) {
+      for (final att in attachments) {
+        if (att.isImage) {
+          final url = att.dataUrl;
+          if (url != null) imageList.add(url);
+        }
+        attachmentDataList.add(att.toJson());
+      }
+    }
+
+    // 1. Add user turn with images and attachments
+    final userTurn = AskTurn(
+      role: 'user',
+      content: effectiveQuestion,
+      images: imageList,
+      attachments: attachmentDataList,
+    );
     final assistantTurn = AskTurn(role: 'assistant', content: '');
 
     final updatedTurns = [...state.turns, userTurn, assistantTurn];
@@ -194,13 +220,13 @@ class AskNotifier extends StateNotifier<AskState> {
       error: null,
     );
 
-    // Build history for backend
+    // Build history for backend (include text content)
     final history = state.turns
         .map((t) => {'role': t.role, 'content': t.content})
         .toList();
 
     await _sseClient.ask(
-      question: question.trim(),
+      question: effectiveQuestion,
       conversationId: state.activeConversationId,
       history: history,
       selectedDevice: selectedDevice,
@@ -212,6 +238,8 @@ class AskNotifier extends StateNotifier<AskState> {
       sessionId: sessionId,
       compactMode: compactMode,
       timeoutSeconds: timeoutSeconds,
+      images: imageList.isNotEmpty ? imageList : null,
+      attachments: attachmentDataList.isNotEmpty ? attachmentDataList : null,
       onConversationId: (id, title) {
         state = state.copyWith(
           activeConversationId: id,

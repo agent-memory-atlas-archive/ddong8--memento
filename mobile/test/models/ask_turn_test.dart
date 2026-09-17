@@ -1,4 +1,4 @@
-﻿import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_test/flutter_test.dart';
 import 'package:memento_mobile/models/ask_turn.dart';
 
 void main() {
@@ -83,6 +83,37 @@ void main() {
       );
       expect(running.isRunning, isTrue);
       expect(running.isSuccess, isFalse);
+    });
+  });
+
+  group('AskTurn Multimodal and Attachments Tests', () {
+    test('AskTurn parses images and attachments correctly', () {
+      final json = {
+        'role': 'user',
+        'content': '请帮我看一下这张截图',
+        'images': ['data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='],
+        'attachments': [
+          {
+            'id': 'att_123',
+            'name': 'error.log',
+            'type': 'file',
+            'size': 1024,
+            'text_content': 'Fatal error at line 42',
+          }
+        ],
+      };
+
+      final turn = AskTurn.fromJson(json);
+      expect(turn.role, 'user');
+      expect(turn.content, '请帮我看一下这张截图');
+      expect(turn.images.length, 1);
+      expect(turn.images.first, startsWith('data:image/png;base64,'));
+      expect(turn.attachments.length, 1);
+      expect(turn.attachments.first['name'], 'error.log');
+
+      final serialized = turn.toJson();
+      expect(serialized['images'], isNotEmpty);
+      expect(serialized['attachments'], isNotEmpty);
     });
   });
 }

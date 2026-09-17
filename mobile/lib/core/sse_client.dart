@@ -26,6 +26,8 @@ class AskSseClient {
     String? sessionId,
     bool? compactMode,
     int? timeoutSeconds,
+    List<String>? images,
+    List<Map<String, dynamic>>? attachments,
     required void Function(String id, String? title) onConversationId,
     required void Function(List<AskSource> sources) onSources,
     required void Function(ToolCallItem item) onToolCall,
@@ -80,6 +82,9 @@ class AskSseClient {
           if (compactMode == true) 'compact_mode': true,
           if (timeoutSeconds != null && timeoutSeconds > 0)
             'timeout_seconds': timeoutSeconds,
+          if (images != null && images.isNotEmpty) 'images': images,
+          if (attachments != null && attachments.isNotEmpty)
+            'attachments': attachments,
         },
         options: Options(
           responseType: ResponseType.stream,

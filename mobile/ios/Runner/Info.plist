@@ -43,5 +43,9 @@
 		<key>NSAllowsArbitraryLoads</key>
 		<true/>
 	</dict>
+	<key>NSCameraUsageDescription</key>
+	<string>Memento 需要使用您的相机拍摄照片作为聊天附件</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Memento 需要访问您的相册以选取图片作为聊天附件</string>
 </dict>
 </plist>

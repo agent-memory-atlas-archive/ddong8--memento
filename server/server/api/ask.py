@@ -88,6 +88,10 @@ class AskRequest(BaseModel):
     compact_mode: bool | None = None
     # Optional execution timeout override in seconds (up to 3600)
     timeout_seconds: int | None = None
+    # Multimodal image URLs / Base64 DataURLs (e.g. screenshots, camera photos)
+    images: list[str] | None = None
+    # Uploaded file / code attachments
+    attachments: list[dict] | None = None
 
 
 async def _retrieve(
@@ -324,6 +328,8 @@ def _build_messages(
     is_continuation: bool = False,
     is_action: bool = False,
     extracted_context: dict | None = None,
+    images: list[str] | None = None,
+    attachments: list[dict] | None = None,
 ) -> list[dict]:
     context = "\n\n".join(
         f"[{i + 1}] {s['title']} ({s['tool_id']}, {s['relative_path']})\n{s['excerpt']}"
@@ -349,6 +355,16 @@ def _build_messages(
                 messages.append({"role": role, "content": combined})
         elif role == "user" and content:
             messages.append({"role": role, "content": content})
+
+    # Format text/code attachments into structured snippets
+    attachment_snippets = []
+    for att in (attachments or []):
+        name = att.get("name") or "attachment"
+        text = att.get("text_content")
+        if text:
+            ext = os.path.splitext(name)[1].lstrip(".") or ""
+            attachment_snippets.append(f"【用户附加的文件: {name}】\n```{ext}\n{text}\n```")
+    att_prefix = "\n\n".join(attachment_snippets)
 
     if is_action:
         dev_info = ""
@@ -385,10 +401,27 @@ def _build_messages(
     else:
         user_prompt = f"资料:\n{context}\n\n问题: {question}"
 
-    messages.append({
-        "role": "user",
-        "content": user_prompt,
-    })
+    if att_prefix:
+        user_prompt = f"{att_prefix}\n\n{user_prompt}"
+
+    # Build multimodal content payload if images present (OpenAI Vision standard)
+    if images:
+        content_parts: list[dict] = [{"type": "text", "text": user_prompt}]
+        for img_url in images:
+            content_parts.append({
+                "type": "image_url",
+                "image_url": {"url": img_url}
+            })
+        messages.append({
+            "role": "user",
+            "content": content_parts,
+        })
+    else:
+        messages.append({
+            "role": "user",
+            "content": user_prompt,
+        })
+
     return messages
 
 
@@ -481,6 +514,8 @@ async def _append_conversation_turns(
     thinking: str | None = None,
     device_id: str | None = None,
     cwd: str | None = None,
+    images: list[str] | None = None,
+    attachments: list[dict] | None = None,
 ):
     """Persist user and assistant turns into the conversation row."""
     try:
@@ -493,11 +528,16 @@ async def _append_conversation_turns(
 
             turns = list(conv.turns or [])
             now_iso = datetime.now(timezone.utc).isoformat()
-            turns.append({
+            user_turn: dict = {
                 "role": "user",
                 "content": user_content,
                 "created_at": now_iso,
-            })
+            }
+            if images:
+                user_turn["images"] = images
+            if attachments:
+                user_turn["attachments"] = attachments
+            turns.append(user_turn)
             asst_turn: dict = {
                 "role": "assistant",
                 "content": assistant_content,
@@ -637,6 +677,8 @@ async def _direct_agent_stream(
     compact_mode: bool | None = None,
     history: list[dict] | None = None,
     timeout_seconds: int | None = None,
+    images: list[str] | None = None,
+    attachments: list[dict] | None = None,
 ):
     """Directly dispatch an agent/shell task to the user's online device without LLM intermediate step."""
     from ..services.orchestrator import _tool_run_on_device, is_likely_long_running_task
@@ -687,6 +729,19 @@ async def _direct_agent_stream(
         except Exception as e:
             logger.warning("Failed to perform compact continuation for session %s: %s", session_id, e)
 
+    # Format attachments for agent prompt
+    att_notes = []
+    for a in (attachments or []):
+        name = a.get("name") or "attachment"
+        content = a.get("text_content")
+        if content:
+            ext = os.path.splitext(name)[1].lstrip(".") or ""
+            att_notes.append(f"【用户附加文件: {name}】\n```{ext}\n{content}\n```")
+        elif a.get("type") == "image":
+            att_notes.append(f"【用户上传了截图/图片: {name}】")
+
+    att_summary = "\n\n".join(att_notes)
+
     if action == "shell":
         args["command"] = question
         cmd_display = question
@@ -700,6 +755,9 @@ async def _direct_agent_stream(
 
         # Context injection for multi-turn conversations
         final_prompt = question
+        if att_summary:
+            final_prompt = f"{att_summary}\n\n{final_prompt}"
+
         if history and "prompt" not in args:
             prior_turns = []
             msgs = history[:-1] if (history and history[-1].get("role") == "user" and (history[-1].get("content") or "").strip() == question.strip()) else history
@@ -812,6 +870,8 @@ async def _direct_agent_stream(
         thinking=None,
         device_id=device_id or (result_dict.get("device_id") if result_dict else None),
         cwd=cwd,
+        images=images,
+        attachments=attachments,
     )
 
     yield "data: {\"type\": \"done\"}\n\n"
@@ -869,6 +929,8 @@ async def ask(
                 compact_mode=body.compact_mode,
                 history=body.history,
                 timeout_seconds=body.timeout_seconds,
+                images=body.images,
+                attachments=body.attachments,
             ),
             media_type="text/event-stream",
             headers={
@@ -916,6 +978,8 @@ async def ask(
         is_continuation=is_cont,
         is_action=is_action,
         extracted_context=extracted_context,
+        images=body.images,
+        attachments=body.attachments,
     )
 
     is_agent = (body.agent_mode or (bool(device_id) and device_id != "ask_only")) and device_id != "ask_only"
@@ -979,6 +1043,8 @@ async def ask(
                     thinking="".join(accumulated_thinking).strip() or None,
                     device_id=device_id or None,
                     cwd=body.cwd,
+                    images=body.images,
+                    attachments=body.attachments,
                 )
 
             try:
@@ -1049,9 +1115,11 @@ async def ask(
                 thinking="".join(accumulated_thinking).strip() or None,
                 device_id=device_id or None,
                 cwd=body.cwd,
+                images=body.images,
+                attachments=body.attachments,
             )
 
-        if not sources:
+        if not sources and not body.images and not body.attachments:
             empty_msg = "没有检索到相关资料。"
             accumulated_text.append(empty_msg)
             yield f"data: {json.dumps({'type': 'delta', 'text': empty_msg}, ensure_ascii=False)}\n\n"

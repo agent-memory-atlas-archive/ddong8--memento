@@ -180,6 +180,8 @@ class AskTurn {
   final bool error;
   final List<AskSource> sources;
   final List<ToolCallItem> toolCalls;
+  final List<String> images;
+  final List<Map<String, dynamic>> attachments;
 
   AskTurn({
     required this.role,
@@ -188,6 +190,8 @@ class AskTurn {
     this.error = false,
     this.sources = const [],
     this.toolCalls = const [],
+    this.images = const [],
+    this.attachments = const [],
   });
 
   factory AskTurn.fromJson(Map<String, dynamic> json) {
@@ -203,6 +207,12 @@ class AskTurn {
         .map((c) => ToolCallItem.fromJson(c))
         .toList();
 
+    final rawImages = json['images'] as List<dynamic>? ?? [];
+    final images = rawImages.map((e) => e.toString()).toList();
+
+    final rawAttachments = json['attachments'] as List<dynamic>? ?? [];
+    final attachments = rawAttachments.whereType<Map<String, dynamic>>().toList();
+
     return AskTurn(
       role: json['role']?.toString() ?? 'user',
       content: json['content']?.toString() ?? '',
@@ -210,7 +220,22 @@ class AskTurn {
       error: json['error'] == true,
       sources: sources,
       toolCalls: toolCalls,
+      images: images,
+      attachments: attachments,
     );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'role': role,
+      'content': content,
+      if (thinking != null) 'thinking': thinking,
+      'error': error,
+      if (sources.isNotEmpty) 'sources': sources.map((s) => {'id': s.id, 'tool_id': s.toolId, 'title': s.title, 'relative_path': s.relativePath}).toList(),
+      if (toolCalls.isNotEmpty) 'tool_calls': toolCalls.map((t) => {'id': t.id, 'name': t.name, 'args': t.args}).toList(),
+      if (images.isNotEmpty) 'images': images,
+      if (attachments.isNotEmpty) 'attachments': attachments,
+    };
   }
 
   AskTurn copyWith({
@@ -220,6 +245,8 @@ class AskTurn {
     bool? error,
     List<AskSource>? sources,
     List<ToolCallItem>? toolCalls,
+    List<String>? images,
+    List<Map<String, dynamic>>? attachments,
   }) {
     return AskTurn(
       role: role ?? this.role,
@@ -228,6 +255,8 @@ class AskTurn {
       error: error ?? this.error,
       sources: sources ?? this.sources,
       toolCalls: toolCalls ?? this.toolCalls,
+      images: images ?? this.images,
+      attachments: attachments ?? this.attachments,
     );
   }
 }
