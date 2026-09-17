@@ -537,6 +537,8 @@ async def device_websocket_endpoint(
                         data.get("stream", "stdout"),
                         data.get("text", ""),
                     )
+            elif msg_type in ("file_stat_resp", "file_chunk_resp"):
+                ws_manager.handle_file_response(data)
             elif msg_type == "task_finished":
                 tid_str = data.get("task_id")
                 if tid_str:

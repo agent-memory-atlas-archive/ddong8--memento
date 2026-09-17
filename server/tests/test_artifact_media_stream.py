@@ -1,0 +1,65 @@
+import asyncio
+import base64
+import unittest
+from unittest.mock import AsyncMock
+from server.services.ws_manager import DeviceConnectionManager
+
+
+class TestArtifactMediaStream(unittest.IsolatedAsyncioTestCase):
+    async def test_ws_manager_file_stat_and_chunk(self):
+        mgr = DeviceConnectionManager()
+        dummy_ws = AsyncMock()
+        mgr.register('device_mac_nas', dummy_ws)
+
+        # 1. Test request_file_stat
+        async def fake_respond_stat():
+            await asyncio.sleep(0.01)
+            sent_data = dummy_ws.send_json.call_args[0][0]
+            self.assertEqual(sent_data['type'], 'file_stat_req')
+            self.assertEqual(sent_data['path'], '/Volumes/NAS/video.mp4')
+            req_id = sent_data['req_id']
+
+            mgr.handle_file_response({
+                'req_id': req_id,
+                'exists': True,
+                'size': 33554432,
+                'filename': 'video.mp4',
+                'mime': 'video/mp4',
+            })
+
+        asyncio.create_task(fake_respond_stat())
+        stat = await mgr.request_file_stat('device_mac_nas', '/Volumes/NAS/video.mp4', timeout=1.0)
+        self.assertTrue(stat['exists'])
+        self.assertEqual(stat['size'], 33554432)
+        self.assertEqual(stat['mime'], 'video/mp4')
+
+        # 2. Test request_file_chunk
+        async def fake_respond_chunk():
+            await asyncio.sleep(0.01)
+            sent_data = dummy_ws.send_json.call_args[0][0]
+            self.assertEqual(sent_data['type'], 'file_chunk_req')
+            self.assertEqual(sent_data['offset'], 1024)
+            self.assertEqual(sent_data['length'], 4096)
+            req_id = sent_data['req_id']
+
+            mgr.handle_file_response({
+                'req_id': req_id,
+                'data_b64': base64.b64encode(b'hello-artifact-video').decode('ascii'),
+            })
+
+        asyncio.create_task(fake_respond_chunk())
+        chunk = await mgr.request_file_chunk(
+            'device_mac_nas', '/Volumes/NAS/video.mp4', offset=1024, length=4096, timeout=1.0
+        )
+        self.assertIsNotNone(chunk)
+        self.assertEqual(chunk, b'hello-artifact-video')
+
+    async def test_ws_manager_offline_device(self):
+        mgr = DeviceConnectionManager()
+        stat = await mgr.request_file_stat('offline_device', '/test.mp4', timeout=0.1)
+        self.assertFalse(stat['exists'])
+        self.assertIn('not connected', stat['error'])
+
+
+if __name__ == '__main__':
+    unittest.main()

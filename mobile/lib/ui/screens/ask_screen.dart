@@ -14,6 +14,9 @@ import '../widgets/execution_card.dart';
 import '../widgets/glass_card.dart';
 import '../widgets/thinking_block.dart';
 import '../widgets/app_markdown.dart';
+import '../../models/agent_artifact.dart';
+import '../widgets/artifact_card.dart';
+import '../widgets/artifacts_workspace.dart';
 
 class AskScreen extends ConsumerStatefulWidget {
   const AskScreen({super.key});
@@ -71,6 +74,67 @@ class _AskScreenState extends ConsumerState<AskScreen> {
   int? _selectedTimeoutSeconds;
   bool _isUserScrolledUp = false;
   bool _isAutoScrolling = false;
+
+  // Artifacts Workspace State
+  bool _isWorkspaceOpen = false;
+  AgentArtifact? _selectedWorkspaceArtifact;
+
+  String? _findTurnDeviceId(AskTurn turn) {
+    for (final call in turn.toolCalls.reversed) {
+      final devId = call.result?.deviceId;
+      if (devId != null && devId.isNotEmpty) return devId;
+    }
+    final currentDev = ref.read(deviceProvider).selectedDeviceId;
+    if (currentDev != 'auto' && currentDev != 'ask_only') return currentDev;
+    return null;
+  }
+
+  List<AgentArtifact> _collectAllArtifacts(List<AskTurn> turns) {
+    final List<AgentArtifact> list = [];
+    final Set<String> seenPaths = {};
+    for (final turn in turns) {
+      if (turn.content.isNotEmpty) {
+        final devId = _findTurnDeviceId(turn);
+        final arts = AgentArtifact.extractArtifacts(turn.content, defaultDeviceId: devId);
+        for (final a in arts) {
+          if (!seenPaths.contains(a.rawPath)) {
+            seenPaths.add(a.rawPath);
+            list.add(a);
+          }
+        }
+      }
+    }
+    return list;
+  }
+
+  void _openArtifactWorkspace(AgentArtifact artifact, List<AgentArtifact> allArtifacts) {
+    setState(() {
+      _selectedWorkspaceArtifact = artifact;
+      _isWorkspaceOpen = true;
+    });
+
+    final width = MediaQuery.of(context).size.width;
+    if (width < 900) {
+      showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (ctx) => DraggableScrollableSheet(
+          initialChildSize: 0.88,
+          minChildSize: 0.5,
+          maxChildSize: 0.96,
+          builder: (ctx, scrollController) => ClipRRect(
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+            child: ArtifactsWorkspace(
+              artifacts: allArtifacts,
+              initialSelected: artifact,
+              onClose: () => Navigator.of(ctx).pop(),
+            ),
+          ),
+        ),
+      );
+    }
+  }
 
   void _handleModeChange(String id) {
     setState(() {
@@ -1023,6 +1087,94 @@ class _AskScreenState extends ConsumerState<AskScreen> {
 
     final askState = ref.watch(askProvider);
     final deviceState = ref.watch(deviceProvider);
+    final allArtifacts = _collectAllArtifacts(askState.turns);
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isWideScreen = screenWidth >= 900;
+
+    final chatPane = Column(
+      children: [
+        if (askState.isLoadingHistory)
+          const LinearProgressIndicator(
+            minHeight: 2,
+            backgroundColor: Colors.transparent,
+            color: AuroraColors.accent,
+          ),
+        // Chat list
+        Expanded(
+          child: GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onTap: () {
+              if (Platform.isIOS || Platform.isAndroid) {
+                _inputFocusNode.unfocus();
+                FocusScope.of(context).unfocus();
+              }
+            },
+            child: askState.turns.isEmpty
+                ? _buildEmptyState()
+                : Stack(
+                    children: [
+                      NotificationListener<ScrollNotification>(
+                        onNotification: (notification) {
+                          if (!_scrollController.hasClients) return false;
+                          final metrics = notification.metrics;
+                          if (metrics.maxScrollExtent <= 0) return false;
+                          final distanceFromBottom =
+                              metrics.maxScrollExtent - metrics.pixels;
+
+                          if (distanceFromBottom <= 50) {
+                            if (_isUserScrolledUp) {
+                              setState(() {
+                                _isUserScrolledUp = false;
+                              });
+                            }
+                          } else if (notification is UserScrollNotification) {
+                            if (notification.direction == ScrollDirection.forward &&
+                                distanceFromBottom > 80) {
+                              if (!_isUserScrolledUp) {
+                                setState(() {
+                                  _isUserScrolledUp = true;
+                                });
+                              }
+                            }
+                          } else if (notification is ScrollUpdateNotification &&
+                              notification.dragDetails != null) {
+                            if (distanceFromBottom > 80 && !_isUserScrolledUp) {
+                              setState(() {
+                                _isUserScrolledUp = true;
+                              });
+                            }
+                          }
+                          return false;
+                        },
+                        child: ListView.builder(
+                          controller: _scrollController,
+                          keyboardDismissBehavior:
+                              ScrollViewKeyboardDismissBehavior.onDrag,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 12),
+                          itemCount: askState.turns.length,
+                          itemBuilder: (context, index) {
+                            final turn = askState.turns[index];
+                            return _buildTurnItem(
+                                turn, index, askState.isStreaming);
+                          },
+                        ),
+                      ),
+                      if (_isUserScrolledUp)
+                        Positioned(
+                          right: 18,
+                          bottom: 14,
+                          child: _buildScrollToBottomFab(askState),
+                        ),
+                    ],
+                  ),
+          ),
+        ),
+
+        // Bottom Console Toolbelt
+        _buildBottomConsole(deviceState, askState),
+      ],
+    );
 
     return Scaffold(
       appBar: AppBar(
@@ -1039,6 +1191,32 @@ class _AskScreenState extends ConsumerState<AskScreen> {
           ],
         ),
         actions: [
+          if (allArtifacts.isNotEmpty)
+            IconButton(
+              icon: Badge.count(
+                count: allArtifacts.length,
+                backgroundColor: AuroraColors.accent,
+                textColor: Colors.white,
+                child: Icon(
+                  Icons.dashboard_customize_rounded,
+                  size: 20,
+                  color: _isWorkspaceOpen ? AuroraColors.accent : AuroraColors.fg2,
+                ),
+              ),
+              tooltip: _isWorkspaceOpen ? '收起 Artifacts 工作台' : '展开 Artifacts 工作台 (${allArtifacts.length})',
+              onPressed: () {
+                if (isWideScreen) {
+                  setState(() {
+                    _isWorkspaceOpen = !_isWorkspaceOpen;
+                    if (_isWorkspaceOpen && _selectedWorkspaceArtifact == null) {
+                      _selectedWorkspaceArtifact = allArtifacts.first;
+                    }
+                  });
+                } else {
+                  _openArtifactWorkspace(_selectedWorkspaceArtifact ?? allArtifacts.first, allArtifacts);
+                }
+              },
+            ),
           IconButton(
             icon: const Icon(Icons.history_rounded, size: 22),
             tooltip: '历史记录',
@@ -1048,6 +1226,10 @@ class _AskScreenState extends ConsumerState<AskScreen> {
             icon: const Icon(Icons.add, size: 22),
             tooltip: '新建对话',
             onPressed: () {
+              setState(() {
+                _isWorkspaceOpen = false;
+                _selectedWorkspaceArtifact = null;
+              });
               ref.read(askProvider.notifier).newChat();
             },
           ),
@@ -1056,95 +1238,30 @@ class _AskScreenState extends ConsumerState<AskScreen> {
               icon: const Icon(Icons.delete_outline, size: 20),
               tooltip: '清空当前对话',
               onPressed: () {
+                setState(() {
+                  _isWorkspaceOpen = false;
+                  _selectedWorkspaceArtifact = null;
+                });
                 ref.read(askProvider.notifier).clearChat();
               },
             ),
         ],
       ),
-      body: Column(
-        children: [
-          if (askState.isLoadingHistory)
-            const LinearProgressIndicator(
-              minHeight: 2,
-              backgroundColor: Colors.transparent,
-              color: AuroraColors.accent,
-            ),
-          // Chat list
-          Expanded(
-            child: GestureDetector(
-              behavior: HitTestBehavior.translucent,
-              onTap: () {
-                if (Platform.isIOS || Platform.isAndroid) {
-                  _inputFocusNode.unfocus();
-                  FocusScope.of(context).unfocus();
-                }
-              },
-              child: askState.turns.isEmpty
-                  ? _buildEmptyState()
-                  : Stack(
-                      children: [
-                        NotificationListener<ScrollNotification>(
-                          onNotification: (notification) {
-                            if (!_scrollController.hasClients) return false;
-                            final metrics = notification.metrics;
-                            if (metrics.maxScrollExtent <= 0) return false;
-                            final distanceFromBottom =
-                                metrics.maxScrollExtent - metrics.pixels;
-
-                            if (distanceFromBottom <= 50) {
-                              if (_isUserScrolledUp) {
-                                setState(() {
-                                  _isUserScrolledUp = false;
-                                });
-                              }
-                            } else if (notification is UserScrollNotification) {
-                              if (notification.direction == ScrollDirection.forward &&
-                                  distanceFromBottom > 80) {
-                                if (!_isUserScrolledUp) {
-                                  setState(() {
-                                    _isUserScrolledUp = true;
-                                  });
-                                }
-                              }
-                            } else if (notification is ScrollUpdateNotification &&
-                                notification.dragDetails != null) {
-                              if (distanceFromBottom > 80 && !_isUserScrolledUp) {
-                                setState(() {
-                                  _isUserScrolledUp = true;
-                                });
-                              }
-                            }
-                            return false;
-                          },
-                          child: ListView.builder(
-                            controller: _scrollController,
-                            keyboardDismissBehavior:
-                                ScrollViewKeyboardDismissBehavior.onDrag,
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 16, vertical: 12),
-                            itemCount: askState.turns.length,
-                            itemBuilder: (context, index) {
-                              final turn = askState.turns[index];
-                              return _buildTurnItem(
-                                  turn, index, askState.isStreaming);
-                            },
-                          ),
-                        ),
-                        if (_isUserScrolledUp)
-                          Positioned(
-                            right: 18,
-                            bottom: 14,
-                            child: _buildScrollToBottomFab(askState),
-                          ),
-                      ],
-                    ),
-            ),
-          ),
-
-          // Bottom Console Toolbelt
-          _buildBottomConsole(deviceState, askState),
-        ],
-      ),
+      body: isWideScreen && _isWorkspaceOpen && allArtifacts.isNotEmpty
+          ? Row(
+              children: [
+                Expanded(child: chatPane),
+                SizedBox(
+                  width: (screenWidth * 0.44).clamp(440.0, 720.0),
+                  child: ArtifactsWorkspace(
+                    artifacts: allArtifacts,
+                    initialSelected: _selectedWorkspaceArtifact,
+                    onClose: () => setState(() => _isWorkspaceOpen = false),
+                  ),
+                ),
+              ],
+            )
+          : chatPane,
     );
   }
 
@@ -1369,8 +1486,24 @@ class _AskScreenState extends ConsumerState<AskScreen> {
                   )),
 
             // Assistant answer text
-            if (turn.content.isNotEmpty)
-              AppMarkdown(data: turn.content)
+            if (turn.content.isNotEmpty) ...[
+              AppMarkdown(data: turn.content),
+              ...() {
+                final devId = _findTurnDeviceId(turn);
+                final artifacts = AgentArtifact.extractArtifacts(turn.content, defaultDeviceId: devId);
+                if (artifacts.isEmpty) return <Widget>[];
+                return artifacts.map((art) => Padding(
+                  padding: const EdgeInsets.only(top: 10),
+                  child: ArtifactCard(
+                    artifact: art,
+                    onOpenWorkspace: () {
+                      final allArts = _collectAllArtifacts(ref.read(askProvider).turns);
+                      _openArtifactWorkspace(art, allArts.isNotEmpty ? allArts : [art]);
+                    },
+                  ),
+                )).toList();
+              }(),
+            ]
             else if (turn.toolCalls.isEmpty && (turn.thinking == null || turn.thinking!.isEmpty))
               const Row(
                 children: [

@@ -153,6 +153,16 @@ class WsTaskClient {
                   }
                 }
               }
+            } else if (type == 'file_stat_req') {
+              final reqId = data['req_id']?.toString() ?? '';
+              final filePath = data['path']?.toString() ?? '';
+              unawaited(_handleFileStat(reqId, filePath));
+            } else if (type == 'file_chunk_req') {
+              final reqId = data['req_id']?.toString() ?? '';
+              final filePath = data['path']?.toString() ?? '';
+              final offset = (data['offset'] as num?)?.toInt() ?? 0;
+              final length = (data['length'] as num?)?.toInt() ?? (512 * 1024);
+              unawaited(_handleFileChunk(reqId, filePath, offset, length));
             }
           } catch (e) {
             _log('Error processing frame: $e');
@@ -846,6 +856,72 @@ class WsTaskClient {
       final active = _runningTasks.remove(taskId);
       try {
         await active?.stdin.close();
+      } catch (_) {}
+    }
+  }
+
+  Future<void> _handleFileStat(String reqId, String rawPath) async {
+    try {
+      final clean = rawPath.replaceFirst(RegExp(r'^file://'), '');
+      final file = File(clean);
+      if (await file.exists()) {
+        final size = await file.length();
+        _sendJson({
+          'type': 'file_stat_resp',
+          'req_id': reqId,
+          'exists': true,
+          'total_size': size,
+        });
+      } else {
+        _sendJson({
+          'type': 'file_stat_resp',
+          'req_id': reqId,
+          'exists': false,
+          'error': 'File not found on device: $clean',
+        });
+      }
+    } catch (e) {
+      _sendJson({
+        'type': 'file_stat_resp',
+        'req_id': reqId,
+        'exists': false,
+        'error': e.toString(),
+      });
+    }
+  }
+
+  Future<void> _handleFileChunk(String reqId, String rawPath, int offset, int length) async {
+    RandomAccessFile? raf;
+    try {
+      final clean = rawPath.replaceFirst(RegExp(r'^file://'), '');
+      final file = File(clean);
+      if (!await file.exists()) {
+        _sendJson({
+          'type': 'file_chunk_resp',
+          'req_id': reqId,
+          'error': 'File not found: $clean',
+        });
+        return;
+      }
+      raf = await file.open(mode: FileMode.read);
+      await raf.setPosition(offset);
+      final bytes = await raf.read(length);
+      final b64 = base64Encode(bytes);
+      _sendJson({
+        'type': 'file_chunk_resp',
+        'req_id': reqId,
+        'data_b64': b64,
+        'bytes_read': bytes.length,
+      });
+    } catch (e) {
+      _sendJson({
+        'type': 'file_chunk_resp',
+        'req_id': reqId,
+        'error': e.toString(),
+      });
+    } finally {
+      try {
+        await raf?.close();
       } catch (_) {}
     }
   }

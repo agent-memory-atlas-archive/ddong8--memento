@@ -8,8 +8,12 @@ import time
 import uuid
 from collections import defaultdict
 
+import mimetypes
+import os
+
 import httpx
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response
+from fastapi.responses import StreamingResponse
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -385,3 +389,130 @@ async def ack_command(
     queue = _command_queue.get(x_device_id, [])
     _command_queue[x_device_id] = [c for c in queue if c["id"] != cmd_id]
     return {"status": "acked", "command_id": cmd_id}
+
+
+@router.get("/{device_id}/files/stream")
+async def stream_device_file(
+    device_id: str,
+    path: str = Query(..., description="Absolute path on the device or NAS"),
+    request: Request = None,
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(get_current_user),
+):
+    """Stream a media or artifact file directly from the target device with HTTP 206 Range support."""
+    from ..services.user_filter import find_machine_by_id_or_hash, user_machine_ids
+    target_machine = await find_machine_by_id_or_hash(db, device_id, _user)
+    mids = await user_machine_ids(db, _user)
+
+    if _user.role not in ("admin", "owner"):
+        if target_machine and mids is not None and target_machine.id not in mids:
+            raise HTTPException(status_code=403, detail="Device access denied")
+
+    clean_path = path.strip().replace("\\", "/")
+    if clean_path.startswith("file://"):
+        clean_path = clean_path.replace("file://", "")
+        if clean_path.startswith("/") and len(clean_path) > 3 and clean_path[2] == ":":
+            clean_path = clean_path[1:]
+
+    # Path traversal check
+    if any(p == ".." for p in clean_path.split("/")):
+        raise HTTPException(status_code=400, detail="Path traversal forbidden")
+
+    ext = os.path.splitext(clean_path)[1].lower()
+    mime_type, _ = mimetypes.guess_type(clean_path)
+    if not mime_type:
+        if ext in (".mp4", ".m4v"):
+            mime_type = "video/mp4"
+        elif ext in (".mov",):
+            mime_type = "video/quicktime"
+        elif ext in (".webm",):
+            mime_type = "video/webm"
+        elif ext in (".mp3",):
+            mime_type = "audio/mpeg"
+        elif ext in (".wav",):
+            mime_type = "audio/wav"
+        elif ext in (".m4a", ".aac"):
+            mime_type = "audio/mp4"
+        elif ext in (".html", ".htm"):
+            mime_type = "text/html; charset=utf-8"
+        elif ext in (".png",):
+            mime_type = "image/png"
+        elif ext in (".jpg", ".jpeg"):
+            mime_type = "image/jpeg"
+        elif ext in (".webp",):
+            mime_type = "image/webp"
+        elif ext in (".svg",):
+            mime_type = "image/svg+xml"
+        else:
+            mime_type = "application/octet-stream"
+
+    total_size = 0
+    is_local = os.path.exists(clean_path) and os.path.isfile(clean_path)
+    from ..services.ws_manager import ws_manager
+
+    dev_token = target_machine.collector_token_hash if target_machine else device_id
+    if is_local:
+        total_size = os.path.getsize(clean_path)
+    else:
+        stat = await ws_manager.request_file_stat(dev_token, clean_path)
+        if not stat.get("exists") and target_machine and target_machine.name:
+            stat = await ws_manager.request_file_stat(target_machine.name, clean_path)
+        if not stat.get("exists"):
+            raise HTTPException(status_code=404, detail=f"File not found on device: {stat.get('error') or 'offline'}")
+        total_size = stat.get("size") or stat.get("total_size") or 0
+
+    range_header = request.headers.get("range") if request else None
+    start = 0
+    end = (total_size - 1) if total_size > 0 else 0
+    status_code = 200
+
+    if range_header and range_header.startswith("bytes="):
+        parts = range_header.replace("bytes=", "").split("-")
+        if parts[0]:
+            start = int(parts[0])
+        if len(parts) > 1 and parts[1]:
+            end = int(parts[1])
+        status_code = 206
+
+    if start > end or (total_size > 0 and start >= total_size):
+        return Response(status_code=416, headers={"Content-Range": f"bytes */{total_size}"})
+
+    content_length = (end - start + 1) if total_size > 0 else 0
+
+    async def chunk_generator():
+        curr = start
+        chunk_size = 512 * 1024  # 512 KB chunks for smooth media buffering
+        if is_local:
+            with open(clean_path, "rb") as f:
+                f.seek(curr)
+                while curr <= end:
+                    read_len = min(chunk_size, end - curr + 1)
+                    data = f.read(read_len)
+                    if not data:
+                        break
+                    curr += len(data)
+                    yield data
+        else:
+            while curr <= end:
+                read_len = min(chunk_size, end - curr + 1)
+                chunk = await ws_manager.request_file_chunk(dev_token, clean_path, curr, read_len)
+                if not chunk and target_machine and target_machine.name:
+                    chunk = await ws_manager.request_file_chunk(target_machine.name, clean_path, curr, read_len)
+                if not chunk:
+                    break
+                curr += len(chunk)
+                yield chunk
+
+    headers = {
+        "Content-Type": mime_type,
+        "Accept-Ranges": "bytes",
+        "Content-Length": str(content_length),
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Headers": "Range, Authorization, Content-Type",
+        "Access-Control-Expose-Headers": "Content-Range, Content-Length, Accept-Ranges",
+    }
+    if status_code == 206:
+        headers["Content-Range"] = f"bytes {start}-{end}/{total_size}"
+
+    return StreamingResponse(chunk_generator(), status_code=status_code, headers=headers)
+

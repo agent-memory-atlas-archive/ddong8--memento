@@ -8,8 +8,10 @@ and real-time process cancellation.
 from __future__ import annotations
 
 import asyncio
+import base64
 import logging
 from typing import Any
+import uuid
 
 from fastapi import WebSocket
 
@@ -24,6 +26,8 @@ class DeviceConnectionManager:
         self._task_queues: dict[str, asyncio.Queue] = {}
         # task_id (str) -> WebSocket (exact active connection running this task)
         self._task_connections: dict[str, WebSocket] = {}
+        # req_id (str) -> asyncio.Future
+        self._pending_file_requests: dict[str, asyncio.Future] = {}
 
     def register(self, device_id: str, ws: WebSocket) -> None:
         self._connections[device_id] = ws
@@ -149,6 +153,74 @@ class DeviceConnectionManager:
                 })
             except asyncio.QueueFull:
                 pass
+
+    async def request_file_stat(self, device_id: str, path: str, timeout: float = 8.0) -> dict[str, Any]:
+        """Ask the remote collector device for file metadata (existence, total_size)."""
+        ws = self._connections.get(device_id)
+        if not ws:
+            return {"exists": False, "error": f"device {device_id} not connected"}
+        req_id = uuid.uuid4().hex
+        loop = asyncio.get_running_loop()
+        fut = loop.create_future()
+        self._pending_file_requests[req_id] = fut
+        try:
+            await ws.send_json({
+                "type": "file_stat_req",
+                "req_id": req_id,
+                "path": path,
+            })
+            return await asyncio.wait_for(fut, timeout=timeout)
+        except asyncio.TimeoutError:
+            return {"exists": False, "error": "device stat request timed out"}
+        except Exception as e:
+            return {"exists": False, "error": str(e)}
+        finally:
+            self._pending_file_requests.pop(req_id, None)
+
+    async def request_file_chunk(
+        self,
+        device_id: str,
+        path: str,
+        offset: int,
+        length: int,
+        timeout: float = 15.0,
+    ) -> bytes | None:
+        """Ask the remote collector device for a chunk of file bytes (Range stream)."""
+        ws = self._connections.get(device_id)
+        if not ws:
+            return None
+        req_id = uuid.uuid4().hex
+        loop = asyncio.get_running_loop()
+        fut = loop.create_future()
+        self._pending_file_requests[req_id] = fut
+        try:
+            await ws.send_json({
+                "type": "file_chunk_req",
+                "req_id": req_id,
+                "path": path,
+                "offset": offset,
+                "length": length,
+            })
+            res = await asyncio.wait_for(fut, timeout=timeout)
+            if not isinstance(res, dict) or res.get("error"):
+                return None
+            b64 = res.get("data_b64")
+            if b64:
+                return base64.b64decode(b64)
+            return b""
+        except Exception as e:
+            logger.warning("request_file_chunk error for %s on %s: %s", path, device_id, e)
+            return None
+        finally:
+            self._pending_file_requests.pop(req_id, None)
+
+    def handle_file_response(self, data: dict[str, Any]) -> None:
+        """Dispatch incoming file_stat_resp or file_chunk_resp to awaiting futures."""
+        req_id = data.get("req_id")
+        if req_id and req_id in self._pending_file_requests:
+            fut = self._pending_file_requests[req_id]
+            if not fut.done():
+                fut.set_result(data)
 
 
 ws_manager = DeviceConnectionManager()
