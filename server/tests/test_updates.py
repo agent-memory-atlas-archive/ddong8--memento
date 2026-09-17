@@ -157,9 +157,16 @@ class TestUpdatesApi(unittest.TestCase):
                         self.assertTrue(data_linux["has_update"])
                         self.assertEqual(data_linux["asset_name"], "Memento-linux-x64.tar.gz")
 
+                        # 4. Download when uncached locally -> verify 302 redirect to GitHub
+                        res_redirect = await client.get("/api/system/update/download?file=Memento-macos-arm64.zip", follow_redirects=False)
+                        self.assertEqual(res_redirect.status_code, 302)
+                        self.assertIn("github.com", res_redirect.headers.get("location", ""))
+                        self.assertIn("Memento-macos-arm64.zip", res_redirect.headers.get("location", ""))
+
         asyncio.run(run())
 
 
 if __name__ == "__main__":
     unittest.main()
+
 

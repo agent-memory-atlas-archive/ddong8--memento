@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
@@ -48,6 +48,7 @@ class UpdateCheckResponse(BaseModel):
     release_notes: str = ""
     published_at: str | None = None
     download_url: str | None = None
+    upstream_url: str | None = None
     asset_name: str | None = None
     asset_size: int | None = None
     sha256: str | None = None
@@ -272,6 +273,10 @@ async def check_update(
             asset_name = gh_asset.get("name")
             asset_size = gh_asset.get("size")
 
+    upstream_url = None
+    if gh_asset:
+        upstream_url = gh_asset.get("browser_download_url")
+
     download_url = None
     if asset_name:
         download_url = f"/api/system/update/download?file={asset_name}"
@@ -284,6 +289,7 @@ async def check_update(
         release_notes=release_notes,
         published_at=published_at,
         download_url=download_url,
+        upstream_url=upstream_url,
         asset_name=asset_name,
         asset_size=asset_size,
         sha256=sha256_val,
@@ -293,79 +299,54 @@ async def check_update(
 @router.get("/download")
 async def download_update(
     file: str = Query(..., description="Asset filename to download"),
-) -> FileResponse:
-    """Download update asset file with directory traversal protection and upstream mirror fallback."""
+):
+    """Download update asset file with directory traversal protection.
+    
+    If hosted locally on the server filesystem, serves it immediately via FileResponse.
+    If not cached locally, instantly 302 redirects to upstream GitHub Release URL,
+    avoiding blocking the server async event loop with heavy binary proxying.
+    """
     # Sanitize filename: only allow safe alphanumeric, dots, dashes, underscores
     safe_name = os.path.basename(file)
     if not re.match(r"^[\w\.\-]+$", safe_name):
         raise HTTPException(status_code=400, detail="Invalid filename")
 
     file_path = _UPDATES_DIR / safe_name
-    if not file_path.exists() or not file_path.is_file():
-        # Attempt to fetch from upstream GitHub release and cache locally on the server
-        tag = ""
-        # 1. Check in-memory release cache first
-        gh_release = _RELEASE_CACHE.get("data")
-        if gh_release and "tag_name" in gh_release:
-            tag = str(gh_release["tag_name"]).strip()
+    if file_path.exists() and file_path.is_file():
+        return FileResponse(
+            file_path,
+            filename=safe_name,
+            media_type="application/octet-stream",
+            headers={
+                "Cache-Control": "public, max-age=600",
+                "Content-Disposition": f'attachment; filename="{safe_name}"',
+            },
+        )
 
-        # 2. Check version.json if no cached tag
-        if not tag:
-            version_file = _UPDATES_DIR / "version.json"
-            if version_file.exists():
-                try:
-                    with open(version_file, "r", encoding="utf-8") as f:
-                        meta = json.load(f)
-                        tag = str(meta.get("version", "")).strip()
-                except Exception:
-                    pass
+    # Asset is not present in local filesystem: redirect (302) to upstream GitHub Releases
+    tag = ""
+    gh_release = _RELEASE_CACHE.get("data")
+    if gh_release and "tag_name" in gh_release:
+        tag = str(gh_release["tag_name"]).strip()
 
-        # 3. Extract version from asset filename if still unknown (e.g. Memento-macos-v1.0.10.zip)
-        if not tag:
-            m = re.search(r"[vV]?(\d+\.\d+\.\d+)", safe_name)
-            if m:
-                tag = m.group(1)
-
-        if tag:
-            tag_name = tag if tag.startswith("v") else f"v{tag}"
-            upstream_urls = [
-                f"https://github.com/{GITHUB_REPO}/releases/download/{tag_name}/{safe_name}",
-                f"https://mirror.ghproxy.com/https://github.com/{GITHUB_REPO}/releases/download/{tag_name}/{safe_name}",
-                f"https://ghfast.top/https://github.com/{GITHUB_REPO}/releases/download/{tag_name}/{safe_name}",
-            ]
-
+    if not tag:
+        version_file = _UPDATES_DIR / "version.json"
+        if version_file.exists():
             try:
-                import httpx
-                _UPDATES_DIR.mkdir(parents=True, exist_ok=True)
-                tmp_file = _UPDATES_DIR / f"{safe_name}.part"
+                with open(version_file, "r", encoding="utf-8") as f:
+                    meta = json.load(f)
+                    tag = str(meta.get("version", "")).strip()
+            except Exception:
+                pass
 
-                async with httpx.AsyncClient(follow_redirects=True, timeout=120.0) as client:
-                    for up_url in upstream_urls:
-                        try:
-                            async with client.stream("GET", up_url) as resp:
-                                if resp.status_code == 200:
-                                    with open(tmp_file, "wb") as out_f:
-                                        async for chunk in resp.aiter_bytes():
-                                            out_f.write(chunk)
-                                    tmp_file.replace(file_path)
-                                    break
-                        except Exception as e:
-                            logger.warning("Failed to download %s from %s: %s", safe_name, up_url, e)
-                            if tmp_file.exists():
-                                tmp_file.unlink(missing_ok=True)
-            except Exception as e:
-                logger.error("Error fetching upstream release asset %s: %s", safe_name, e)
+    if not tag:
+        m = re.search(r"[vV]?(\d+\.\d+\.\d+)", safe_name)
+        if m:
+            tag = m.group(1)
 
-    if not file_path.exists() or not file_path.is_file():
-        raise HTTPException(status_code=404, detail="Update asset not found")
+    tag_name = tag if tag.startswith("v") else (f"v{tag}" if tag else "v1.0.13")
+    target_url = f"https://github.com/{GITHUB_REPO}/releases/download/{tag_name}/{safe_name}"
+    logger.info("Local update asset '%s' not found on server disk, redirecting 302 to upstream: %s", safe_name, target_url)
+    return RedirectResponse(url=target_url, status_code=302)
 
-    return FileResponse(
-        file_path,
-        filename=safe_name,
-        media_type="application/octet-stream",
-        headers={
-            "Cache-Control": "public, max-age=600",
-            "Content-Disposition": f'attachment; filename="{safe_name}"',
-        },
-    )
 

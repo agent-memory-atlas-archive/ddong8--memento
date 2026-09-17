@@ -17,6 +17,7 @@ class UpdateInfo {
   final String releaseNotes;
   final DateTime? publishedAt;
   final String? downloadUrl;
+  final String? upstreamUrl;
   final String? assetName;
   final int? assetSize;
   final String htmlUrl;
@@ -30,6 +31,7 @@ class UpdateInfo {
     required this.releaseNotes,
     this.publishedAt,
     this.downloadUrl,
+    this.upstreamUrl,
     this.assetName,
     this.assetSize,
     required this.htmlUrl,
@@ -39,7 +41,7 @@ class UpdateInfo {
 
 class UpdateService {
   static final Dio _dio = Dio(BaseOptions(
-    connectTimeout: const Duration(seconds: 10),
+    connectTimeout: const Duration(seconds: 8),
     receiveTimeout: const Duration(seconds: 15),
     headers: {
       'User-Agent': 'Memento-Client/$kAppCurrentVersion',
@@ -93,6 +95,8 @@ class UpdateService {
           }
         }
 
+        final upstreamUrl = data['upstream_url']?.toString();
+
         DateTime? publishedAt;
         if (data['published_at'] != null) {
           publishedAt = DateTime.tryParse(data['published_at'].toString());
@@ -116,6 +120,7 @@ class UpdateService {
               releaseNotes: releaseNotes.isNotEmpty ? releaseNotes : '当前已是最新版本',
               publishedAt: publishedAt,
               downloadUrl: null,
+              upstreamUrl: null,
               htmlUrl: serverUrl,
               isFromCustomServer: true,
             );
@@ -135,6 +140,7 @@ class UpdateService {
           releaseNotes: releaseNotes,
           publishedAt: publishedAt,
           downloadUrl: downloadUrl,
+          upstreamUrl: upstreamUrl,
           assetName: assetName,
           assetSize: assetSize,
           htmlUrl: serverUrl,
@@ -254,6 +260,7 @@ class UpdateService {
       releaseNotes: body,
       publishedAt: publishedAt,
       downloadUrl: downloadUrl,
+      upstreamUrl: downloadUrl,
       assetName: assetName,
       assetSize: assetSize,
       htmlUrl: htmlUrl,
@@ -285,7 +292,10 @@ class UpdateService {
   /// Download asset with progress callback and initiate platform installation / in-place replacement
   static Future<void> downloadAndInstall({
     required String downloadUrl,
+    String? upstreamUrl,
+    String? version,
     String? fileName,
+    void Function(String sourceLabel)? onSourceChanged,
     required void Function(int received, int total) onProgress,
     required void Function(String error) onError,
     required void Function(String savePath) onComplete,
@@ -300,19 +310,56 @@ class UpdateService {
       final tempDir = Directory.systemTemp.createTempSync('memento_update_');
       final savePath = p.join(tempDir.path, name);
 
-      // List of candidate URLs: direct original URL first, followed by fast reliable mirrors if it's GitHub
-      final candidates = <String>[downloadUrl];
-      if (downloadUrl.contains('github.com')) {
-        candidates.add('https://ghfast.top/$downloadUrl');
-        candidates.add('https://ghproxy.net/$downloadUrl');
+      // Build structured candidate list with labeled routes
+      final candidateList = <Map<String, String>>[];
+      final seenUrls = <String>{};
+
+      void addCandidate(String label, String? url) {
+        if (url == null || url.trim().isEmpty) return;
+        final clean = url.trim();
+        if (seenUrls.add(clean)) {
+          candidateList.add({'label': label, 'url': clean});
+        }
+      }
+
+      // 1. Primary provided URL (e.g. self-hosted server download or direct)
+      if (!downloadUrl.contains('github.com')) {
+        addCandidate('私有服务器', downloadUrl);
+      }
+
+      // 2. Upstream GitHub Release Direct URL (super fast if VPN/proxy available or overseas)
+      if (upstreamUrl != null && upstreamUrl.isNotEmpty) {
+        addCandidate('GitHub 官方源', upstreamUrl);
+      } else if (fileName != null && fileName.isNotEmpty && version != null && version.isNotEmpty) {
+        final tag = version.startsWith('v') ? version : 'v$version';
+        addCandidate('GitHub 官方源', 'https://github.com/ddong8/memento/releases/download/$tag/$fileName');
+      } else if (downloadUrl.contains('github.com')) {
+        addCandidate('GitHub 官方源', downloadUrl);
+      }
+
+      // 3. Fallback mirrors
+      final primaryGhUrl = candidateList.firstWhere(
+        (c) => c['url']!.contains('github.com'),
+        orElse: () => {'url': ''},
+      )['url'];
+
+      if (primaryGhUrl != null && primaryGhUrl.isNotEmpty) {
+        addCandidate('备选加速节点 1', 'https://ghfast.top/$primaryGhUrl');
+        addCandidate('备选加速节点 2', 'https://ghproxy.net/$primaryGhUrl');
+        addCandidate('备选加速节点 3', 'https://gh-proxy.com/$primaryGhUrl');
       }
 
       Object? lastError;
       bool downloaded = false;
 
-      for (final targetUrl in candidates) {
+      for (final candidate in candidateList) {
+        final label = candidate['label']!;
+        final targetUrl = candidate['url']!;
+        onSourceChanged?.call(label);
+        debugPrint('[UpdateService] Attempting download from [$label]: $targetUrl');
+
         try {
-          debugPrint('[UpdateService] Attempting download from: $targetUrl');
+          // Connect timeout is set to 8s: if the host is blocked/unreachable, quickly fail-over to the next candidate
           await _dio.download(
             targetUrl,
             savePath,
@@ -320,14 +367,21 @@ class UpdateService {
             options: Options(
               responseType: ResponseType.bytes,
               followRedirects: true,
-              sendTimeout: const Duration(seconds: 30),
-              receiveTimeout: const Duration(minutes: 5),
+              sendTimeout: const Duration(seconds: 15),
+              receiveTimeout: const Duration(minutes: 10),
             ),
           );
-          downloaded = true;
-          break;
+
+          final f = File(savePath);
+          if (await f.exists() && await f.length() > 1024) {
+            downloaded = true;
+            debugPrint('[UpdateService] Successfully downloaded update from [$label] (${await f.length()} bytes)');
+            break;
+          } else {
+            throw Exception('下载文件大小异常或为空');
+          }
         } catch (e) {
-          debugPrint('[UpdateService] Download attempt failed from $targetUrl: $e');
+          debugPrint('[UpdateService] Download attempt failed from [$label]: $e');
           lastError = e;
           final f = File(savePath);
           if (await f.exists()) {

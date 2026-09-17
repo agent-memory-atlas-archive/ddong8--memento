@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import '../../core/services/update_service.dart';
 import '../../core/theme/aurora_theme.dart';
@@ -24,6 +25,7 @@ class _UpdateDialogState extends State<UpdateDialog> {
   bool _isDownloading = false;
   double _progress = 0.0;
   String _statusText = '';
+  String _currentSource = '';
   String? _downloadedPath;
   String? _errorMessage;
 
@@ -40,6 +42,7 @@ class _UpdateDialogState extends State<UpdateDialog> {
       _isDownloading = true;
       _errorMessage = null;
       _statusText = '准备下载...';
+      _currentSource = '';
       _progress = 0.0;
     });
 
@@ -47,18 +50,28 @@ class _UpdateDialogState extends State<UpdateDialog> {
 
     UpdateService.downloadAndInstall(
       downloadUrl: targetUrl,
+      upstreamUrl: widget.info.upstreamUrl,
+      version: widget.info.version,
       fileName: widget.info.assetName,
+      onSourceChanged: (sourceLabel) {
+        if (!mounted) return;
+        setState(() {
+          _currentSource = sourceLabel;
+          _statusText = '[$sourceLabel] 连接中...';
+        });
+      },
       onProgress: (received, total) {
         if (!mounted) return;
         setState(() {
+          final prefix = _currentSource.isNotEmpty ? '[$_currentSource] ' : '';
           if (total > 0) {
             _progress = received / total;
             final recMb = (received / (1024 * 1024)).toStringAsFixed(1);
             final totMb = (total / (1024 * 1024)).toStringAsFixed(1);
-            _statusText = '下载中: $recMb / $totMb MB (${(_progress * 100).toInt()}%)';
+            _statusText = '$prefix下载中: $recMb / $totMb MB (${(_progress * 100).toInt()}%)';
           } else {
             final recMb = (received / (1024 * 1024)).toStringAsFixed(1);
-            _statusText = '已下载: $recMb MB';
+            _statusText = '$prefix已下载: $recMb MB';
           }
         });
       },
@@ -282,6 +295,24 @@ class _UpdateDialogState extends State<UpdateDialog> {
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
+                TextButton.icon(
+                  icon: const Icon(Icons.copy_rounded, size: 15),
+                  label: const Text('复制直链'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: AuroraColors.fg3,
+                  ),
+                  onPressed: () {
+                    final bestUrl = info.upstreamUrl ?? info.downloadUrl ?? info.htmlUrl;
+                    Clipboard.setData(ClipboardData(text: bestUrl));
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('安装包直链已复制到剪贴板，可在浏览器或下载器中下载'),
+                        duration: Duration(seconds: 3),
+                      ),
+                    );
+                  },
+                ),
+                const SizedBox(width: 4),
                 TextButton.icon(
                   icon: const Icon(Icons.open_in_browser, size: 16),
                   label: const Text('网页下载'),
