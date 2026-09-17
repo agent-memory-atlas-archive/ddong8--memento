@@ -123,7 +123,7 @@ class JsonlParser(BaseParser):
         if has_more:
             metadata["has_more"] = True
 
-        stem_title = "" if path.stem.startswith("rollout-") else path.stem
+        stem_title = "" if (path.stem.startswith("rollout-") or path.stem.lower() in ("transcript", "transcript_full", "conversation", "conversations")) else path.stem
         return ParseResult(
             content=content,
             title=title or stem_title,

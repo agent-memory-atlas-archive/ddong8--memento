@@ -88,6 +88,8 @@ def _is_junk_or_uuid_title(title: str | None, session_id: str | None = None) -> 
     # (d:\dev\…) and format strings ("{{.Service}}\t{{.Status}}").
     if re.search(r"\\[dswDSWbB]", t) or "(.*?)" in t or "<" in t or t.startswith("re.search"):
         return True
+    if t.startswith(("\\n", "\\r", "\n", "\r")) or re.match(r"^\s*(?:\\n)?\d+:", t):
+        return True
     if t_lower.endswith((".jsonl", ".json", ".pbtxt", ".sqlite", ".md")):
         return True
     if _UUID_RE.match(t):
@@ -508,6 +510,10 @@ async def ingest_file(
             if new_title:
                 new_title = str(new_title).strip()
             sid = (metadata.get("session_id") or relative_path.split("/")[-1].split(".")[0]).strip()
+            if (not sid or sid == "transcript") and "brain/" in relative_path:
+                bm = re.search(r"brain/([0-9a-fA-F-]+)/", relative_path)
+                if bm:
+                    sid = bm.group(1)
             is_title_junk = _is_junk_or_uuid_title(existing_doc.title, sid)
             is_valid_new_title = bool(new_title) and not _is_junk_or_uuid_title(new_title, sid)
 
@@ -567,8 +573,14 @@ async def ingest_file(
                     m = re.search(r'title:\s*"([^"]+)"', content)
                     if m:
                         cand_ann = m.group(1).strip()
-                        if cand_ann and "\\" not in cand_ann and "(.*?)" not in cand_ann and not cand_ann.endswith(".pbtxt"):
-                            ann_title = cand_ann
+                        if cand_ann and "(.*?)" not in cand_ann and not cand_ann.endswith(".pbtxt"):
+                            if "\\" in cand_ann:
+                                try:
+                                    cand_ann = cand_ann.encode("raw_unicode_escape").decode("unicode_escape")
+                                except Exception:
+                                    pass
+                            if not _is_junk_or_uuid_title(cand_ann, ann_sid):
+                                ann_title = cand_ann
                 if ann_sid and ann_title:
                     from sqlalchemy import update, or_
                     await db.execute(
@@ -690,6 +702,10 @@ async def ingest_file(
     if title:
         title = str(title).strip()
     sid = (metadata.get("session_id") or relative_path.split("/")[-1].split(".")[0]).strip()
+    if (not sid or sid == "transcript") and "brain/" in relative_path:
+        bm = re.search(r"brain/([0-9a-fA-F-]+)/", relative_path)
+        if bm:
+            sid = bm.group(1)
     if isinstance(metadata, dict) and sid and not metadata.get("session_id"):
         metadata["session_id"] = sid
     is_title_junk = _is_junk_or_uuid_title(title, sid)
@@ -731,8 +747,34 @@ async def ingest_file(
                 title = cand
                 is_title_junk = False
 
-        # 2. Antigravity <USER_REQUEST>
-        if is_title_junk:
+        # 2. Antigravity: check annotation doc BEFORE fallback to <USER_REQUEST>
+        if is_title_junk and tool_id == "antigravity":
+            if sid:
+                ann_doc = (await db.execute(
+                    select(Document).where(
+                        Document.tool_id == "antigravity",
+                        Document.category == "state",
+                        Document.relative_path.like(f"%annotations/{sid}.pbtxt"),
+                    ).limit(1)
+                )).scalar_one_or_none()
+                if ann_doc:
+                    cand_ann = ann_doc.title
+                    if not cand_ann and ann_doc.content:
+                        m = re.search(r'title:\s*"([^"]+)"', ann_doc.content)
+                        if m:
+                            cand_ann = m.group(1).strip()
+                    if cand_ann and "(.*?)" not in cand_ann and not cand_ann.endswith(".pbtxt"):
+                        if "\\" in cand_ann:
+                            try:
+                                cand_ann = cand_ann.encode("raw_unicode_escape").decode("unicode_escape")
+                            except Exception:
+                                pass
+                        if not _is_junk_or_uuid_title(cand_ann, sid):
+                            title = cand_ann
+                            is_title_junk = False
+
+        # 3. Antigravity <USER_REQUEST> (only if official title is not available)
+        if is_title_junk and tool_id == "antigravity":
             req_m = re.search(r"<USER_REQUEST>\s*(.*?)\s*</USER_REQUEST>", content[:15000], re.DOTALL)
             if req_m:
                 cand = req_m.group(1).strip().split("\n")[0][:60]
@@ -852,6 +894,38 @@ async def ingest_file(
     )
 
     await db.flush()
+
+    # If this is an Antigravity annotation file, update the parent conversation doc title
+    if tool_id == "antigravity" and "annotations" in relative_path:
+        ann_sid = (metadata.get("session_id") or relative_path.split("/")[-1].replace(".pbtxt", "")).strip()
+        ann_title = doc.title
+        if not ann_title and content:
+            m = re.search(r'title:\s*"([^"]+)"', content)
+            if m:
+                cand_ann = m.group(1).strip()
+                if cand_ann and "(.*?)" not in cand_ann and not cand_ann.endswith(".pbtxt"):
+                    if "\\" in cand_ann:
+                        try:
+                            cand_ann = cand_ann.encode("raw_unicode_escape").decode("unicode_escape")
+                        except Exception:
+                            pass
+                    if not _is_junk_or_uuid_title(cand_ann, ann_sid):
+                        ann_title = cand_ann
+        if ann_sid and ann_title:
+            from sqlalchemy import update, or_
+            await db.execute(
+                update(Document)
+                .where(
+                    Document.tool_id == "antigravity",
+                    Document.category == "conversation",
+                    or_(
+                        Document.metadata_["session_id"].astext == ann_sid,
+                        Document.relative_path.like(f"%{ann_sid}%"),
+                    )
+                )
+                .values(title=ann_title)
+            )
+            await db.flush()
 
     # Bump the parent project's updated_at so the projects list (sorted
     # by Project.updated_at desc) actually reorders when a new doc

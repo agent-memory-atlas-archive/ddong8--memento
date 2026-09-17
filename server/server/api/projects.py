@@ -1049,7 +1049,7 @@ async def get_project_conversations(
     docs_needing_title = [
         d for d in page_convs
         if _is_junk_or_uuid_title(d.title, (d.metadata_ or {}).get("session_id"))
-        or d.tool_id in ("claude_code", "codex")
+        or d.tool_id in ("claude_code", "codex", "antigravity")
     ]
     doc_contents: dict[uuid.UUID, str] = {}
     if docs_needing_title:
@@ -1149,6 +1149,10 @@ async def get_project_conversations(
             or (d.metadata_ or {}).get("cascade_id")
             or (d.relative_path.split("/")[-1].split(".")[0] if d.relative_path else str(d.id))
         )
+        if (not session_id or session_id == "transcript") and d.relative_path and "brain/" in d.relative_path:
+            bm = re.search(r"brain/([0-9a-fA-F-]+)/", d.relative_path)
+            if bm:
+                session_id = bm.group(1)
         ts = (d.source_modified_at or d.synced_at).isoformat()
 
         # Parse main conversation messages
@@ -1217,6 +1221,49 @@ async def get_project_conversations(
                             )
                     else:
                         is_title_junk = False
+
+        # 1.1 For Antigravity, extract official title from metadata or annotations doc
+        if d.tool_id == "antigravity":
+            m_title = (d.metadata_ or {}).get("title")
+            if m_title and not _is_junk_or_uuid_title(str(m_title), session_id):
+                cand_title = str(m_title).strip()
+                if conv_title != cand_title:
+                    conv_title = cand_title
+                    is_title_junk = False
+                    d.title = cand_title
+                    await db.execute(update(Document).where(Document.id == d.id).values(title=cand_title))
+                else:
+                    is_title_junk = False
+
+            # If current title is junk or looks like a raw prompt / code snippet, check annotations table
+            if is_title_junk or ("<USER_REQUEST>" in conv_title or conv_title.startswith("💬") or "\n" in conv_title or len(conv_title) > 35):
+                ann_doc = (await db.execute(
+                    select(Document).where(
+                        Document.tool_id == "antigravity",
+                        Document.category == "state",
+                        Document.relative_path.like(f"%annotations/{session_id}.pbtxt"),
+                    ).limit(1)
+                )).scalar_one_or_none()
+                if ann_doc:
+                    cand_ann = ann_doc.title
+                    if not cand_ann and ann_doc.content:
+                        m = re.search(r'title:\s*"([^"]+)"', ann_doc.content)
+                        if m:
+                            cand_ann = m.group(1).strip()
+                    if cand_ann and "(.*?)" not in cand_ann and not cand_ann.endswith(".pbtxt"):
+                        if "\\" in cand_ann:
+                            try:
+                                cand_ann = cand_ann.encode("raw_unicode_escape").decode("unicode_escape")
+                            except Exception:
+                                pass
+                        if not _is_junk_or_uuid_title(cand_ann, session_id):
+                            if conv_title != cand_ann:
+                                conv_title = cand_ann
+                                is_title_junk = False
+                                d.title = cand_ann
+                                await db.execute(update(Document).where(Document.id == d.id).values(title=cand_ann))
+                            else:
+                                is_title_junk = False
 
         # 2. Try metadata name / title / ai_title / first_user_message
         if is_title_junk:

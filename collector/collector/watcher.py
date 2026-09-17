@@ -314,9 +314,9 @@ class FileWatcher:
                 new_offset = result.offset if result.offset else path.stat().st_size
                 is_partial = result.is_partial
                 classification.metadata.update(result.metadata)
-                if result.title and not result.title.startswith("rollout-"):
+                if result.title and not result.title.startswith("rollout-") and result.title.lower() not in ("transcript", "transcript_full", "conversation", "conversations"):
                     curr_title = classification.metadata.get("title")
-                    if not curr_title or curr_title.startswith("rollout-"):
+                    if not curr_title or curr_title.startswith("rollout-") or str(curr_title).lower() in ("transcript", "transcript_full", "conversation", "conversations"):
                         classification.metadata["title"] = result.title
         except Exception:
             logger.debug("Parse error for %s, skipping", path)

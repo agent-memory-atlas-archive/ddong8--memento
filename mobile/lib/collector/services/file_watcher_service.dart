@@ -407,8 +407,56 @@ class FileWatcherService {
         _log('Syncing $relPath ($toolId) $deltaDesc (file size: ${currentSize}B)');
 
         // Extract project info from content / path for Claude Code, Antigravity, and Codex
+        String sessionId = p.basenameWithoutExtension(filePath);
+        String? sessionTitle;
         String? sessionCwd;
         String? sessionProjectName;
+
+        if (toolId == 'antigravity') {
+          final brainMatch = RegExp(r'[/\\]brain[/\\]([^/\\]+)[/\\]').firstMatch(filePath);
+          if (brainMatch != null) {
+            sessionId = brainMatch.group(1)!;
+          }
+
+          // A. Extract official title from Antigravity annotations
+          try {
+            final home = Platform.environment['USERPROFILE'] ?? Platform.environment['HOME'] ?? '';
+            final annFile = File(p.join(home, '.gemini', 'antigravity', 'annotations', '$sessionId.pbtxt'));
+            if (annFile.existsSync()) {
+              final annContent = annFile.readAsStringSync();
+              final titleMatch = RegExp(r'title:\s*"([^"]+)"').firstMatch(annContent);
+              if (titleMatch != null) {
+                final cand = titleMatch.group(1)!.trim();
+                if (cand.isNotEmpty && !cand.endsWith('.pbtxt')) {
+                  sessionTitle = cand;
+                }
+              }
+            }
+          } catch (_) {}
+
+          // B. Extract workspace from conversation db (highest fidelity)
+          try {
+            final home = Platform.environment['USERPROFILE'] ?? Platform.environment['HOME'] ?? '';
+            final convDbFile = File(p.join(home, '.gemini', 'antigravity', 'conversations', '$sessionId.db'));
+            if (convDbFile.existsSync()) {
+              final dbBytes = convDbFile.readAsBytesSync();
+              final dbText = utf8.decode(dbBytes, allowMalformed: true);
+              final wsMatch = RegExp(r'file://(/[a-zA-Z]:/[a-zA-Z0-9_.-]+(?:/[a-zA-Z0-9_.-]+)*|/[a-zA-Z0-9_.-]+(?:/[a-zA-Z0-9_.-]+)*)').firstMatch(dbText);
+              if (wsMatch != null) {
+                var rawWs = wsMatch.group(1)!;
+                if (RegExp(r'^/[a-zA-Z]:').hasMatch(rawWs)) {
+                  rawWs = rawWs.substring(1);
+                }
+                final cand = ToolDiscoveryService.cleanPath(rawWs);
+                final bName = p.basename(cand);
+                if (!ToolDiscoveryService.isInvalidProjectName(bName)) {
+                  sessionCwd = cand;
+                  sessionProjectName = bName;
+                }
+              }
+            }
+          } catch (_) {}
+        }
 
         if (toolId == 'claude' || toolId == 'claude_code') {
           final parts = relPath.split('/');
@@ -417,6 +465,18 @@ class FileWatcherService {
             sessionCwd = ToolDiscoveryService.cleanPath(realPath);
             if (!ToolDiscoveryService.isInvalidProjectName(projName)) {
               sessionProjectName = projName;
+            }
+          }
+          // Extract Claude aiTitle from content if available
+          if (cleanLines.isNotEmpty) {
+            for (final line in cleanLines.reversed) {
+              if (line.contains('"aiTitle"')) {
+                final m = RegExp(r'"aiTitle"\s*:\s*"([^"]+)"').firstMatch(line);
+                if (m != null && m.group(1)!.trim().isNotEmpty) {
+                  sessionTitle = m.group(1)!.trim();
+                  break;
+                }
+              }
             }
           }
         }
@@ -441,9 +501,9 @@ class FileWatcherService {
             }
           } catch (_) {}
 
-          // 2. Antigravity user_information / Cwd check in top lines
+          // 2. Antigravity user_information / tool calls Cwd check
           if (sessionCwd == null && toolId == 'antigravity') {
-            final topChunk = cleanLines.take(15).join('\n');
+            final topChunk = cleanLines.take(35).join('\n');
             final userMatch = RegExp(
               r'<user_information>[\s\S]*?((?:[a-zA-Z]:[/\\]|/)[a-zA-Z0-9_\.\-]+(?:[/\\][a-zA-Z0-9_\.\-]+)*)\s*->',
             ).firstMatch(topChunk);
@@ -457,12 +517,15 @@ class FileWatcherService {
             }
             if (sessionCwd == null) {
               final cwdMatch = RegExp(
-                r'"[Cc]wd"\s*:\s*"?\\?"?((?:[a-zA-Z]:[/\\]|/)[a-zA-Z0-9_\.\-]+(?:[/\\][a-zA-Z0-9_\.\-]+)*)',
+                r'"(?:[Cc]wd|DirectoryPath|AbsolutePath)"\s*:\s*"?\\?"?((?:[a-zA-Z]:[/\\]|/)[a-zA-Z0-9_\.\-]+(?:[/\\][a-zA-Z0-9_\.\-]+)*)',
               ).firstMatch(topChunk);
               if (cwdMatch != null) {
-                final cand = ToolDiscoveryService.cleanPath(cwdMatch.group(1)!);
+                var cand = ToolDiscoveryService.cleanPath(cwdMatch.group(1)!);
+                if (cand.endsWith('.md') || cand.endsWith('.json') || cand.endsWith('.py') || cand.endsWith('.ts') || cand.endsWith('.dart')) {
+                  cand = p.dirname(cand);
+                }
                 final bName = p.basename(cand);
-                if (!ToolDiscoveryService.isInvalidProjectName(bName)) {
+                if (!ToolDiscoveryService.isInvalidProjectName(bName) && !cand.contains('.gemini')) {
                   sessionCwd = cand;
                   sessionProjectName = bName;
                 }
@@ -472,7 +535,8 @@ class FileWatcherService {
         }
 
         final syncMetadata = {
-          'session_id': p.basenameWithoutExtension(filePath),
+          'session_id': sessionId,
+          if (sessionTitle != null && sessionTitle.isNotEmpty) 'title': sessionTitle,
           if (sessionCwd != null) 'project_path': sessionCwd,
           if (sessionProjectName != null) 'project_hash': sessionProjectName,
         };

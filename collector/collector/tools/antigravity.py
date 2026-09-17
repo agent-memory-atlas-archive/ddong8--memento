@@ -25,11 +25,30 @@ else:
 def _extract_brain_metadata(cascade_id: str, transcript_path: Path) -> dict[str, Any]:
     meta: dict[str, Any] = {"session_id": cascade_id, "source": "antigravity"}
 
-    # 0. Extract workspace and title from central conversation_summaries.db (highest fidelity source of truth)
+    # 0. Extract title from annotations pbtxt FIRST (this is what Antigravity IDE sidebar displays!)
+    ann_path = GEMINI_ROOT / "antigravity" / "annotations" / f"{cascade_id}.pbtxt"
+    if ann_path.exists():
+        try:
+            content = ann_path.read_text("utf-8", errors="ignore")
+            m = re.search(r'title:\s*"([^"]+)"', content)
+            if m and m.group(1).strip():
+                t = m.group(1).strip()
+                if "\\" in t:
+                    try:
+                        t = t.encode("raw_unicode_escape").decode("unicode_escape")
+                    except Exception:
+                        pass
+                if not t.endswith(".pbtxt"):
+                    meta["title"] = t
+        except Exception:
+            pass
+
+    # 1. Extract workspace and title from central conversation_summaries.db (highest fidelity source of truth)
     sum_db = GEMINI_ROOT / "antigravity" / "conversation_summaries.db"
     if sum_db.exists():
         try:
             import sqlite3
+            import urllib.parse
             conn = sqlite3.connect(f"file:{sum_db}?mode=ro", uri=True)
             cur = conn.cursor()
             cur.execute(
@@ -41,7 +60,7 @@ def _extract_brain_metadata(cascade_id: str, transcript_path: Path) -> dict[str,
             if s_row:
                 c_title, c_preview, c_ws_uris = s_row
                 resolved_title = (c_title or c_preview or "").strip()
-                if resolved_title:
+                if not meta.get("title") and resolved_title:
                     meta["title"] = resolved_title
                 if c_ws_uris:
                     try:
@@ -50,7 +69,8 @@ def _extract_brain_metadata(cascade_id: str, transcript_path: Path) -> dict[str,
                             raw_uri = uris[0]
                             if raw_uri.startswith("file://"):
                                 raw_ws = raw_uri[7:].rstrip("/")
-                                if re.match(r"^/[a-zA-Z]:/", raw_ws):
+                                raw_ws = urllib.parse.unquote(raw_ws)
+                                if re.match(r"^/[a-zA-Z]:", raw_ws):
                                     raw_ws = raw_ws[1:]
                                 cand_name = Path(raw_ws).name.strip("\"' ")
                                 if cand_name and not cand_name.isdigit() and cand_name.lower() not in ("...", "dev", "desktop", "tmp", "temp", "scratch"):
@@ -120,18 +140,7 @@ def _extract_brain_metadata(cascade_id: str, transcript_path: Path) -> dict[str,
         except Exception:
             pass
 
-    # 2. Extract title from annotations pbtxt FIRST (this is what Antigravity IDE sidebar displays!)
-    ann_path = GEMINI_ROOT / "antigravity" / "annotations" / f"{cascade_id}.pbtxt"
-    if ann_path.exists():
-        try:
-            content = ann_path.read_text("utf-8", errors="ignore")
-            m = re.search(r'title:\s*"([^"]+)"', content)
-            if m and m.group(1).strip():
-                meta["title"] = m.group(1).strip()
-        except Exception:
-            pass
-
-    # 3. Fallback: Extract title from first user prompt in transcript
+    # 2. Fallback: Extract title from first user prompt in transcript
     if not meta.get("title") and transcript_path.exists():
         try:
             with open(transcript_path, "r", encoding="utf-8") as f:

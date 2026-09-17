@@ -92,6 +92,16 @@ async def _run() -> dict:
                     if parent_title and not _is_junk_or_uuid_title(parent_title, parent_sid):
                         cand = f"审核: {parent_title}" if (rel_path and "rollout-" in rel_path) else parent_title
 
+                # Antigravity brain transcript session_id healing
+                if (not sid or sid == "transcript") and rel_path and "brain/" in rel_path:
+                    import re
+                    bm = re.search(r"brain/([0-9a-fA-F-]+)/", rel_path)
+                    if bm:
+                        sid = bm.group(1)
+                        if isinstance(meta, dict):
+                            meta = {**meta, "session_id": sid}
+                            await db.execute(update(Document).where(Document.id == did).values(metadata_=meta))
+
                 # Claude Code main conversation: check if document has an aiTitle
                 # in content that should take precedence over a raw user prompt
                 if not cand and rel_path and "projects/" in rel_path and rel_path.endswith(".jsonl") and not parent_sid:
@@ -103,7 +113,36 @@ async def _run() -> dict:
                         if ai_cand and not _is_junk_or_uuid_title(ai_cand, sid):
                             cand = ai_cand
 
-                # For non-sidechain docs, only touch junk titles (or Claude Code aiTitles).
+                # Antigravity main conversation: check if metadata or annotation doc has an official title
+                if not cand and rel_path and "antigravity" in rel_path and ("brain/" in rel_path or "conversations/" in rel_path):
+                    m_title = (meta or {}).get("title") if isinstance(meta, dict) else None
+                    if m_title and not _is_junk_or_uuid_title(str(m_title), sid):
+                        cand = str(m_title).strip()
+                    if not cand and sid:
+                        import re
+                        ann_doc = (await db.execute(
+                            select(Document).where(
+                                Document.tool_id == "antigravity",
+                                Document.category == "state",
+                                Document.relative_path.like(f"%annotations/{sid}.pbtxt"),
+                            ).limit(1)
+                        )).scalar_one_or_none()
+                        if ann_doc:
+                            cand_ann = ann_doc.title
+                            if not cand_ann and ann_doc.content:
+                                m = re.search(r'title:\s*"([^"]+)"', ann_doc.content)
+                                if m:
+                                    cand_ann = m.group(1).strip()
+                            if cand_ann and "(.*?)" not in cand_ann and not cand_ann.endswith(".pbtxt"):
+                                if "\\" in cand_ann:
+                                    try:
+                                        cand_ann = cand_ann.encode("raw_unicode_escape").decode("unicode_escape")
+                                    except Exception:
+                                        pass
+                                if not _is_junk_or_uuid_title(cand_ann, sid):
+                                    cand = cand_ann
+
+                # For non-sidechain docs, only touch junk titles (or Claude Code aiTitles / Antigravity official titles).
                 if not cand and not _is_junk_or_uuid_title(title, sid):
                     continue
                 scanned += 1
