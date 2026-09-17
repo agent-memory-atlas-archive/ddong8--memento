@@ -6,8 +6,8 @@ import 'package:path/path.dart' as p;
 import 'package:url_launcher/url_launcher.dart';
 import '../storage.dart';
 
-/// Current application version
-const String kAppCurrentVersion = '1.0.10';
+/// Current application version — MUST match pubspec.yaml `version` on every release!
+const String kAppCurrentVersion = '1.0.11';
 
 class UpdateInfo {
   final String version;
@@ -521,11 +521,15 @@ rm -f "\$0"
         return false;
       }
 
-      // Detect real source directory (some archives wrap everything in a single root folder)
+      // Detect real source directory (some archives wrap everything in a single
+      // root folder, or contain stray marker files like .release_marker alongside
+      // the actual content directory/app bundle)
       var sourceDir = extractDir.path;
       final entries = extractDir.listSync();
-      if (entries.length == 1 && entries.first is Directory) {
-        sourceDir = entries.first.path;
+      // Filter to only directories — ignore loose marker files like .release_marker
+      final subDirs = entries.whereType<Directory>().toList();
+      if (subDirs.length == 1) {
+        sourceDir = subDirs.first.path;
       }
 
       final currentExe = Platform.resolvedExecutable;
@@ -610,18 +614,29 @@ WshShell.Run cmd, 0, False
       } else if (Platform.isMacOS) {
         // macOS: Accurately locate .app bundle inside extractDir
         String? srcAppPath;
-        if (extractDir.path.toLowerCase().endsWith('.app')) {
-          srcAppPath = extractDir.path;
-        } else {
-          try {
-            for (final entity in extractDir.listSync(recursive: true)) {
-              if (entity is Directory && entity.path.toLowerCase().endsWith('.app')) {
-                srcAppPath = entity.path;
-                break;
+        // Search top-level and one level deep for .app bundle (avoid deep recursion inside .app)
+        try {
+          for (final entity in extractDir.listSync()) {
+            if (entity is Directory && entity.path.endsWith('.app')) {
+              srcAppPath = entity.path;
+              break;
+            }
+          }
+          // If not found at top level, check one level deep (e.g. zip wraps in subfolder)
+          if (srcAppPath == null) {
+            for (final entity in extractDir.listSync()) {
+              if (entity is Directory && !entity.path.endsWith('.app')) {
+                for (final sub in entity.listSync()) {
+                  if (sub is Directory && sub.path.endsWith('.app')) {
+                    srcAppPath = sub.path;
+                    break;
+                  }
+                }
+                if (srcAppPath != null) break;
               }
             }
-          } catch (_) {}
-        }
+          }
+        } catch (_) {}
         srcAppPath ??= sourceDir;
 
         final targetApp = _getMacAppBundlePath(currentExe);
