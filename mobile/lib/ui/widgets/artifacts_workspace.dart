@@ -26,8 +26,8 @@ class ArtifactsWorkspace extends StatefulWidget {
 
 class _ArtifactsWorkspaceState extends State<ArtifactsWorkspace> {
   late AgentArtifact _selectedArtifact;
-  String? _serverUrl;
-  String? _token;
+  String _serverUrl = AppStorage.currentServerUrl;
+  String? _token = AppStorage.currentToken;
 
   @override
   void initState() {

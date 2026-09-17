@@ -89,8 +89,10 @@ class _AskScreenState extends ConsumerState<AskScreen> {
 
   String? _findTurnDeviceId(AskTurn turn) {
     for (final call in turn.toolCalls.reversed) {
-      final devId = call.result?.deviceId;
-      if (devId != null && devId.isNotEmpty) return devId;
+      final resDev = call.result?.deviceId;
+      if (resDev != null && resDev.isNotEmpty && resDev != 'auto') return resDev;
+      final argDev = call.args['device_id']?.toString();
+      if (argDev != null && argDev.isNotEmpty && argDev != 'auto') return argDev;
     }
     final currentDev = ref.read(deviceProvider).selectedDeviceId;
     if (currentDev != 'auto' && currentDev != 'ask_only') return currentDev;
@@ -98,11 +100,27 @@ class _AskScreenState extends ConsumerState<AskScreen> {
   }
 
   List<AgentArtifact> _collectAllArtifacts(List<AskTurn> turns) {
+    // 1. Discover the most relevant execution device across the entire conversation
+    String? conversationDeviceId;
+    for (final turn in turns.reversed) {
+      final dev = _findTurnDeviceId(turn);
+      if (dev != null && dev.isNotEmpty && dev != 'auto') {
+        conversationDeviceId = dev;
+        break;
+      }
+    }
+    if (conversationDeviceId == null || conversationDeviceId.isEmpty) {
+      final currentDev = ref.read(deviceProvider).selectedDeviceId;
+      if (currentDev != 'auto' && currentDev != 'ask_only') {
+        conversationDeviceId = currentDev;
+      }
+    }
+
     final List<AgentArtifact> list = [];
     final Set<String> seenPaths = {};
     for (final turn in turns) {
       if (turn.content.isNotEmpty) {
-        final devId = _findTurnDeviceId(turn);
+        final devId = _findTurnDeviceId(turn) ?? conversationDeviceId;
         final arts = AgentArtifact.extractArtifacts(turn.content, defaultDeviceId: devId);
         for (final a in arts) {
           if (!seenPaths.contains(a.rawPath)) {

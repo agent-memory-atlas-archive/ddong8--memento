@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:path/path.dart' as p;
+import '../core/storage.dart';
 
 enum ArtifactType {
   video,
@@ -77,8 +78,9 @@ class AgentArtifact {
     final base = serverBaseUrl.replaceAll(RegExp(r'/+$'), '');
     final dev = deviceId != null && deviceId!.isNotEmpty ? deviceId! : 'auto';
     var url = '$base/api/devices/$dev/files/stream?path=${Uri.encodeComponent(cleanPath)}';
-    if (token != null && token.isNotEmpty) {
-      url += '&token=${Uri.encodeComponent(token)}';
+    final effectiveToken = token ?? AppStorage.currentToken;
+    if (effectiveToken != null && effectiveToken.isNotEmpty) {
+      url += '&token=${Uri.encodeComponent(effectiveToken)}';
     }
     return url;
   }

@@ -38,6 +38,9 @@ class AppStorage {
     await prefs.setString(_keyServerUrl, cleanUrl);
   }
 
+  static String get currentServerUrl => _cachedServerUrl ?? defaultServerUrl;
+  static String? get currentToken => _cachedToken;
+
   static Future<String?> getToken() async {
     if (_cachedToken != null) return _cachedToken;
     final prefs = await _getPrefs();

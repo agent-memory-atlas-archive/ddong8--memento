@@ -459,6 +459,33 @@ async def stream_device_file(
             stat = await ws_manager.request_file_stat(device_id, clean_path)
         if not stat.get("exists") and target_machine and target_machine.name:
             stat = await ws_manager.request_file_stat(target_machine.name, clean_path)
+
+        # If not found or if device_id was "auto", discover which of the user's online devices hosts this file
+        if not stat.get("exists"):
+            query = select(Machine)
+            if _user.role not in ("admin", "owner") and mids is not None:
+                query = query.where(Machine.id.in_(mids))
+            user_machines = (await db.execute(query)).scalars().all()
+
+            candidates: list[str] = []
+            for m in user_machines:
+                if m.collector_token_hash and m.collector_token_hash not in candidates:
+                    candidates.append(m.collector_token_hash)
+                if m.name and m.name not in candidates:
+                    candidates.append(m.name)
+            if _user.role in ("admin", "owner"):
+                for conn_id in list(ws_manager._connections.keys()):
+                    if conn_id not in candidates:
+                        candidates.append(conn_id)
+
+            for cand_token in candidates:
+                if cand_token in ws_manager._connections and cand_token != dev_token:
+                    cand_stat = await ws_manager.request_file_stat(cand_token, clean_path, timeout=3.5)
+                    if cand_stat.get("exists"):
+                        stat = cand_stat
+                        dev_token = cand_token
+                        break
+
         if not stat.get("exists"):
             err_msg = stat.get("error") or "offline"
             if err_msg == "offline":
