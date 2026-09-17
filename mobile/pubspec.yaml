@@ -1,7 +1,7 @@
 name: memento_mobile
 description: "Memento Mobile - AI Coding Memory & Cross-Device Remote Dispatch Assistant"
 publish_to: "none"
-version: 1.0.11+12
+version: 1.0.12+13
 
 environment:
   sdk: ">=3.0.0 <4.0.0"
@@ -19,6 +19,10 @@ dependencies:
   url_launcher: ^6.3.0
   cupertino_icons: ^1.0.8
   path: ^1.9.0
+  media_kit: ^1.2.6
+  media_kit_video: ^2.0.1
+  media_kit_libs_windows_video: ^1.0.11
+  media_kit_libs_video: ^1.0.7
 
 dev_dependencies:
   flutter_test:

@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../core/storage.dart';
 import '../../core/theme/aurora_theme.dart';
 import '../../models/agent_artifact.dart';
+import 'embedded_video_player.dart';
 
 class ArtifactCard extends StatefulWidget {
   final AgentArtifact artifact;
@@ -45,13 +46,49 @@ class _ArtifactCardState extends State<ArtifactCard> {
   Future<void> _handlePlayOrOpen() async {
     final streamUrl = widget.artifact.getStreamUrl(_serverUrl ?? 'https://mem.ihasy.com', token: _token);
     
-    // If desktop and workspace callback provided, open directly in side canvas
+    // 1. If desktop wide screen workspace callback provided, open directly in side canvas
     if (widget.onOpenWorkspace != null) {
       widget.onOpenWorkspace!();
       return;
     }
 
-    // Launch stream url in external player / browser
+    // 2. If video artifact, open embedded dialog directly inside the app (never jump to browser!)
+    if (widget.artifact.type == ArtifactType.video) {
+      showDialog(
+        context: context,
+        builder: (ctx) => Dialog(
+          backgroundColor: Colors.black,
+          insetPadding: const EdgeInsets.all(16),
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 900, maxHeight: 560),
+            clipBehavior: Clip.antiAlias,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: AuroraColors.borderStrong),
+            ),
+            child: Stack(
+              children: [
+                EmbeddedVideoPlayer(
+                  streamUrl: streamUrl,
+                  title: widget.artifact.title,
+                ),
+                Positioned(
+                  top: 10,
+                  right: 10,
+                  child: IconButton(
+                    icon: const Icon(Icons.close, color: Colors.white70),
+                    onPressed: () => Navigator.of(ctx).pop(),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      return;
+    }
+
+    // 3. Fallback for document or external URL
     final uri = Uri.parse(streamUrl);
     try {
       if (await canLaunchUrl(uri)) {

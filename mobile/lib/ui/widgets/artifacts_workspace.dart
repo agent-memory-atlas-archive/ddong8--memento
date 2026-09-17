@@ -6,6 +6,7 @@ import '../../core/storage.dart';
 import '../../core/theme/aurora_theme.dart';
 import '../../models/agent_artifact.dart';
 import 'app_markdown.dart';
+import 'embedded_video_player.dart';
 
 class ArtifactsWorkspace extends StatefulWidget {
   final List<AgentArtifact> artifacts;
@@ -276,12 +277,12 @@ class _ArtifactsWorkspaceState extends State<ArtifactsWorkspace> {
   Widget _buildVideoCanvas(AgentArtifact a, String streamUrl) {
     return Center(
       child: Container(
-        margin: const EdgeInsets.all(24),
-        constraints: const BoxConstraints(maxWidth: 720, maxHeight: 460),
+        margin: const EdgeInsets.all(20),
+        constraints: const BoxConstraints(maxWidth: 860, maxHeight: 540),
         decoration: BoxDecoration(
           color: Colors.black,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: const Color(0xFF38BDF8).withOpacity(0.4), width: 1.5),
+          border: Border.all(color: const Color(0xFF38BDF8).withOpacity(0.3), width: 1.5),
           boxShadow: [
             BoxShadow(
               color: const Color(0xFF38BDF8).withOpacity(0.12),
@@ -291,71 +292,10 @@ class _ArtifactsWorkspaceState extends State<ArtifactsWorkspace> {
           ],
         ),
         clipBehavior: Clip.antiAlias,
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            // Dark Media Cinema Stage
-            Container(
-              color: const Color(0xFF030712),
-              child: Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 80,
-                      height: 80,
-                      decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          colors: [Color(0xFF0284C7), Color(0xFF38BDF8)],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(
-                            color: const Color(0xFF38BDF8).withOpacity(0.4),
-                            blurRadius: 24,
-                            spreadRadius: 2,
-                          ),
-                        ],
-                      ),
-                      child: IconButton(
-                        icon: const Icon(Icons.play_arrow_rounded, size: 48, color: Colors.white),
-                        onPressed: _handleLaunchExternal,
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                    Text(
-                      a.title,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.white,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      '已建立 HTTP 206 分段媒体流 · 支持任意拖动快进快退',
-                      style: TextStyle(fontSize: 11.5, color: Colors.white.withOpacity(0.6)),
-                    ),
-                    const SizedBox(height: 18),
-                    ElevatedButton.icon(
-                      onPressed: _handleLaunchExternal,
-                      icon: const Icon(Icons.movie_filter_rounded, size: 16),
-                      label: const Text('立即全屏沉浸播放 (本地硬解秒开)'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF0284C7),
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
+        child: EmbeddedVideoPlayer(
+          streamUrl: streamUrl,
+          title: a.title,
+          onLaunchExternal: _handleLaunchExternal,
         ),
       ),
     );
