@@ -1,7 +1,7 @@
 {
-  "version": "1.0.10",
-  "title": "Memento v1.0.10",
-  "release_notes": "1. 支持 macOS 顶部菜单栏/托盘图标常驻，关闭窗口拦截最小化到托盘\n2. 彻底解决 macOS 自动升级覆盖与双程序残留问题\n3. 支持 Windows Inno Setup 安装包与系统级卸载注册\n4. 支持 Linux 桌面端 (.AppImage / .deb / .tar.gz)\n5. 增强多工具跨平台项目发现与长会话智能压缩续接",
+  "version": "1.0.11",
+  "title": "Memento v1.0.11",
+  "release_notes": "1. 全功能 Agent Artifacts 工作台上线，支持多产物 Tabs 切换、放映厅视窗与外部原生播放器联动\n2. 跨设备媒体流中继代理（HTTP 206 Partial Content），实现 NAS / 远端设备视频秒开与任意拖动进度条\n3. 气泡内嵌富媒体卡片（ArtifactCard）与智能嗅探引擎，自动提取音视频与产物路径\n4. 桌面端支持类似 Claude Artifacts 响应式左右分屏，移动端支持交互式工作台抽屉\n5. 优化 Windows 下划线与连字符项目名去重及超大历史会话拉取性能",
   "platforms": {
     "windows": {
       "asset_name": "Memento-windows-x64.zip",
