@@ -1,6 +1,6 @@
 {
-  "version": "1.0.12",
-  "title": "Memento v1.0.12",
+  "version": "1.0.13",
+  "title": "Memento v1.0.13",
   "release_notes": "1. 内置集成高性能硬件加速内嵌视频播放器（EmbeddedVideoPlayer），直接在工作台与对话弹层中秒播，彻底告别跳转浏览器\n2. 具备完整的原生播放条：播放/暂停、精准拖拽进度条、当前时间/总时长、缓冲指示与备用外接播放器切换\n3. 修复流媒体直链鉴权与 Windows/Mac/Linux 客户端更新安装体验",
   "platforms": {
     "windows": {
