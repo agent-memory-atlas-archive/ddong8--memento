@@ -44,7 +44,7 @@ class _ArtifactCardState extends State<ArtifactCard> {
   }
 
   Future<void> _handlePlayOrOpen() async {
-    final streamUrl = widget.artifact.getStreamUrl(_serverUrl ?? 'https://mem.ihasy.com', token: _token);
+    final streamUrl = widget.artifact.getPlayableSource(_serverUrl ?? 'https://mem.ihasy.com', token: _token);
     
     // 1. If desktop wide screen workspace callback provided, open directly in side canvas
     if (widget.onOpenWorkspace != null) {

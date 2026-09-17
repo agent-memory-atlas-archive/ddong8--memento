@@ -455,10 +455,15 @@ async def stream_device_file(
         total_size = os.path.getsize(clean_path)
     else:
         stat = await ws_manager.request_file_stat(dev_token, clean_path)
+        if not stat.get("exists") and device_id != dev_token:
+            stat = await ws_manager.request_file_stat(device_id, clean_path)
         if not stat.get("exists") and target_machine and target_machine.name:
             stat = await ws_manager.request_file_stat(target_machine.name, clean_path)
         if not stat.get("exists"):
-            raise HTTPException(status_code=404, detail=f"File not found on device: {stat.get('error') or 'offline'}")
+            err_msg = stat.get("error") or "offline"
+            if err_msg == "offline":
+                raise HTTPException(status_code=404, detail=f"Target device is offline or disconnected from WebSocket: {device_id}")
+            raise HTTPException(status_code=404, detail=f"File not found on device ({clean_path}): {err_msg}")
         total_size = stat.get("size") or stat.get("total_size") or 0
 
     range_header = request.headers.get("range") if request else None
@@ -496,6 +501,8 @@ async def stream_device_file(
             while curr <= end:
                 read_len = min(chunk_size, end - curr + 1)
                 chunk = await ws_manager.request_file_chunk(dev_token, clean_path, curr, read_len)
+                if not chunk and device_id != dev_token:
+                    chunk = await ws_manager.request_file_chunk(device_id, clean_path, curr, read_len)
                 if not chunk and target_machine and target_machine.name:
                     chunk = await ws_manager.request_file_chunk(target_machine.name, clean_path, curr, read_len)
                 if not chunk:

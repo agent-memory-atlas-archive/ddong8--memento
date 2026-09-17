@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:path/path.dart' as p;
 
 enum ArtifactType {
@@ -80,6 +81,32 @@ class AgentArtifact {
       url += '&token=${Uri.encodeComponent(token)}';
     }
     return url;
+  }
+
+  /// Check if the artifact physical file exists directly on the local filesystem.
+  bool get isLocalFile {
+    if (rawPath.isEmpty) return false;
+    final clean = rawPath.replaceFirst(RegExp(r'^file://'), '');
+    try {
+      return File(clean).existsSync();
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Returns local physical file if it exists on current host machine,
+  /// otherwise returns server relay stream URL.
+  String getPlayableSource(String serverBaseUrl, {String? token}) {
+    if (rawPath.isNotEmpty) {
+      final clean = rawPath.replaceFirst(RegExp(r'^file://'), '');
+      try {
+        final f = File(clean);
+        if (f.existsSync()) {
+          return f.path;
+        }
+      } catch (_) {}
+    }
+    return getStreamUrl(serverBaseUrl, token: token);
   }
 
   /// Sniff and extract artifacts from agent message turns.

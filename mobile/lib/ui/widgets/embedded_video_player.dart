@@ -103,33 +103,82 @@ class _EmbeddedVideoPlayerState extends State<EmbeddedVideoPlayer> {
     return '$m:$s';
   }
 
+  String _diagnoseError(String err) {
+    if (err.contains('Failed to open') || err.contains('404')) {
+      return '未能读取到媒体文件：目标机器上的文件尚未生成、已被清理或路径不存在。\n请确认物理文件是否已生成完毕。';
+    }
+    if (err.contains('offline')) {
+      return '目标采集设备当前处于离线状态，无法建立媒体流中继。\n请确认远端机器已开机并已连接网络。';
+    }
+    if (err.contains('401') || err.contains('403') || err.contains('token')) {
+      return '访问凭证已过期或无权读取该设备文件，请重新登录后再试。';
+    }
+    return err;
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_errorMessage != null) {
+      final friendlyTip = _diagnoseError(_errorMessage!);
       return Center(
         child: Container(
-          padding: const EdgeInsets.all(20),
+          margin: const EdgeInsets.symmetric(horizontal: 24),
+          padding: const EdgeInsets.all(22),
+          constraints: const BoxConstraints(maxWidth: 580),
           decoration: BoxDecoration(
             color: const Color(0xFF1E1010),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.redAccent.withOpacity(0.4)),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: Colors.redAccent.withOpacity(0.35)),
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.error_outline_rounded, color: Colors.redAccent, size: 36),
-              const SizedBox(height: 10),
-              const Text('媒体流加载异常', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 6),
-              Text(_errorMessage!, style: const TextStyle(color: Colors.white70, fontSize: 12), textAlign: TextAlign.center),
-              const SizedBox(height: 14),
-              ElevatedButton.icon(
-                onPressed: () {
-                  setState(() => _errorMessage = null);
-                  _player.open(Media(widget.streamUrl), play: true);
-                },
-                icon: const Icon(Icons.refresh, size: 16),
-                label: const Text('重试播放'),
+              const Icon(Icons.videocam_off_rounded, color: Colors.redAccent, size: 40),
+              const SizedBox(height: 12),
+              Text(
+                widget.title ?? '媒体文件加载失败',
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                friendlyTip,
+                style: const TextStyle(color: Colors.white70, fontSize: 12.5, height: 1.45),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 16),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ElevatedButton.icon(
+                    onPressed: () {
+                      setState(() => _errorMessage = null);
+                      _player.open(Media(widget.streamUrl), play: true);
+                    },
+                    icon: const Icon(Icons.refresh_rounded, size: 16),
+                    label: const Text('重试加载'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF0284C7),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                  ),
+                  if (widget.onLaunchExternal != null) ...[
+                    const SizedBox(width: 12),
+                    OutlinedButton.icon(
+                      onPressed: widget.onLaunchExternal,
+                      icon: const Icon(Icons.open_in_new_rounded, size: 15),
+                      label: const Text('外接播放器'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.white70,
+                        side: BorderSide(color: Colors.white.withOpacity(0.2)),
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ],
           ),

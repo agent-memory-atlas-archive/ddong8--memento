@@ -477,6 +477,7 @@ async def device_websocket_endpoint(
 
     await websocket.accept()
     real_device_id = machine.collector_token_hash
+    ws_manager.register(device_id, websocket)
     ws_manager.register(real_device_id, websocket)
     if machine.name:
         ws_manager.register(machine.name, websocket)

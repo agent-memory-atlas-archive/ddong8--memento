@@ -97,7 +97,7 @@ class _ArtifactsWorkspaceState extends State<ArtifactsWorkspace> {
   @override
   Widget build(BuildContext context) {
     final a = _selectedArtifact;
-    final streamUrl = a.getStreamUrl(_serverUrl ?? 'https://mem.ihasy.com', token: _token);
+    final playableSource = a.getPlayableSource(_serverUrl ?? 'https://mem.ihasy.com', token: _token);
 
     return Container(
       decoration: const BoxDecoration(
@@ -219,7 +219,7 @@ class _ArtifactsWorkspaceState extends State<ArtifactsWorkspace> {
                 ? const Center(
                     child: Text('当前对话暂无生成的产物文件', style: TextStyle(color: AuroraColors.fg3)),
                   )
-                : _buildArtifactCanvas(a, streamUrl),
+                : _buildArtifactCanvas(a, playableSource),
           ),
 
           // 3. Bottom Status & Path Meta Bar
@@ -234,14 +234,16 @@ class _ArtifactsWorkspaceState extends State<ArtifactsWorkspace> {
                 Container(
                   width: 7,
                   height: 7,
-                  decoration: const BoxDecoration(
-                    color: Color(0xFF10B981),
+                  decoration: BoxDecoration(
+                    color: a.isLocalFile ? const Color(0xFF38BDF8) : const Color(0xFF10B981),
                     shape: BoxShape.circle,
                   ),
                 ),
                 const SizedBox(width: 6),
                 Text(
-                  a.deviceId != null ? '设备: ${a.deviceId}' : '跨设备媒体流已就绪',
+                  a.isLocalFile
+                      ? '本地物理文件直读秒开 (Zero Latency)'
+                      : (a.deviceId != null ? '设备: ${a.deviceId}' : '跨设备媒体流已就绪'),
                   style: const TextStyle(fontSize: 10.5, color: AuroraColors.fg3),
                 ),
                 const Spacer(),
