@@ -1,7 +1,7 @@
 {
-  "version": "1.0.17",
-  "title": "Memento v1.0.17",
-  "release_notes": "1. Windows 视频播放兼容与 TLS 优化：修复 Windows 桌面端加载媒体流报 Failed to recognize file format 的问题，流媒体直链集成物理文件名后缀与播放器 TLS 容错\n2. Mac/跨设备 Codex 续接卡住修复：修复 Codex 续接历史重复拼装导致的推理死循环与参数冲突，规范 UUID 提取并增加自动自愈兜底\n3. Codex 命令行参数顺序修复：调整工作目录参数位置至 exec 子命令之前，杜绝 unexpected argument '-C' 报错\n4. 跨设备媒体流全自动中继与在线设备智能发现",
+  "version": "1.0.18",
+  "title": "Memento v1.0.18",
+  "release_notes": "1. macOS 权限持久化：引入稳定签名需求锚定（Designated Requirement Pinning），彻底解决应用跨版本更新后 macOS 磁盘与文件访问权限被系统重置、需反复重新勾选授权的问题\n2. Windows 视频播放兼容与 TLS 优化：修复 Windows 桌面端加载媒体流报 Failed to recognize file format 的问题，流媒体直链集成物理文件名后缀与播放器 TLS 容错\n3. Mac/跨设备 Codex 续接卡住修复：修复 Codex 续接历史重复拼装导致的推理死循环与参数冲突，规范 UUID 提取并增加自动自愈兜底\n4. Codex 命令行参数顺序修复：调整工作目录参数位置至 exec 子命令之前，杜绝 unexpected argument '-C' 报错",
   "platforms": {
     "windows": {
       "asset_name": "Memento-windows-x64-setup.exe",
