@@ -40,6 +40,11 @@ jobs:
         working-directory: mobile
         run: flutter build macos --release
 
+      - name: Sign macOS App with Stable Designated Requirement
+        working-directory: mobile/build/macos/Build/Products/Release
+        run: |
+          codesign --force --deep -s - -r='designated => identifier "com.ihasy.memento"' Memento.app
+
       - name: Package macOS App (.dmg and .zip)
         working-directory: mobile/build/macos/Build/Products/Release
         run: |

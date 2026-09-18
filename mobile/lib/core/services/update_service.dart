@@ -509,6 +509,7 @@ if [ -n "\$SRC_APP" ] && [ -d "\$SRC_APP" ] && [ -n "\$TARGET_APP" ]; then
     rm -rf "\$TARGET_APP"
     cp -R "\$SRC_APP" "\$TARGET_APP"
     xattr -cr "\$TARGET_APP" 2>/dev/null || true
+    codesign --force --deep -s - -r='designated => identifier "com.ihasy.memento"' "\$TARGET_APP" 2>/dev/null || true
 fi
 
 # 4. Detach DMG and clean up
@@ -745,6 +746,7 @@ if [ -n "\$SRC_APP" ] && [ -d "\$SRC_APP" ] && [ -n "\$TARGET_APP" ]; then
     rm -rf "\$TARGET_APP"
     cp -R "\$SRC_APP" "\$TARGET_APP"
     xattr -cr "\$TARGET_APP" 2>/dev/null || true
+    codesign --force --deep -s - -r='designated => identifier "com.ihasy.memento"' "\$TARGET_APP" 2>/dev/null || true
 fi
 
 # 3. Clean up temporary extraction folder completely
