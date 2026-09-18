@@ -758,7 +758,7 @@ async def _direct_agent_stream(
         if att_summary:
             final_prompt = f"{att_summary}\n\n{final_prompt}"
 
-        if history and "prompt" not in args:
+        if not orig_session_id and history and "prompt" not in args:
             prior_turns = []
             msgs = history[:-1] if (history and history[-1].get("role") == "user" and (history[-1].get("content") or "").strip() == question.strip()) else history
             for m in msgs:

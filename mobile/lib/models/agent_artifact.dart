@@ -77,7 +77,12 @@ class AgentArtifact {
     final cleanPath = rawPath.replaceFirst(RegExp(r'^file://'), '');
     final base = serverBaseUrl.replaceAll(RegExp(r'/+$'), '');
     final dev = deviceId != null && deviceId!.isNotEmpty ? deviceId! : 'auto';
-    var url = '$base/api/devices/$dev/files/stream?path=${Uri.encodeComponent(cleanPath)}';
+    final fileName = p.basename(cleanPath);
+    var url = '$base/api/devices/$dev/files/stream';
+    if (fileName.isNotEmpty) {
+      url += '/${Uri.encodeComponent(fileName)}';
+    }
+    url += '?path=${Uri.encodeComponent(cleanPath)}';
     final effectiveToken = token ?? AppStorage.currentToken;
     if (effectiveToken != null && effectiveToken.isNotEmpty) {
       url += '&token=${Uri.encodeComponent(effectiveToken)}';

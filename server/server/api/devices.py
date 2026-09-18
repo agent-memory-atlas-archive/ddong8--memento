@@ -392,9 +392,11 @@ async def ack_command(
 
 
 @router.get("/{device_id}/files/stream")
+@router.get("/{device_id}/files/stream/{filename}")
 async def stream_device_file(
     device_id: str,
     path: str = Query(..., description="Absolute path on the device or NAS"),
+    filename: str = None,
     request: Request = None,
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(get_current_user_flexible),

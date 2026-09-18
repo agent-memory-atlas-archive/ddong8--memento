@@ -574,7 +574,12 @@ class WsTaskClient {
         }
         args.add('exec');
         final isFork = payload['fork'] == true;
+        String effectiveSessionId = sessionId;
         if (sessionId.isNotEmpty) {
+          final uuidMatch = RegExp(r'[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}').firstMatch(sessionId);
+          if (uuidMatch != null) {
+            effectiveSessionId = uuidMatch.group(0)!;
+          }
           args.add(isFork ? 'fork' : 'resume');
         }
         args.addAll([
@@ -583,7 +588,7 @@ class WsTaskClient {
         ]);
         if (effort.isNotEmpty) args.addAll(['-c', 'model_reasoning_effort="$effort"']);
         if (model.isNotEmpty) args.addAll(['-m', model]);
-        if (sessionId.isNotEmpty) args.add(sessionId);
+        if (effectiveSessionId.isNotEmpty) args.add(effectiveSessionId);
         args.add(prompt);
       } else {
         // agy / antigravity
@@ -680,6 +685,8 @@ class WsTaskClient {
         ).toJson());
 
         final sId = payload['session_id'].toString();
+        final uuidMatch = RegExp(r'[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}').firstMatch(sId);
+        final cleanSid = uuidMatch != null ? uuidMatch.group(0)! : sId;
         final pText = payload['prompt']?.toString() ?? '';
         final mModel = payload['model']?.toString() ?? '';
         final mEffort = payload['effort']?.toString() ?? '';
@@ -696,7 +703,7 @@ class WsTaskClient {
         ]);
         if (mEffort.isNotEmpty) retryArgs.addAll(['-c', 'model_reasoning_effort="$mEffort"']);
         if (mModel.isNotEmpty) retryArgs.addAll(['-m', mModel]);
-        retryArgs.addAll([sId, pText]);
+        retryArgs.addAll([cleanSid, pText]);
 
         final retryProc = await Process.start(
           exe,
@@ -736,7 +743,11 @@ class WsTaskClient {
           fullErr.contains('cannot resume') ||
           fullErr.contains('unable to resume') ||
           fullErr.contains('No conversation found') ||
-          fullErr.contains('could not find session');
+          fullErr.contains('could not find session') ||
+          fullErr.contains('no recorded session') ||
+          fullErr.contains('unexpected argument') ||
+          fullErr.contains('invalid value') ||
+          fullErr.contains('Usage: codex exec');
 
       if (exitCode != 0 &&
           action != 'shell' &&

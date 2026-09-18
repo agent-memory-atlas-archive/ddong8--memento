@@ -7,7 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../storage.dart';
 
 /// Current application version — MUST match pubspec.yaml `version` on every release!
-const String kAppCurrentVersion = '1.0.16';
+const String kAppCurrentVersion = '1.0.17';
 
 class UpdateInfo {
   final String version;

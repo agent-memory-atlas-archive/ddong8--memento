@@ -41,6 +41,11 @@ class _EmbeddedVideoPlayerState extends State<EmbeddedVideoPlayer> {
     _player = Player();
     _controller = VideoController(_player);
 
+    try {
+      final p = _player.platform;
+      (p as dynamic).setProperty('tls-verify', 'no');
+    } catch (_) {}
+
     _player.stream.playing.listen((p) {
       if (mounted) setState(() => _isPlaying = p);
     });
@@ -106,6 +111,9 @@ class _EmbeddedVideoPlayerState extends State<EmbeddedVideoPlayer> {
   String _diagnoseError(String err) {
     if (err.contains('Failed to open') || err.contains('404')) {
       return '未能读取到媒体文件：目标机器上的文件尚未生成、已被清理或路径不存在。\n请确认物理文件是否已生成完毕。';
+    }
+    if (err.contains('Failed to recognize file format')) {
+      return '媒体流格式解析异常（通常因网络连接波动、TLS 证书校验或中继握手未就绪引起）。\n建议点击下方【重试加载】或【外接播放器】在外部播放器/浏览器中直接播放。';
     }
     if (err.contains('offline')) {
       return '目标采集设备当前处于离线状态，无法建立媒体流中继。\n请确认远端机器已开机并已连接网络。';
