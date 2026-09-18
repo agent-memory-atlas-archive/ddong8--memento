@@ -568,7 +568,11 @@ class WsTaskClient {
         if (model.isNotEmpty) args.addAll(['--model', model]);
         args.add(prompt);
       } else if (binary.contains('codex')) {
-        args = ['exec'];
+        args = [];
+        if (workingDir != null && workingDir.isNotEmpty) {
+          args.addAll(['-C', workingDir]);
+        }
+        args.add('exec');
         final isFork = payload['fork'] == true;
         if (sessionId.isNotEmpty) {
           args.add(isFork ? 'fork' : 'resume');
@@ -577,9 +581,6 @@ class WsTaskClient {
           '--dangerously-bypass-approvals-and-sandbox',
           '--skip-git-repo-check',
         ]);
-        if (workingDir != null && workingDir.isNotEmpty) {
-          args.addAll(['-C', workingDir]);
-        }
         if (effort.isNotEmpty) args.addAll(['-c', 'model_reasoning_effort="$effort"']);
         if (model.isNotEmpty) args.addAll(['-m', model]);
         if (sessionId.isNotEmpty) args.add(sessionId);
@@ -683,12 +684,16 @@ class WsTaskClient {
         final mModel = payload['model']?.toString() ?? '';
         final mEffort = payload['effort']?.toString() ?? '';
 
-        final retryArgs = [
+        final retryArgs = <String>[];
+        if (workingDir != null && workingDir.isNotEmpty) {
+          retryArgs.addAll(['-C', workingDir]);
+        }
+        retryArgs.addAll([
           'exec',
           'fork',
           '--dangerously-bypass-approvals-and-sandbox',
           '--skip-git-repo-check',
-        ];
+        ]);
         if (mEffort.isNotEmpty) retryArgs.addAll(['-c', 'model_reasoning_effort="$mEffort"']);
         if (mModel.isNotEmpty) retryArgs.addAll(['-m', mModel]);
         retryArgs.addAll([sId, pText]);
@@ -759,11 +764,15 @@ class WsTaskClient {
           if (mModel.isNotEmpty) freshArgs.addAll(['--model', mModel]);
           freshArgs.add(pText);
         } else if (binary.contains('codex')) {
-          freshArgs = [
+          freshArgs = [];
+          if (workingDir != null && workingDir.isNotEmpty) {
+            freshArgs.addAll(['-C', workingDir]);
+          }
+          freshArgs.addAll([
             'exec',
             '--dangerously-bypass-approvals-and-sandbox',
             '--skip-git-repo-check',
-          ];
+          ]);
           if (mEffort.isNotEmpty) freshArgs.addAll(['-c', 'model_reasoning_effort="$mEffort"']);
           if (mModel.isNotEmpty) freshArgs.addAll(['-m', mModel]);
           freshArgs.add(pText);

@@ -1,7 +1,7 @@
 {
-  "version": "1.0.15",
-  "title": "Memento v1.0.15",
-  "release_notes": "1. 跨设备媒体流智能发现：修复 Artifacts 工作台视频在切换/自动设备模式下 404 找不到视频的问题，服务端支持全网关自动发现并中继在线设备视频\n2. iOS Xcode 构建修复：完整集成 CocoaPods 与 libmpv/media_kit 依赖规范，彻底解决 Xcode 编译 Module not found 报错\n3. 移动端优化：彻底屏蔽 iOS/Android 误触发桌面更新弹窗\n4. 多模态对话支持：支持拍照、相册选图、截图与任意文件附件发送",
+  "version": "1.0.16",
+  "title": "Memento v1.0.16",
+  "release_notes": "1. Codex 命令行参数顺序修复：彻底修复远程接续会话（resume/fork）时报 error: unexpected argument '-C' found 的问题，调整工作目录参数位置至 exec 子命令之前\n2. 跨设备媒体流智能发现：修复 Artifacts 工作台视频在切换/自动设备模式下 404 找不到视频的问题，服务端支持全网关自动发现并中继在线设备视频\n3. iOS Xcode 构建修复：完整集成 CocoaPods 与 libmpv/media_kit 依赖规范，解决 Xcode 编译 Module not found 报错\n4. 多模态对话支持：支持拍照、相册选图、截图与任意文件附件发送",
   "platforms": {
     "windows": {
       "asset_name": "Memento-windows-x64-setup.exe",
