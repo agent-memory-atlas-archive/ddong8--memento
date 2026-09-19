@@ -222,40 +222,274 @@ class WsTaskClient {
 
   Future<Map<String, dynamic>> _probeCapabilities() async {
     final caps = <String, dynamic>{};
+    final home = CollectorConfig.homeDir;
 
-    // Check Claude Code
+    // 1. Claude Code
     final claudePath = await _findExecutable(['claude', 'claude-code']);
     if (claudePath != null) {
+      String defaultModel = '';
+      String defaultEffort = '';
+      try {
+        final settingsFile = File('$home/.claude/settings.json');
+        if (await settingsFile.exists()) {
+          final content = await settingsFile.readAsString();
+          final data = jsonDecode(content);
+          if (data is Map) {
+            defaultModel = (data['model'] ?? '').toString().trim();
+            defaultEffort = (data['effortLevel'] ?? '').toString().trim();
+          }
+        }
+      } catch (_) {}
+
+      final claudeModels = [
+        {
+          'id': '',
+          'name': defaultModel.isNotEmpty
+              ? '⚡ 默认模型 (跟随客户端配置: $defaultModel)'
+              : '⚡ 默认模型 (跟随客户端/CLI配置)',
+          'desc': defaultModel.isNotEmpty
+              ? '当前本地配置: $defaultModel'
+              : '使用本地 Claude Code 配置的默认模型',
+          'is_default': true,
+        },
+        {
+          'id': 'sonnet',
+          'name': 'sonnet (最新 Sonnet 别名 / 4.6)',
+          'desc': '官方推荐别名，自动指向最新版本 (Claude Sonnet 4.6)',
+        },
+        {
+          'id': 'opus',
+          'name': 'opus (最新 Opus 别名 / 4.6)',
+          'desc': '官方推荐别名，极高智能与超长上下文 (Claude Opus 4.6)',
+        },
+        {
+          'id': 'opus[1m]',
+          'name': 'opus[1m] (100万上下文增强版)',
+          'desc': 'Claude Opus 4.6 深度思维 / 100万 Token 超大上下文',
+        },
+        {
+          'id': 'haiku',
+          'name': 'haiku (最新 Haiku 别名 / 4.5)',
+          'desc': '官方推荐别名，极速轻量 (Claude Haiku 4.5)',
+        },
+        {
+          'id': 'claude-sonnet-4-6',
+          'name': 'Claude Sonnet 4.6',
+          'desc': '最新一代主力编码推理模型',
+        },
+        {
+          'id': 'claude-opus-4-6',
+          'name': 'Claude Opus 4.6',
+          'desc': '顶级架构分析与复杂逻辑推演',
+        },
+        {
+          'id': 'claude-haiku-4-5',
+          'name': 'Claude Haiku 4.5',
+          'desc': '毫秒级响应轻量模型',
+        },
+        {
+          'id': 'claude-3-7-sonnet',
+          'name': 'Claude 3.7 Sonnet',
+          'desc': '经典混合推理与编码模型',
+        },
+      ];
+
+      final effortOptions = [
+        {
+          'id': '',
+          'name': defaultEffort.isNotEmpty
+              ? '⚡ 默认 Effort (跟随配置: $defaultEffort)'
+              : '⚡ 默认 Effort (跟随CLI配置)',
+          'desc': defaultEffort.isNotEmpty
+              ? '使用本地配置的 effortLevel ($defaultEffort)'
+              : '使用客户端配置的思考量',
+        },
+        {'id': 'low', 'name': 'Low (快速 / 低思考量)', 'desc': '轻量思考，极速响应，节省 Token'},
+        {'id': 'medium', 'name': 'Medium (标准思考量)', 'desc': '平衡速度与推理质量，适合日常编程'},
+        {'id': 'high', 'name': 'High (深度推理 / 高思考量)', 'desc': '深入思维链，攻坚复杂架构与排错'},
+        {'id': 'max', 'name': 'Max (最大思考量)', 'desc': '顶级复杂任务深度多步探索'},
+      ];
+
       final claudeInfo = {
+        'tool': 'claude',
         'available': true,
         'path': claudePath,
-        'models': ['claude-3-5-sonnet-20241022', 'claude-3-7-sonnet-20250219', 'claude-3-5-haiku-20241022'],
+        'models': claudeModels,
+        'default_model': defaultModel,
         'supports_effort': true,
+        'default_effort': defaultEffort.isNotEmpty ? defaultEffort : 'max',
+        'effort_options': effortOptions,
       };
       caps['claude'] = claudeInfo;
       caps['claude_code'] = claudeInfo;
     }
 
-    // Check Codex
+    // 2. Codex
     final codexPath = await _findExecutable(['codex', 'codex-cli']);
     if (codexPath != null) {
+      String defaultModel = '';
+      String defaultEffort = 'medium';
+      try {
+        final configFile = File('$home/.codex/config.toml');
+        if (await configFile.exists()) {
+          final lines = await configFile.readAsLines();
+          for (final line in lines) {
+            final tr = line.trim();
+            if (tr.startsWith('model =')) {
+              defaultModel = tr.split('=')[1].trim().replaceAll('"', '').replaceAll("'", '');
+            } else if (tr.startsWith('model_reasoning_effort =')) {
+              defaultEffort = tr.split('=')[1].trim().replaceAll('"', '').replaceAll("'", '');
+            }
+          }
+        }
+      } catch (_) {}
+
+      final List<Map<String, dynamic>> codexModels = [
+        {
+          'id': '',
+          'name': defaultModel.isNotEmpty
+              ? '⚡ 默认模型 (跟随CLI配置: $defaultModel)'
+              : '⚡ 默认模型 (跟随客户端配置)',
+          'desc': defaultModel.isNotEmpty ? '当前配置: $defaultModel' : '使用本地默认配置模型',
+          'is_default': true,
+        }
+      ];
+
+      final Set<String> foundSlugs = {};
+      try {
+        final cacheFile = File('$home/.codex/models_cache.json');
+        if (await cacheFile.exists()) {
+          final cdata = jsonDecode(await cacheFile.readAsString());
+          if (cdata is Map && cdata['models'] is List) {
+            final raw = List<dynamic>.from(cdata['models']);
+            raw.sort((a, b) => ((a['priority'] ?? 999) as num).compareTo((b['priority'] ?? 999) as num));
+            for (final m in raw) {
+              if (m is Map) {
+                final slug = (m['slug'] ?? '').toString();
+                if (slug.isEmpty || slug == 'codex-auto-review' || foundSlugs.contains(slug)) continue;
+                foundSlugs.add(slug);
+                final dname = (m['display_name'] ?? slug).toString();
+                final desc = (m['description'] ?? '').toString();
+                final isActive = (slug == defaultModel);
+                codexModels.add({
+                  'id': slug,
+                  'name': isActive ? '$dname (当前主力)' : dname,
+                  'desc': desc,
+                });
+              }
+            }
+          }
+        }
+      } catch (_) {}
+
+      if (codexModels.length == 1) {
+        codexModels.addAll([
+          {'id': 'gpt-6-astra', 'name': 'GPT-6-Astra (最新旗舰)', 'desc': '前沿深度多步推理模型，复杂编码首选'},
+          {'id': 'gpt-reserve', 'name': 'GPT-Reserve (极速主力)', 'desc': '高性价比快速编码与日常任务'},
+          {'id': 'gpt-5.6-sol', 'name': 'GPT-5.6-Sol (日常主力)', 'desc': '可靠的主力 Agent 编码模型'},
+          {'id': 'gpt-5.6-terra', 'name': 'GPT-5.6-Terra', 'desc': '均衡的高性价比日常模型'},
+          {'id': 'gpt-5.6-luna', 'name': 'GPT-5.6-Luna', 'desc': '极速响应日常编码模型'},
+          {'id': 'gpt-5.5', 'name': 'GPT-5.5 (经典稳定)', 'desc': '经典全能编码与推理模型'},
+          {'id': 'o3', 'name': 'o3 (深度思维)', 'desc': 'OpenAI 深度思维链'},
+          {'id': 'o4-mini', 'name': 'o4-mini', 'desc': '轻量高速响应'},
+        ]);
+      }
+
+      final codexEffortOptions = [
+        {
+          'id': '',
+          'name': '⚡ 默认 Effort ($defaultEffort)',
+          'desc': '使用本地配置的 reasoning_effort ($defaultEffort)',
+        },
+        {'id': 'low', 'name': 'Low (快速 / 低思考量)', 'desc': '轻量思考，极速响应，节省 Token'},
+        {'id': 'medium', 'name': 'Medium (标准思考量)', 'desc': '平衡速度与推理质量，适合日常编程'},
+        {'id': 'high', 'name': 'High (深度推理 / 高思考量)', 'desc': '深入思维链，攻坚复杂架构与疑难排错'},
+      ];
+
       caps['codex'] = {
+        'tool': 'codex',
         'available': true,
         'path': codexPath,
-        'models': ['gpt-4o', 'o3-mini', 'o1'],
+        'models': codexModels,
+        'default_model': defaultModel,
         'supports_effort': true,
+        'default_effort': defaultEffort,
+        'effort_options': codexEffortOptions,
       };
     }
 
-    // Check Antigravity (agy)
+    // 3. Antigravity (agy)
     await _ensureAgyCliInstalled();
     final agyPath = await _findExecutable(['agy', 'agy_cli.py', 'agentapi']);
     if (agyPath != null) {
+      final agyModels = [
+        {
+          'id': '',
+          'name': '⚡ 默认模型 (系统配置: Gemini 3.8 Flash)',
+          'desc': '使用当前 Antigravity 默认模型配置',
+          'is_default': true,
+        },
+        {
+          'id': 'gemini-3.8-flash',
+          'name': 'Gemini 3.8 Flash (High, Fast)',
+          'desc': '最新高智能极速响应模型 (Antigravity 默认推荐)',
+        },
+        {
+          'id': 'gemini-3.7-flash',
+          'name': 'Gemini 3.7 Flash (Medium, Fast)',
+          'desc': '极速日常编码与高吞吐分析',
+        },
+        {
+          'id': 'gemini-3.6-flash',
+          'name': 'Gemini 3.6 Flash (Fast)',
+          'desc': '轻量超低延迟模型',
+        },
+        {
+          'id': 'gemini-3.1-pro',
+          'name': 'Gemini 3.1 Pro (深度推理)',
+          'desc': '高复杂度架构攻坚与深度逻辑推演',
+        },
+        {
+          'id': 'claude-sonnet-4-6',
+          'name': 'Claude Sonnet 4.6 (Thinking)',
+          'desc': '原生嵌入 Antigravity 的高阶思维模型',
+        },
+        {
+          'id': 'claude-opus-4-6',
+          'name': 'Claude Opus 4.6 (Thinking)',
+          'desc': '顶级架构分析与复杂逻辑推演',
+        },
+        {
+          'id': 'gpt-oss-120b',
+          'name': 'GPT-OSS 120B (Medium)',
+          'desc': '开源高性价比大模型',
+        },
+        {
+          'id': 'flash',
+          'name': 'Gemini Flash (快速推荐)',
+          'desc': '标准 Flash 阶梯 (自动映射最新 Gemini 3.8 Flash)',
+        },
+        {
+          'id': 'pro',
+          'name': 'Gemini Pro (强力推理)',
+          'desc': '标准 Pro 阶梯 (自动映射最新 Gemini 3.1 Pro / Claude)',
+        },
+        {
+          'id': 'flash_lite',
+          'name': 'Gemini Flash-Lite (超轻量)',
+          'desc': '超轻量阶梯 (自动映射 Gemini 3.6 Flash)',
+        },
+      ];
+
       caps['antigravity'] = {
+        'tool': 'antigravity',
         'available': true,
         'path': agyPath,
-        'models': ['gemini-2.5-pro', 'gemini-2.5-flash'],
+        'models': agyModels,
+        'default_model': 'gemini-3.8-flash',
         'supports_effort': false,
+        'default_effort': '',
+        'effort_options': [],
       };
     }
 
@@ -465,7 +699,7 @@ class WsTaskClient {
       if (await pyScript.exists()) {
         try {
           final content = await pyScript.readAsString();
-          if (content.contains('_auto_discover_antigravity_ls')) {
+          if (content.contains('_auto_discover_antigravity_ls') && content.contains('gemini-3.8-flash')) {
             needsWrite = false;
           }
         } catch (_) {}
@@ -901,6 +1135,7 @@ class WsTaskClient {
         if (sysAppend.isNotEmpty) args.addAll(['--append-system-prompt', sysAppend]);
         args.addAll(['--output-format', 'text', '--dangerously-skip-permissions']);
         if (model.isNotEmpty) args.addAll(['--model', model]);
+        if (effort.isNotEmpty) args.addAll(['--settings', jsonEncode({'effortLevel': effort})]);
         args.add(prompt);
       } else if (binary.contains('codex')) {
         args = [];
@@ -1558,9 +1793,9 @@ def main():
 
     # Normalize model tier
     model_arg = (args.model or "").lower().strip()
-    if model_arg in ("flash_lite", "flash-lite", "gemini-2.5-flash-lite"):
+    if model_arg in ("flash_lite", "flash-lite", "gemini-3.6-flash", "gemini-2.5-flash-lite"):
         model = "flash_lite"
-    elif model_arg in ("pro", "gemini-2.5-pro"):
+    elif model_arg in ("pro", "gemini-3.1-pro", "gemini-2.5-pro", "claude-sonnet-4-6", "claude-opus-4-6", "claude-3-7-sonnet"):
         model = "pro"
     else:
         model = "flash"

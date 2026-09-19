@@ -1,7 +1,7 @@
 {
-  "version": "1.0.22",
-  "title": "Memento v1.0.22",
-  "release_notes": "1. 修复 macOS/Linux/Windows 上远程调度 Claude Code CLI 报 env: node: No such file or directory 错误（自动探测继承用户的交互式 Login Shell PATH，系统化补齐 Node/NVM/ASDF/Volta/FNM 等运行环境路径）\n2. 确保已解析的 CLI 二进制文件所在目录自动置于 PATH 最前列，保证 shebang 脚本解析器执行环境完整",
+  "version": "1.0.23",
+  "title": "Memento v1.0.23",
+  "release_notes": "1. 同步 2026 最新官方模型库：全面对齐 Antigravity 最新模型矩阵（Gemini 3.8 Flash、Gemini 3.7 Flash、Gemini 3.6 Flash、Gemini 3.1 Pro、Claude Sonnet 4.6 Thinking、Claude Opus 4.6 Thinking、GPT-OSS 120B 等）\n2. 全面更新 Codex 与 Claude Code 模型库：支持 GPT-6-Astra、GPT-Reserve、GPT-5.6-Sol、GPT-5.6-Terra，Claude Opus 4.6 (1M 上下文增强版 opus[1m])、Claude Sonnet 4.6、Claude Haiku 4.5 等\n3. 动态探测本地客户端配置：智能嗅探 ~/.codex/config.toml、~/.codex/models_cache.json、~/.claude/settings.json，自动识别默认模型与 reasoning effort 思考量级别\n4. 增强模型下拉选择容错：彻底解决老旧设备上报简略模型字符串导致的解析与渲染异常",
   "platforms": {
     "windows": {
       "asset_name": "Memento-windows-x64-setup.exe",

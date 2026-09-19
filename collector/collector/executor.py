@@ -497,6 +497,8 @@ def build_agent_command(
         cmd += ["--output-format", "text", "--dangerously-skip-permissions"]
         if model:
             cmd += ["--model", model]
+        if effort:
+            cmd += ["--settings", json.dumps({"effortLevel": effort})]
         if max_budget_usd:
             cmd += ["--max-budget-usd", str(max_budget_usd)]
         if isinstance(args, list):

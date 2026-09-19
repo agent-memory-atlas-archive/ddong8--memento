@@ -34,23 +34,36 @@ class AskScreen extends ConsumerStatefulWidget {
 const Map<String, List<Map<String, String>>> kFallbackAgentModels = {
   'codex': [
     {'id': '', 'name': '⚡ 默认模型 (跟随客户端配置)'},
-    {'id': 'gpt-6-astra', 'name': 'GPT-6-Astra (最新)'},
-    {'id': 'gpt-5.6-sol', 'name': 'GPT-5.6-Sol (主力编码)'},
-    {'id': 'gpt-5.5', 'name': 'GPT-5.5 (官方推荐)'},
+    {'id': 'gpt-6-astra', 'name': 'GPT-6-Astra (最新旗舰)'},
+    {'id': 'gpt-reserve', 'name': 'GPT-Reserve (极速主力)'},
+    {'id': 'gpt-5.6-sol', 'name': 'GPT-5.6-Sol (日常主力)'},
+    {'id': 'gpt-5.6-terra', 'name': 'GPT-5.6-Terra (日常均衡)'},
+    {'id': 'gpt-5.6-luna', 'name': 'GPT-5.6-Luna (轻量极速)'},
+    {'id': 'gpt-5.5', 'name': 'GPT-5.5 (经典稳定)'},
     {'id': 'o3', 'name': 'o3 (深度思维)'},
     {'id': 'o4-mini', 'name': 'o4-mini (极速推理)'},
   ],
   'claude': [
     {'id': '', 'name': '⚡ 默认模型 (跟随客户端配置)'},
-    {'id': 'sonnet', 'name': 'sonnet (最新 Sonnet 别名)'},
+    {'id': 'sonnet', 'name': 'sonnet (最新 Sonnet 别名 / 4.6)'},
     {'id': 'opus', 'name': 'opus (最新 Opus 别名 / 4.6)'},
+    {'id': 'opus[1m]', 'name': 'opus[1m] (100万上下文增强版)'},
     {'id': 'haiku', 'name': 'haiku (最新 Haiku 别名 / 4.5)'},
     {'id': 'claude-sonnet-4-6', 'name': 'Claude Sonnet 4.6'},
+    {'id': 'claude-opus-4-6', 'name': 'Claude Opus 4.6'},
+    {'id': 'claude-haiku-4-5', 'name': 'Claude Haiku 4.5'},
     {'id': 'claude-3-7-sonnet', 'name': 'Claude 3.7 Sonnet'},
   ],
   'antigravity': [
-    {'id': '', 'name': '⚡ 默认模型 (系统配置)'},
-    {'id': 'flash', 'name': 'Gemini Flash (快速平衡)'},
+    {'id': '', 'name': '⚡ 默认模型 (系统配置: Gemini 3.8 Flash)'},
+    {'id': 'gemini-3.8-flash', 'name': 'Gemini 3.8 Flash (High, Fast)'},
+    {'id': 'gemini-3.7-flash', 'name': 'Gemini 3.7 Flash (Medium, Fast)'},
+    {'id': 'gemini-3.6-flash', 'name': 'Gemini 3.6 Flash (Fast)'},
+    {'id': 'gemini-3.1-pro', 'name': 'Gemini 3.1 Pro (深度推理)'},
+    {'id': 'claude-sonnet-4-6', 'name': 'Claude Sonnet 4.6 (Thinking)'},
+    {'id': 'claude-opus-4-6', 'name': 'Claude Opus 4.6 (Thinking)'},
+    {'id': 'gpt-oss-120b', 'name': 'GPT-OSS 120B (Medium)'},
+    {'id': 'flash', 'name': 'Gemini Flash (快速推荐)'},
     {'id': 'pro', 'name': 'Gemini Pro (强力推理)'},
     {'id': 'flash_lite', 'name': 'Gemini Flash-Lite'},
   ],
@@ -2456,8 +2469,8 @@ class _AskScreenState extends ConsumerState<AskScreen> {
                                     final dynamic rawModels = _agentCapabilities?['models'];
                                     final List<Map<String, String>> currentModels = (rawModels is List && rawModels.isNotEmpty)
                                         ? rawModels.map<Map<String, String>>((m) => {
-                                            'id': (m['id'] ?? '').toString(),
-                                            'name': (m['name'] ?? m['id'] ?? '').toString(),
+                                            'id': (m is Map ? (m['id'] ?? '') : m).toString(),
+                                            'name': (m is Map ? (m['name'] ?? m['id'] ?? '') : m).toString(),
                                           }).toList()
                                         : (kFallbackAgentModels[_executionMode] ?? []);
                                     return currentModels.map((m) {
