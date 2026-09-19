@@ -275,13 +275,14 @@ async def check_update(
             asset_size = plat_meta.get("size")
             sha256_val = plat_meta.get("sha256")
 
-        if not asset_name and local_platform_asset:
+        if local_platform_asset:
             asset_name = local_platform_asset.name
             asset_size = local_platform_asset.stat().st_size
-        elif not asset_name and gh_asset:
-            # Fallback to upstream GitHub asset if local platform metadata missing
-            asset_name = gh_asset.get("name")
+        elif gh_asset and gh_asset.get("size"):
+            # If download comes from GitHub Releases, GitHub asset size is authoritative
             asset_size = gh_asset.get("size")
+            if not asset_name:
+                asset_name = gh_asset.get("name")
 
     upstream_url = None
     if gh_asset:

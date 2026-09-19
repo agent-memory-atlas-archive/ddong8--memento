@@ -1507,34 +1507,98 @@ class _AskScreenState extends ConsumerState<AskScreen> {
           ],
         ),
         actions: [
-          // Background Update Ready Pill Button
+          // Background Update Pill Button
           Consumer(
             builder: (context, ref, _) {
               final updateState = ref.watch(appUpdateProvider);
-              if (!updateState.isReadyToInstall) return const SizedBox.shrink();
               final v = updateState.info?.version ?? '';
-              return Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
-                child: Tooltip(
-                  message: '新版本 ${v.isNotEmpty ? "v$v " : ""}已下载就绪，点击立即重启升级',
-                  child: ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF6366F1),
-                      foregroundColor: Colors.white,
-                      elevation: 2,
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                      visualDensity: VisualDensity.compact,
+
+              // 1. Ready to install -> Restart button
+              if (updateState.isReadyToInstall) {
+                return Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
+                  child: Tooltip(
+                    message: '新版本 ${v.isNotEmpty ? "v$v " : ""}已下载就绪，点击立即重启升级',
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF6366F1),
+                        foregroundColor: Colors.white,
+                        elevation: 2,
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      icon: const Icon(Icons.bolt_rounded, size: 16, color: Colors.white),
+                      label: Text(
+                        v.isNotEmpty ? '重启更新 (v$v)' : '重启更新',
+                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white),
+                      ),
+                      onPressed: () => ref.read(appUpdateProvider.notifier).applyUpdateAndRestart(),
                     ),
-                    icon: const Icon(Icons.bolt_rounded, size: 16, color: Colors.white),
-                    label: Text(
-                      v.isNotEmpty ? '重启更新 (v$v)' : '重启更新',
-                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white),
-                    ),
-                    onPressed: () => ref.read(appUpdateProvider.notifier).applyUpdateAndRestart(),
                   ),
-                ),
-              );
+                );
+              }
+
+              // 2. Downloading -> Progress pill
+              if (updateState.isDownloading) {
+                final percent = (updateState.progress * 100).toInt();
+                return Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
+                  child: Tooltip(
+                    message: '正在后台下载新版本 ${v.isNotEmpty ? "v$v " : ""}($percent%)',
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: AuroraColors.chip,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: AuroraColors.border),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const SizedBox(
+                            width: 12,
+                            height: 12,
+                            child: CircularProgressIndicator(strokeWidth: 1.5, color: AuroraColors.accent),
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            v.isNotEmpty ? '下载 v$v ($percent%)' : '下载中 ($percent%)',
+                            style: const TextStyle(fontSize: 11, color: AuroraColors.fg2),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              }
+
+              // 3. Error with update -> Retry button
+              if (updateState.hasUpdate && updateState.status == AppUpdateStatus.error) {
+                return Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
+                  child: Tooltip(
+                    message: '更新下载中断，点击重试',
+                    child: OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFFF59E0B),
+                        side: const BorderSide(color: Color(0xFFF59E0B), width: 1),
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      icon: const Icon(Icons.refresh_rounded, size: 14, color: Color(0xFFF59E0B)),
+                      label: Text(
+                        v.isNotEmpty ? '重试更新 (v$v)' : '重试更新',
+                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFFF59E0B)),
+                      ),
+                      onPressed: () => ref.read(appUpdateProvider.notifier).retry(),
+                    ),
+                  ),
+                );
+              }
+
+              return const SizedBox.shrink();
             },
           ),
           if (allArtifacts.isNotEmpty)

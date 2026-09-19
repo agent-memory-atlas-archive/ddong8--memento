@@ -5,15 +5,15 @@
   "platforms": {
     "windows": {
       "asset_name": "Memento-windows-x64-setup.exe",
-      "size": 11523878
+      "size": 25973024
     },
     "macos": {
       "asset_name": "Memento-macos-arm64.dmg",
-      "size": 23513347
+      "size": 44064648
     },
     "linux": {
       "asset_name": "Memento-linux-x64.tar.gz",
-      "size": 11105662
+      "size": 11649487
     }
   }
 }

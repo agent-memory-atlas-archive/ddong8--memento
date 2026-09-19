@@ -377,10 +377,11 @@ class _DesktopUpdateWidget extends ConsumerWidget {
     final updateState = ref.watch(appUpdateProvider);
     final status = updateState.status;
 
-    // Only render if downloading, readyToInstall, or installing
+    // Only render if active update progress, ready to install, or an update waiting/failed
     if (status != AppUpdateStatus.downloading &&
         status != AppUpdateStatus.readyToInstall &&
-        status != AppUpdateStatus.installing) {
+        status != AppUpdateStatus.installing &&
+        !(updateState.hasUpdate && (status == AppUpdateStatus.error || status == AppUpdateStatus.idle))) {
       return const SizedBox.shrink();
     }
 
@@ -481,7 +482,115 @@ class _DesktopUpdateWidget extends ConsumerWidget {
       );
     }
 
-    // 3. Downloading in background
+    // 3. Error with update (Click to retry)
+    if (status == AppUpdateStatus.error && updateState.hasUpdate) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        child: Container(
+          decoration: BoxDecoration(
+            color: const Color(0xFFF59E0B).withOpacity(0.12),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: const Color(0xFFF59E0B).withOpacity(0.4)),
+          ),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(10),
+              onTap: () => ref.read(appUpdateProvider.notifier).retry(),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                child: Row(
+                  children: [
+                    const Icon(Icons.warning_amber_rounded, color: Color(0xFFF59E0B), size: 18),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            version.isNotEmpty ? 'v$version 更新中断' : '更新下载中断',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: Color(0xFFF59E0B),
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          const Text(
+                            '点击重试下载',
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: AuroraColors.fg2,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Icon(Icons.refresh_rounded, color: Color(0xFFF59E0B), size: 16),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    // 4. Discovered update but idle (Click to start download)
+    if (status == AppUpdateStatus.idle && updateState.hasUpdate) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        child: Container(
+          decoration: BoxDecoration(
+            color: AuroraColors.chip,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: AuroraColors.accent.withOpacity(0.5)),
+          ),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(10),
+              onTap: () => ref.read(appUpdateProvider.notifier).retry(),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                child: Row(
+                  children: [
+                    const Icon(Icons.system_update_alt_rounded, color: AuroraColors.accent, size: 18),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            version.isNotEmpty ? '发现新版本 v$version' : '发现新版本',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: AuroraColors.fg1,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          const Text(
+                            '点击立即更新',
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: AuroraColors.fg2,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Icon(Icons.arrow_forward_ios_rounded, color: AuroraColors.accent, size: 12),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    // 5. Downloading in background
     final percent = (updateState.progress * 100).toInt();
 
     return Padding(

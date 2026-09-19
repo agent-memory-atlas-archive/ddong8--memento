@@ -65,5 +65,24 @@ void main() {
       expect(notifier.state.errorMessage, isNull);
       notifier.dispose();
     });
+
+    test('AppUpdateState retains info and hasUpdate even in error status', () {
+      final info = UpdateInfo(
+        version: '1.0.27',
+        currentVersion: '1.0.26',
+        hasUpdate: true,
+        title: 'v1.0.27',
+        releaseNotes: 'Fixes',
+        htmlUrl: 'https://github.com/ddong8/memento',
+      );
+      final errorState = const AppUpdateState().copyWith(
+        status: AppUpdateStatus.error,
+        info: info,
+        errorMessage: '下载失败',
+      );
+      expect(errorState.hasUpdate, isTrue);
+      expect(errorState.info?.version, equals('1.0.27'));
+      expect(errorState.status, equals(AppUpdateStatus.error));
+    });
   });
 }

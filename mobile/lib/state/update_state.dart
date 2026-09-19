@@ -73,8 +73,8 @@ class AppUpdateNotifier extends StateNotifier<AppUpdateState> {
   AppUpdateNotifier() : super(const AppUpdateState()) {
     // Only desktop platforms (macOS, Windows, Linux) support in-app silent downloads & self replacement
     if (Platform.isMacOS || Platform.isWindows || Platform.isLinux) {
-      // Check periodically every 4 hours
-      _periodicTimer = Timer.periodic(const Duration(hours: 4), (_) {
+      // Check periodically every 15 minutes
+      _periodicTimer = Timer.periodic(const Duration(minutes: 15), (_) {
         checkAndDownloadInBackground(silent: true);
       });
     }
@@ -84,6 +84,11 @@ class AppUpdateNotifier extends StateNotifier<AppUpdateState> {
   void dispose() {
     _periodicTimer?.cancel();
     super.dispose();
+  }
+
+  /// Manually retry checking and downloading update
+  Future<void> retry() async {
+    await checkAndDownloadInBackground(silent: false);
   }
 
   /// Perform background check and silent download
@@ -107,8 +112,10 @@ class AppUpdateNotifier extends StateNotifier<AppUpdateState> {
 
     state = state.copyWith(status: AppUpdateStatus.checking, errorMessage: null);
 
+    UpdateInfo? discoveredInfo;
     try {
       final info = await UpdateService.checkUpdate();
+      discoveredInfo = info;
       final now = DateTime.now();
 
       if (info == null || !info.hasUpdate) {
@@ -161,6 +168,7 @@ class AppUpdateNotifier extends StateNotifier<AppUpdateState> {
         onError: (err) {
           state = state.copyWith(
             status: AppUpdateStatus.error,
+            info: info,
             errorMessage: err,
           );
         },
@@ -168,6 +176,7 @@ class AppUpdateNotifier extends StateNotifier<AppUpdateState> {
 
       state = state.copyWith(
         status: AppUpdateStatus.readyToInstall,
+        info: info,
         downloadedPath: savePath,
         progress: 1.0,
       );
@@ -176,6 +185,7 @@ class AppUpdateNotifier extends StateNotifier<AppUpdateState> {
       debugPrint('[AppUpdateNotifier] checkAndDownloadInBackground error: $e');
       state = state.copyWith(
         status: AppUpdateStatus.error,
+        info: discoveredInfo ?? state.info,
         errorMessage: '$e',
       );
     }

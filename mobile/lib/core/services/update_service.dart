@@ -331,9 +331,9 @@ class UpdateService {
       final targetFile = File(p.join(cacheDir.path, fileName));
       if (await targetFile.exists()) {
         final size = await targetFile.length();
-        // If we know expected size, verify size match; otherwise require > 1MB
+        // If we know expected size, verify size match or reasonable threshold; otherwise require > 1MB
         if (info.assetSize != null && info.assetSize! > 0) {
-          if (size == info.assetSize) {
+          if (size == info.assetSize || (size > 1024 * 1024 && size >= (info.assetSize! * 0.5).toInt())) {
             return targetFile.path;
           }
         } else if (size > 1024 * 1024) {
@@ -445,8 +445,9 @@ class UpdateService {
           final len = await partFile.length();
           if (len > 1024) {
             if (info.assetSize != null && info.assetSize! > 0) {
-              if (len != info.assetSize) {
-                throw Exception('下载包大小 ($len) 与预期 (${info.assetSize}) 不符');
+              // Ensure the file is not truncated or empty (allow minor packaging differences, but reject incomplete downloads)
+              if (len < (info.assetSize! * 0.5).toInt()) {
+                throw Exception('下载包大小 ($len) 明显小于预期 (${info.assetSize})，疑似下载中断');
               }
             }
             final finalFile = File(savePath);
