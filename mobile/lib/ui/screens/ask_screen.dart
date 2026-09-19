@@ -20,6 +20,7 @@ import '../widgets/glass_card.dart';
 import '../widgets/thinking_block.dart';
 import '../widgets/app_markdown.dart';
 import '../../models/agent_artifact.dart';
+import '../../state/update_state.dart';
 import '../widgets/artifact_card.dart';
 import '../widgets/artifacts_workspace.dart';
 
@@ -1483,6 +1484,36 @@ class _AskScreenState extends ConsumerState<AskScreen> {
           ],
         ),
         actions: [
+          // Background Update Ready Pill Button
+          Consumer(
+            builder: (context, ref, _) {
+              final updateState = ref.watch(appUpdateProvider);
+              if (!updateState.isReadyToInstall) return const SizedBox.shrink();
+              final v = updateState.info?.version ?? '';
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
+                child: Tooltip(
+                  message: '新版本 ${v.isNotEmpty ? "v$v " : ""}已下载就绪，点击立即重启升级',
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF6366F1),
+                      foregroundColor: Colors.white,
+                      elevation: 2,
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    icon: const Icon(Icons.bolt_rounded, size: 16, color: Colors.white),
+                    label: Text(
+                      v.isNotEmpty ? '重启更新 (v$v)' : '重启更新',
+                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white),
+                    ),
+                    onPressed: () => ref.read(appUpdateProvider.notifier).applyUpdateAndRestart(),
+                  ),
+                ),
+              );
+            },
+          ),
           if (allArtifacts.isNotEmpty)
             IconButton(
               icon: Badge.count(

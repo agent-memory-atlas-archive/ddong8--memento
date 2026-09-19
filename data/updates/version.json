@@ -1,7 +1,7 @@
 {
-  "version": "1.0.18",
-  "title": "Memento v1.0.18",
-  "release_notes": "1. macOS 权限持久化：引入稳定签名需求锚定（Designated Requirement Pinning），彻底解决应用跨版本更新后 macOS 磁盘与文件访问权限被系统重置、需反复重新勾选授权的问题\n2. Windows 视频播放兼容与 TLS 优化：修复 Windows 桌面端加载媒体流报 Failed to recognize file format 的问题，流媒体直链集成物理文件名后缀与播放器 TLS 容错\n3. Mac/跨设备 Codex 续接卡住修复：修复 Codex 续接历史重复拼装导致的推理死循环与参数冲突，规范 UUID 提取并增加自动自愈兜底\n4. Codex 命令行参数顺序修复：调整工作目录参数位置至 exec 子命令之前，杜绝 unexpected argument '-C' 报错",
+  "version": "1.0.19",
+  "title": "Memento v1.0.19",
+  "release_notes": "1. 桌面端后台静默更新：检测到新版本时在后台静默多源测速下载，彻底去除启动时的打扰式模态弹窗\n2. 界面一键重启更新：更新包下载就绪后，桌面侧边栏与顶部操作栏展示醒目的「⚡ 重启更新」按钮，随点随更无感热替换并自动重启\n3. 本地更新缓存智能感知：自动隔离校验更新包缓存，已下载更新包直接秒级就绪，杜绝重复流量消耗",
   "platforms": {
     "windows": {
       "asset_name": "Memento-windows-x64-setup.exe",

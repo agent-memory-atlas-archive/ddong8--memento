@@ -7,7 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../storage.dart';
 
 /// Current application version — MUST match pubspec.yaml `version` on every release!
-const String kAppCurrentVersion = '1.0.18';
+const String kAppCurrentVersion = '1.0.19';
 
 class UpdateInfo {
   final String version;
@@ -295,6 +295,190 @@ class UpdateService {
     return false;
   }
 
+  /// Get deterministic cache directory for update packages:
+  /// e.g. <systemTemp>/memento_updates/<version>
+  static Directory getUpdateCacheDir(String version) {
+    final cleanVersion = version.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_');
+    final dir = Directory(p.join(Directory.systemTemp.path, 'memento_updates', cleanVersion));
+    if (!dir.existsSync()) {
+      dir.createSync(recursive: true);
+    }
+    return dir;
+  }
+
+  /// Get normalized file name for an update package
+  static String getUpdateFileName(UpdateInfo info) {
+    if (info.assetName != null && info.assetName!.isNotEmpty) {
+      return info.assetName!;
+    }
+    if (info.downloadUrl != null && info.downloadUrl!.isNotEmpty) {
+      try {
+        final uri = Uri.parse(info.downloadUrl!);
+        final bName = p.basename(uri.path);
+        if (bName.isNotEmpty && bName.contains('.')) {
+          return bName;
+        }
+      } catch (_) {}
+    }
+    return 'memento_update_${info.version}.zip';
+  }
+
+  /// Check if an update package has already been downloaded and is valid in local cache
+  static Future<String?> checkCachedPackage(UpdateInfo info) async {
+    try {
+      final fileName = getUpdateFileName(info);
+      final cacheDir = getUpdateCacheDir(info.version);
+      final targetFile = File(p.join(cacheDir.path, fileName));
+      if (await targetFile.exists()) {
+        final size = await targetFile.length();
+        // If we know expected size, verify size match; otherwise require > 1MB
+        if (info.assetSize != null && info.assetSize! > 0) {
+          if (size == info.assetSize) {
+            return targetFile.path;
+          }
+        } else if (size > 1024 * 1024) {
+          return targetFile.path;
+        }
+      }
+    } catch (e) {
+      debugPrint('[UpdateService] checkCachedPackage error: $e');
+    }
+    return null;
+  }
+
+  /// Download update package to deterministic local cache without triggering immediate installation.
+  /// Returns the downloaded/cached file path if successful.
+  static Future<String> downloadUpdate({
+    required UpdateInfo info,
+    void Function(String sourceLabel)? onSourceChanged,
+    void Function(int received, int total)? onProgress,
+    void Function(String error)? onError,
+  }) async {
+    // 1. Check if valid cached package already exists
+    final cached = await checkCachedPackage(info);
+    if (cached != null) {
+      debugPrint('[UpdateService] Found cached update package at $cached, skipping download');
+      onProgress?.call(info.assetSize ?? 100, info.assetSize ?? 100);
+      return cached;
+    }
+
+    final downloadUrl = info.downloadUrl;
+    if (downloadUrl == null || downloadUrl.isEmpty) {
+      const err = '缺少有效的下载地址';
+      onError?.call(err);
+      throw Exception(err);
+    }
+
+    final fileName = getUpdateFileName(info);
+    final cacheDir = getUpdateCacheDir(info.version);
+    final savePath = p.join(cacheDir.path, fileName);
+    final partPath = '$savePath.part';
+
+    // Build structured candidate list with labeled routes
+    final candidateList = <Map<String, String>>[];
+    final seenUrls = <String>{};
+
+    void addCandidate(String label, String? url) {
+      if (url == null || url.trim().isEmpty) return;
+      final clean = url.trim();
+      if (seenUrls.add(clean)) {
+        candidateList.add({'label': label, 'url': clean});
+      }
+    }
+
+    // 1. Primary provided URL
+    if (!downloadUrl.contains('github.com')) {
+      addCandidate('私有服务器', downloadUrl);
+    }
+
+    // 2. Upstream GitHub Release Direct URL
+    if (info.upstreamUrl != null && info.upstreamUrl!.isNotEmpty) {
+      addCandidate('GitHub 官方源', info.upstreamUrl);
+    } else if (info.version.isNotEmpty) {
+      final tag = info.version.startsWith('v') ? info.version : 'v${info.version}';
+      addCandidate('GitHub 官方源', 'https://github.com/ddong8/memento/releases/download/$tag/$fileName');
+    } else if (downloadUrl.contains('github.com')) {
+      addCandidate('GitHub 官方源', downloadUrl);
+    }
+
+    // 3. Fallback mirrors
+    final primaryGhUrl = candidateList.firstWhere(
+      (c) => c['url']!.contains('github.com'),
+      orElse: () => {'url': ''},
+    )['url'];
+
+    if (primaryGhUrl != null && primaryGhUrl.isNotEmpty) {
+      addCandidate('备选加速节点 1', 'https://ghfast.top/$primaryGhUrl');
+      addCandidate('备选加速节点 2', 'https://ghproxy.net/$primaryGhUrl');
+      addCandidate('备选加速节点 3', 'https://gh-proxy.com/$primaryGhUrl');
+    }
+
+    Object? lastError;
+    bool downloaded = false;
+
+    for (final candidate in candidateList) {
+      final label = candidate['label']!;
+      final targetUrl = candidate['url']!;
+      onSourceChanged?.call(label);
+      debugPrint('[UpdateService] Attempting download from [$label]: $targetUrl');
+
+      try {
+        final partFile = File(partPath);
+        if (await partFile.exists()) {
+          try { await partFile.delete(); } catch (_) {}
+        }
+
+        // Connect timeout is set to 8s: if the host is blocked/unreachable, quickly fail-over to the next candidate
+        await _dio.download(
+          targetUrl,
+          partPath,
+          onReceiveProgress: onProgress,
+          options: Options(
+            responseType: ResponseType.bytes,
+            followRedirects: true,
+            sendTimeout: const Duration(seconds: 15),
+            receiveTimeout: const Duration(minutes: 10),
+          ),
+        );
+
+        if (await partFile.exists()) {
+          final len = await partFile.length();
+          if (len > 1024) {
+            if (info.assetSize != null && info.assetSize! > 0) {
+              if (len != info.assetSize) {
+                throw Exception('下载包大小 ($len) 与预期 (${info.assetSize}) 不符');
+              }
+            }
+            final finalFile = File(savePath);
+            if (await finalFile.exists()) {
+              try { await finalFile.delete(); } catch (_) {}
+            }
+            await partFile.rename(savePath);
+            downloaded = true;
+            debugPrint('[UpdateService] Successfully downloaded update from [$label] ($len bytes) to $savePath');
+            break;
+          }
+        }
+        throw Exception('下载文件大小异常或为空');
+      } catch (e) {
+        debugPrint('[UpdateService] Download attempt failed from [$label]: $e');
+        lastError = e;
+        final f = File(partPath);
+        if (await f.exists()) {
+          try { await f.delete(); } catch (_) {}
+        }
+      }
+    }
+
+    if (!downloaded) {
+      final err = lastError != null ? '$lastError' : '所有更新下载通道均失败，请稍后重试';
+      onError?.call(err);
+      throw Exception(err);
+    }
+
+    return savePath;
+  }
+
   /// Download asset with progress callback and initiate platform installation / in-place replacement
   static Future<void> downloadAndInstall({
     required String downloadUrl,
@@ -307,105 +491,31 @@ class UpdateService {
     required void Function(String savePath) onComplete,
   }) async {
     try {
-      final uri = Uri.parse(downloadUrl);
-      var name = fileName ?? p.basename(uri.path);
-      if (name.isEmpty || !name.contains('.')) {
-        name = 'memento_update_${DateTime.now().millisecondsSinceEpoch}.zip';
-      }
+      final info = UpdateInfo(
+        version: version ?? 'latest',
+        currentVersion: kAppCurrentVersion,
+        hasUpdate: true,
+        title: 'Memento Update',
+        releaseNotes: '',
+        downloadUrl: downloadUrl,
+        upstreamUrl: upstreamUrl,
+        assetName: fileName,
+        htmlUrl: downloadUrl,
+      );
 
-      final tempDir = Directory.systemTemp.createTempSync('memento_update_');
-      final savePath = p.join(tempDir.path, name);
-
-      // Build structured candidate list with labeled routes
-      final candidateList = <Map<String, String>>[];
-      final seenUrls = <String>{};
-
-      void addCandidate(String label, String? url) {
-        if (url == null || url.trim().isEmpty) return;
-        final clean = url.trim();
-        if (seenUrls.add(clean)) {
-          candidateList.add({'label': label, 'url': clean});
-        }
-      }
-
-      // 1. Primary provided URL (e.g. self-hosted server download or direct)
-      if (!downloadUrl.contains('github.com')) {
-        addCandidate('私有服务器', downloadUrl);
-      }
-
-      // 2. Upstream GitHub Release Direct URL (super fast if VPN/proxy available or overseas)
-      if (upstreamUrl != null && upstreamUrl.isNotEmpty) {
-        addCandidate('GitHub 官方源', upstreamUrl);
-      } else if (fileName != null && fileName.isNotEmpty && version != null && version.isNotEmpty) {
-        final tag = version.startsWith('v') ? version : 'v$version';
-        addCandidate('GitHub 官方源', 'https://github.com/ddong8/memento/releases/download/$tag/$fileName');
-      } else if (downloadUrl.contains('github.com')) {
-        addCandidate('GitHub 官方源', downloadUrl);
-      }
-
-      // 3. Fallback mirrors
-      final primaryGhUrl = candidateList.firstWhere(
-        (c) => c['url']!.contains('github.com'),
-        orElse: () => {'url': ''},
-      )['url'];
-
-      if (primaryGhUrl != null && primaryGhUrl.isNotEmpty) {
-        addCandidate('备选加速节点 1', 'https://ghfast.top/$primaryGhUrl');
-        addCandidate('备选加速节点 2', 'https://ghproxy.net/$primaryGhUrl');
-        addCandidate('备选加速节点 3', 'https://gh-proxy.com/$primaryGhUrl');
-      }
-
-      Object? lastError;
-      bool downloaded = false;
-
-      for (final candidate in candidateList) {
-        final label = candidate['label']!;
-        final targetUrl = candidate['url']!;
-        onSourceChanged?.call(label);
-        debugPrint('[UpdateService] Attempting download from [$label]: $targetUrl');
-
-        try {
-          // Connect timeout is set to 8s: if the host is blocked/unreachable, quickly fail-over to the next candidate
-          await _dio.download(
-            targetUrl,
-            savePath,
-            onReceiveProgress: onProgress,
-            options: Options(
-              responseType: ResponseType.bytes,
-              followRedirects: true,
-              sendTimeout: const Duration(seconds: 15),
-              receiveTimeout: const Duration(minutes: 10),
-            ),
-          );
-
-          final f = File(savePath);
-          if (await f.exists() && await f.length() > 1024) {
-            downloaded = true;
-            debugPrint('[UpdateService] Successfully downloaded update from [$label] (${await f.length()} bytes)');
-            break;
-          } else {
-            throw Exception('下载文件大小异常或为空');
-          }
-        } catch (e) {
-          debugPrint('[UpdateService] Download attempt failed from [$label]: $e');
-          lastError = e;
-          final f = File(savePath);
-          if (await f.exists()) {
-            await f.delete();
-          }
-        }
-      }
-
-      if (!downloaded) {
-        throw lastError ?? Exception('所有更新下载通道均失败，请稍后重试');
-      }
+      final savePath = await downloadUpdate(
+        info: info,
+        onSourceChanged: onSourceChanged,
+        onProgress: onProgress,
+        onError: onError,
+      );
 
       onComplete(savePath);
 
       // Trigger installation or hot in-place replacement
       await installPackage(savePath);
     } catch (e) {
-      debugPrint('[UpdateService] Download failed: $e');
+      debugPrint('[UpdateService] downloadAndInstall failed: $e');
       onError('下载更新失败: $e');
     }
   }

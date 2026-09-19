@@ -9,9 +9,8 @@ import '../../state/device_state.dart';
 import '../../state/collector_state.dart';
 import '../../collector/models/collector_config.dart';
 import '../../collector/services/autostart_service.dart';
-import '../../core/services/update_service.dart';
 import '../../core/services/windows_registry_service.dart';
-import '../widgets/update_dialog.dart';
+import '../../state/update_state.dart';
 import 'ask_screen.dart';
 import 'daily_screen.dart';
 import 'devices_screen.dart';
@@ -39,16 +38,12 @@ class _ShellScreenState extends ConsumerState<ShellScreen> with WidgetsBindingOb
       AutostartService.ensureCorrectPath();
       // Register in Windows "Installed apps" with uninstaller support
       WindowsRegistryService.register();
-      // Check for app updates in background after startup
+      // Check for app updates silently in background and download if available
       // Only desktop platforms (macOS, Windows, Linux) support in-app auto updates and hot replacement.
       if (Platform.isMacOS || Platform.isWindows || Platform.isLinux) {
         Future.delayed(const Duration(seconds: 4), () {
           if (!mounted) return;
-          UpdateService.checkUpdate().then((info) {
-            if (info != null && info.hasUpdate && mounted) {
-              UpdateDialog.show(context, info);
-            }
-          }).catchError((_) {});
+          ref.read(appUpdateProvider.notifier).checkAndDownloadInBackground(silent: true);
         });
       }
     });
@@ -281,6 +276,9 @@ class _ShellScreenState extends ConsumerState<ShellScreen> with WidgetsBindingOb
                     ),
                   ),
 
+                  // Desktop Background Update Indicator / Restart Button
+                  const _DesktopUpdateWidget(),
+
                   // Bottom User Info & Logout
                   Padding(
                     padding: const EdgeInsets.all(16),
@@ -370,3 +368,173 @@ class _ShellScreenState extends ConsumerState<ShellScreen> with WidgetsBindingOb
     );
   }
 }
+
+class _DesktopUpdateWidget extends ConsumerWidget {
+  const _DesktopUpdateWidget();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final updateState = ref.watch(appUpdateProvider);
+    final status = updateState.status;
+
+    // Only render if downloading, readyToInstall, or installing
+    if (status != AppUpdateStatus.downloading &&
+        status != AppUpdateStatus.readyToInstall &&
+        status != AppUpdateStatus.installing) {
+      return const SizedBox.shrink();
+    }
+
+    final version = updateState.info?.version ?? '';
+
+    // 1. Ready to Install (Click to Restart & Update)
+    if (status == AppUpdateStatus.readyToInstall) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(10),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF6366F1).withOpacity(0.35),
+                blurRadius: 8,
+                offset: const Offset(0, 3),
+              ),
+            ],
+          ),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(10),
+              onTap: () => ref.read(appUpdateProvider.notifier).applyUpdateAndRestart(),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                child: Row(
+                  children: [
+                    const Icon(Icons.bolt_rounded, color: Colors.white, size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            version.isNotEmpty ? '新版本就绪 (v$version)' : '新版本已就绪',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          const Text(
+                            '点击立即重启完成更新',
+                            style: TextStyle(
+                              color: Colors.white70,
+                              fontSize: 10,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Icon(Icons.refresh_rounded, color: Colors.white, size: 16),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    // 2. Installing (Replacing files & restarting)
+    if (status == AppUpdateStatus.installing) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: AuroraColors.chip,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: AuroraColors.accent.withOpacity(0.5)),
+          ),
+          child: Row(
+            children: [
+              const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2, color: AuroraColors.accent),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  version.isNotEmpty ? '正在重启更新至 v$version...' : '正在重启更新...',
+                  style: const TextStyle(fontSize: 11, color: AuroraColors.fg1, fontWeight: FontWeight.w500),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // 3. Downloading in background
+    final percent = (updateState.progress * 100).toInt();
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: AuroraColors.chip,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: AuroraColors.border),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const SizedBox(
+                  width: 12,
+                  height: 12,
+                  child: CircularProgressIndicator(strokeWidth: 1.5, color: AuroraColors.fg2),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    version.isNotEmpty ? '后台下载 v$version ($percent%)' : '正在下载更新 ($percent%)',
+                    style: const TextStyle(fontSize: 11, color: AuroraColors.fg2, fontWeight: FontWeight.w500),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(2),
+              child: LinearProgressIndicator(
+                value: updateState.progress > 0 ? updateState.progress : null,
+                minHeight: 3,
+                backgroundColor: AuroraColors.border,
+                valueColor: const AlwaysStoppedAnimation<Color>(AuroraColors.accent),
+              ),
+            ),
+            if (updateState.sourceLabel.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text(
+                '节点: ${updateState.sourceLabel}',
+                style: const TextStyle(fontSize: 9, color: AuroraColors.fg3),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+

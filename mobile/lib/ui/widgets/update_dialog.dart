@@ -29,6 +29,25 @@ class _UpdateDialogState extends State<UpdateDialog> {
   String? _downloadedPath;
   String? _errorMessage;
 
+  @override
+  void initState() {
+    super.initState();
+    _checkCachedPackage();
+  }
+
+  Future<void> _checkCachedPackage() async {
+    try {
+      final cached = await UpdateService.checkCachedPackage(widget.info);
+      if (cached != null && mounted) {
+        setState(() {
+          _downloadedPath = cached;
+          _progress = 1.0;
+          _statusText = '更新包已在后台下载就绪，可直接重启更新';
+        });
+      }
+    } catch (_) {}
+  }
+
   String _formatSize(int? bytes) {
     if (bytes == null || bytes <= 0) return '';
     if (bytes < 1024 * 1024) {
@@ -344,10 +363,10 @@ class _UpdateDialogState extends State<UpdateDialog> {
                   ),
                 ] else if (_downloadedPath != null) ...[
                   ElevatedButton.icon(
-                    icon: const Icon(Icons.launch_rounded, size: 16),
-                    label: const Text('立即安装'),
+                    icon: const Icon(Icons.bolt_rounded, size: 16),
+                    label: const Text('立即重启更新'),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: AuroraColors.success,
+                      backgroundColor: AuroraColors.accent,
                       foregroundColor: Colors.white,
                       elevation: 0,
                     ),

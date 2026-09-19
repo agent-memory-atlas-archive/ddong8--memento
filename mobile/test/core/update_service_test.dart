@@ -24,5 +24,36 @@ void main() {
       expect(info!.version, isNotEmpty);
       expect(info.downloadUrl, isNotNull);
     });
+
+    test('getUpdateCacheDir returns non-empty valid directory', () {
+      final dir = UpdateService.getUpdateCacheDir('1.0.19');
+      expect(dir.existsSync(), isTrue);
+      expect(dir.path, contains('memento_updates'));
+      expect(dir.path, contains('1.0.19'));
+    });
+
+    test('getUpdateFileName resolves from assetName or downloadUrl', () {
+      final infoWithAsset = UpdateInfo(
+        version: '1.0.19',
+        currentVersion: '1.0.18',
+        hasUpdate: true,
+        title: 'Update',
+        releaseNotes: '',
+        assetName: 'memento-macos-arm64.zip',
+        htmlUrl: 'https://github.com/ddong8/memento',
+      );
+      expect(UpdateService.getUpdateFileName(infoWithAsset), equals('memento-macos-arm64.zip'));
+
+      final infoWithUrl = UpdateInfo(
+        version: '1.0.19',
+        currentVersion: '1.0.18',
+        hasUpdate: true,
+        title: 'Update',
+        releaseNotes: '',
+        downloadUrl: 'https://example.com/downloads/memento-windows-x64-setup.exe',
+        htmlUrl: 'https://github.com/ddong8/memento',
+      );
+      expect(UpdateService.getUpdateFileName(infoWithUrl), equals('memento-windows-x64-setup.exe'));
+    });
   });
 }
