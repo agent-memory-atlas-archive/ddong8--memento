@@ -326,15 +326,91 @@ class WsTaskClient {
           } catch (_) {}
         }
       }
+      // Enrich PATH for macOS/Linux GUI apps where launchd provides only minimal PATH
+      final currentPath = env['PATH'] ?? '';
+      final parts = currentPath.split(':').where((p) => p.isNotEmpty).toList();
+
+      // 1. Try to inherit the user's interactive login shell PATH (fast probe with 1.5s timeout)
+      try {
+        final shell = Platform.environment['SHELL'] ?? (await File('/bin/zsh').exists() ? '/bin/zsh' : '/bin/sh');
+        final res = await Process.run(
+          shell,
+          ['-ilc', 'echo -n "\$PATH"'],
+        ).timeout(const Duration(milliseconds: 1500));
+        if (res.exitCode == 0) {
+          final shellPath = res.stdout.toString().trim();
+          for (final sp in shellPath.split(':')) {
+            if (sp.isNotEmpty && !parts.contains(sp) && Directory(sp).existsSync()) {
+              parts.insert(0, sp);
+            }
+          }
+        }
+      } catch (_) {}
+
+      // 2. Add all standard tool & runtime directories
+      final extraDirs = [
+        '/opt/homebrew/bin',
+        '/opt/homebrew/sbin',
+        '/usr/local/bin',
+        '/usr/local/sbin',
+        '$home/.local/bin',
+        '$home/.cargo/bin',
+        '$home/go/bin',
+        '$home/.npm-global/bin',
+        '$home/.volta/bin',
+        '$home/.fnm/current/bin',
+        '$home/.asdf/shims',
+        '$home/.gemini/antigravity/bin',
+        '$home/.antigravity/antigravity/bin',
+        '/Applications/ChatGPT.app/Contents/Resources',
+      ];
+
+      // Scan dynamic nvm / asdf node directories
+      final nvmDir = Directory('$home/.nvm/versions/node');
+      if (await nvmDir.exists()) {
+        try {
+          final entries = await nvmDir.list().toList();
+          for (final entry in entries) {
+            if (entry is Directory) {
+              extraDirs.add('${entry.path}/bin');
+            }
+          }
+        } catch (_) {}
+      }
+      final asdfNodeDir = Directory('$home/.asdf/installs/nodejs');
+      if (await asdfNodeDir.exists()) {
+        try {
+          final entries = await asdfNodeDir.list().toList();
+          for (final entry in entries) {
+            if (entry is Directory) {
+              extraDirs.add('${entry.path}/bin');
+            }
+          }
+        } catch (_) {}
+      }
+
+      for (final ed in extraDirs) {
+        if (!parts.contains(ed) && Directory(ed).existsSync()) {
+          parts.insert(0, ed);
+        }
+      }
+      env['PATH'] = parts.join(':');
     } else if (Platform.isWindows) {
       final home = CollectorConfig.homeDir;
       final extraDirs = [
+        '$home\\AppData\\Roaming\\npm',
+        'C:\\Program Files\\nodejs',
+        'C:\\Program Files (x86)\\nodejs',
+        '$home\\AppData\\Local\\Programs\\node',
         '$home\\AppData\\Local\\agy\\bin',
         '$home\\AppData\\Local\\Programs\\Antigravity',
+        '$home\\AppData\\Local\\Programs',
         '$home\\.gemini\\antigravity\\bin',
         '$home\\.antigravity\\bin',
         '$home\\.cargo\\bin',
         '$home\\go\\bin',
+        '$home\\.local\\bin',
+        '$home\\AppData\\Local\\fnm_multishells\\current\\bin',
       ];
       final currentPath = env['PATH'] ?? '';
       final parts = currentPath.split(';');
@@ -351,54 +427,10 @@ class WsTaskClient {
   }
 
   Future<String?> _findExecutable(List<String> names) async {
+    final execEnv = await _buildExecutionEnvironment();
     final pathSeparator = Platform.isWindows ? ';' : ':';
-    final envPath = Platform.environment['PATH'] ?? '';
-    final paths = envPath.split(pathSeparator);
-
-    // Common extra search paths
-    final home = CollectorConfig.homeDir;
-    if (Platform.isMacOS) {
-      paths.addAll([
-        '/opt/homebrew/bin',
-        '/opt/homebrew/sbin',
-        '/usr/local/bin',
-        '/usr/local/sbin',
-        '$home/.local/bin',
-        '$home/.cargo/bin',
-        '$home/go/bin',
-        '$home/.gemini/antigravity/bin',
-        '$home/.antigravity/antigravity/bin',
-        '$home/.fnm/current/bin',
-        '$home/.asdf/shims',
-        '/Applications/ChatGPT.app/Contents/Resources',
-      ]);
-
-      // Scan dynamic nvm / asdf node directories
-      final nvmDir = Directory('$home/.nvm/versions/node');
-      if (await nvmDir.exists()) {
-        try {
-          final entries = await nvmDir.list().toList();
-          for (final entry in entries) {
-            if (entry is Directory) {
-              paths.add('${entry.path}/bin');
-            }
-          }
-        } catch (_) {}
-      }
-    } else if (Platform.isWindows) {
-      paths.addAll([
-        '$home\\AppData\\Local\\agy\\bin',
-        '$home\\AppData\\Local\\Programs\\Antigravity',
-        '$home\\AppData\\Local\\Programs',
-        '$home\\.gemini\\antigravity\\bin',
-        '$home\\.antigravity\\bin',
-        '$home\\AppData\\Roaming\\npm',
-        'C:\\Program Files\\nodejs',
-        '$home\\.local\\bin',
-        '$home\\.cargo\\bin',
-        '$home\\go\\bin',
-      ]);
-    }
+    final envPath = execEnv['PATH'] ?? '';
+    final paths = envPath.split(pathSeparator).where((p) => p.isNotEmpty).toList();
 
     final extensions = Platform.isWindows ? ['.cmd', '.exe', '.bat', '.ps1', ''] : [''];
 
@@ -921,6 +953,16 @@ class WsTaskClient {
       final useShell = Platform.isWindows &&
           (exe.toLowerCase().endsWith('.cmd') || exe.toLowerCase().endsWith('.bat'));
       final executionEnv = await _buildExecutionEnvironment();
+
+      // Ensure the directory of the resolved executable is at the front of PATH so shebangs like #!/usr/bin/env node succeed
+      final exeDir = p.dirname(exe);
+      final currentPath = executionEnv['PATH'] ?? '';
+      final sep = Platform.isWindows ? ';' : ':';
+      final pathParts = currentPath.split(sep).where((x) => x.isNotEmpty).toList();
+      if (exeDir.isNotEmpty && !pathParts.contains(exeDir) && Directory(exeDir).existsSync()) {
+        pathParts.insert(0, exeDir);
+        executionEnv['PATH'] = pathParts.join(sep);
+      }
 
       if (isAntigravity) {
         final agEnv = await discoverAntigravityEnv();

@@ -65,6 +65,8 @@ def build_subprocess_env() -> dict[str, str]:
         os.path.expanduser("~/.local/bin"),
         os.path.expanduser("~/.cargo/bin"),
         os.path.expanduser("~/go/bin"),
+        os.path.expanduser("~/.npm-global/bin"),
+        os.path.expanduser("~/.volta/bin"),
         "/Applications/Docker.app/Contents/Resources/bin",
         "/Applications/ChatGPT.app/Contents/Resources",
         os.path.expanduser("~/.antigravity/antigravity/bin"),
@@ -72,6 +74,17 @@ def build_subprocess_env() -> dict[str, str]:
         os.path.expanduser("~/.fnm/current/bin"),
         os.path.expanduser("~/.asdf/shims"),
     ]
+    if sys.platform == "win32":
+        appdata = os.environ.get("APPDATA", "")
+        home = os.path.expanduser("~")
+        dirs_to_add.extend([
+            os.path.join(appdata, "npm") if appdata else os.path.join(home, "AppData", "Roaming", "npm"),
+            "C:\\Program Files\\nodejs",
+            "C:\\Program Files (x86)\\nodejs",
+            os.path.join(home, "AppData", "Local", "Programs", "node"),
+            os.path.join(home, "AppData", "Local", "agy", "bin"),
+            os.path.join(home, "AppData", "Local", "Programs", "Antigravity"),
+        ])
     # Scan dynamic nvm / asdf / vscode codex directories
     for pattern in (
         os.path.expanduser("~/.nvm/versions/node/*/bin"),
@@ -81,6 +94,19 @@ def build_subprocess_env() -> dict[str, str]:
         dirs_to_add.extend(glob.glob(pattern))
 
     path_parts = [p for p in curr_path.split(os.pathsep) if p]
+
+    # Inherit interactive login shell PATH on macOS / Linux
+    if sys.platform in ("darwin", "linux"):
+        try:
+            shell = os.environ.get("SHELL") or ("/bin/zsh" if os.path.exists("/bin/zsh") else "/bin/sh")
+            res = subprocess.run([shell, "-ilc", 'echo -n "$PATH"'], capture_output=True, text=True, timeout=1.5)
+            if res.returncode == 0 and res.stdout.strip():
+                for sp in res.stdout.strip().split(":"):
+                    if sp and sp not in path_parts and os.path.isdir(sp):
+                        path_parts.insert(0, sp)
+        except Exception:
+            pass
+
     for d in dirs_to_add:
         if os.path.isdir(d) and d not in path_parts:
             path_parts.insert(0, d)
@@ -557,6 +583,14 @@ def _run_agent(payload: dict | None, timeout: int) -> dict[str, Any]:
     resolved = resolve_agent_binary(binary, sub_env.get("PATH"))
     if not resolved:
         return {"status": "failed", "error": f"agent binary not found on PATH: {binary}"}
+
+    # Ensure resolved executable directory is at the front of PATH for shebang interpreters (e.g. #!/usr/bin/env node)
+    exe_dir = os.path.dirname(resolved)
+    if exe_dir and os.path.isdir(exe_dir):
+        path_parts = [p for p in sub_env.get("PATH", "").split(os.pathsep) if p]
+        if exe_dir not in path_parts:
+            path_parts.insert(0, exe_dir)
+            sub_env["PATH"] = os.pathsep.join(path_parts)
 
     cwd = _clean_cwd((payload or {}).get("cwd"))
     session_id = str((payload or {}).get("session_id") or "").strip()
