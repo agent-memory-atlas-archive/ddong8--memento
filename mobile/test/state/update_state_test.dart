@@ -18,8 +18,8 @@ void main() {
 
     test('AppUpdateState status getters reflect state changes', () {
       final updateInfo = UpdateInfo(
-        version: '1.0.20',
-        currentVersion: '1.0.19',
+        version: '1.0.21',
+        currentVersion: '1.0.20',
         hasUpdate: true,
         title: 'New version',
         releaseNotes: 'Bug fixes',

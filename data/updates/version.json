@@ -1,7 +1,7 @@
 {
-  "version": "1.0.19",
-  "title": "Memento v1.0.19",
-  "release_notes": "1. 桌面端后台静默更新：检测到新版本时在后台静默多源测速下载，彻底去除启动时的打扰式模态弹窗\n2. 界面一键重启更新：更新包下载就绪后，桌面侧边栏与顶部操作栏展示醒目的「⚡ 重启更新」按钮，随点随更无感热替换并自动重启\n3. 本地更新缓存智能感知：自动隔离校验更新包缓存，已下载更新包直接秒级就绪，杜绝重复流量消耗",
+  "version": "1.0.20",
+  "title": "Memento v1.0.20",
+  "release_notes": "1. 修复 Antigravity (agy) 调度报错：移除错误的 --dangerously-skip-permissions 参数与 --effort 参数，将会话恢复参数规范为 --resume，彻底解决 Antigravity 任务调度失败问题\n2. 增强 Antigravity 自动自愈：增加跨设备会话不存在时的自动识别与无感新建会话降级机制\n3. 桌面端后台静默更新与一键重启更新支持",
   "platforms": {
     "windows": {
       "asset_name": "Memento-windows-x64-setup.exe",

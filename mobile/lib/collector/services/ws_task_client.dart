@@ -592,19 +592,14 @@ class WsTaskClient {
         args.add(prompt);
       } else {
         // agy / antigravity
-        args = [
-          '--prompt', prompt,
-          '--dangerously-skip-permissions',
-        ];
+        args = [];
         if (sessionId.isNotEmpty) {
-          args.addAll(['--conversation', sessionId]);
+          args.addAll(['--resume', sessionId]);
         }
         if (model.isNotEmpty) {
           args.addAll(['--model', model]);
         }
-        if (effort.isNotEmpty) {
-          args.addAll(['--effort', effort]);
-        }
+        args.addAll(['-p', prompt]);
       }
     }
 
@@ -739,6 +734,9 @@ class WsTaskClient {
       final isSessionNotFound = fullErr.contains('no rollout found') ||
           fullErr.contains('thread not found') ||
           fullErr.contains('session not found') ||
+          fullErr.contains('conversation not found') ||
+          (fullErr.contains('conversation') && fullErr.contains('not found')) ||
+          fullErr.contains('Error resuming conversation') ||
           fullErr.contains('failed to resume') ||
           fullErr.contains('cannot resume') ||
           fullErr.contains('unable to resume') ||
@@ -747,7 +745,8 @@ class WsTaskClient {
           fullErr.contains('no recorded session') ||
           fullErr.contains('unexpected argument') ||
           fullErr.contains('invalid value') ||
-          fullErr.contains('Usage: codex exec');
+          fullErr.contains('Usage: codex exec') ||
+          fullErr.contains('Usage: agy');
 
       if (exitCode != 0 &&
           action != 'shell' &&
@@ -788,7 +787,9 @@ class WsTaskClient {
           if (mModel.isNotEmpty) freshArgs.addAll(['-m', mModel]);
           freshArgs.add(pText);
         } else {
-          freshArgs = ['--prompt', pText];
+          freshArgs = [];
+          if (mModel.isNotEmpty) freshArgs.addAll(['--model', mModel]);
+          freshArgs.addAll(['-p', pText]);
         }
 
         final freshProc = await Process.start(
