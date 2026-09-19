@@ -116,20 +116,26 @@ def get_codex_capabilities() -> dict[str, Any]:
 
 def _format_claude_display_name(model_id: str) -> tuple[str, str]:
     m = model_id.lower()
+    if "sonnet-4-6" in m or "sonnet-4.6" in m:
+        return "Claude Sonnet 4.6", "官方最新主力编码与推理模型 (当前主力)"
+    if "opus-4-6" in m:
+        return "Claude Opus 4.6", "官方顶级旗舰架构设计与复杂推演模型"
+    if "opus-4-5" in m:
+        return "Claude Opus 4.5", "高阶深度思维与复杂推演模型"
     if "sonnet-4-5" in m:
         return "Claude Sonnet 4.5", "前沿多步推理与编码模型"
-    if "sonnet-4" in m:
-        return "Claude Sonnet 4", "前沿高智能推理模型"
+    if "haiku-4-5" in m:
+        return "Claude Haiku 4.5", "毫秒级响应极速轻量模型"
     if "opus-4-1" in m:
         return "Claude Opus 4.1", "顶级复杂推理与工程攻坚"
     if "opus-4" in m:
         return "Claude Opus 4", "高阶架构设计与深度思维"
+    if "sonnet-4" in m:
+        return "Claude Sonnet 4", "前沿高智能推理模型"
     if "3-7-sonnet" in m:
-        return "Claude 3.7 Sonnet", "经典混合推理与编码模型 (当前主力)"
+        return "Claude 3.7 Sonnet", "经典混合推理与编码模型 (早期版本)"
     if "3-5-sonnet" in m:
         return "Claude 3.5 Sonnet", "经典高性价比编码模型"
-    if "haiku-4-5" in m:
-        return "Claude Haiku 4.5", "毫秒级响应极速轻量模型"
     if "3-5-haiku" in m:
         return "Claude 3.5 Haiku", "极速轻量日常模型"
     if "opus" in m:
@@ -166,21 +172,26 @@ def get_claude_capabilities() -> dict[str, Any]:
         {
             "id": "sonnet",
             "name": "sonnet (官方动态最新 Sonnet 别名)",
-            "desc": "官方推荐别名，自动指向最新版本 (Claude 3.7 Sonnet / Sonnet 4.5)",
+            "desc": "官方推荐别名，自动指向最新主力 (当前为 Claude Sonnet 4.6)",
         },
         {
             "id": "opus",
             "name": "opus (官方动态最新 Opus 别名)",
-            "desc": "官方推荐别名，极高智能与超长上下文 (Claude Opus 4.1 / Opus 4)",
+            "desc": "官方推荐别名，极高智能与超长上下文 (当前为 Claude Opus 4.6)",
+        },
+        {
+            "id": "opus[1m]",
+            "name": "opus[1m] (100万上下文增强版)",
+            "desc": "Claude Opus 4.6 深度思维 / 100万 Token 超大上下文",
         },
         {
             "id": "haiku",
             "name": "haiku (官方动态最新 Haiku 别名)",
-            "desc": "官方推荐别名，极速轻量 (Claude Haiku 4.5 / 3.5 Haiku)",
+            "desc": "官方推荐别名，极速轻量 (当前为 Claude Haiku 4.5)",
         },
     ]
 
-    seen_ids = {"", "sonnet", "opus", "haiku"}
+    seen_ids = {"", "sonnet", "opus", "opus[1m]", "haiku"}
 
     # Include user custom configured model if special (e.g. opus[1m])
     if default_model and default_model not in seen_ids:
@@ -193,25 +204,70 @@ def get_claude_capabilities() -> dict[str, Any]:
 
     # Dynamically scan models supported by locally installed Claude Code runtime
     discovered_slugs = []
-    claude_bin = shutil.which("claude")
-    if claude_bin and os.path.isfile(claude_bin):
-        try:
-            with open(claude_bin, "r", errors="ignore") as f:
-                content = f.read(8000000)
-            matches = re.findall(r'firstParty:\"(claude-[^\"]+)\"', content)
-            discovered_slugs = list(dict.fromkeys(matches))
-        except Exception as e:
-            logger.debug("Failed to scan claude binary: %s", e)
+    scanned_seen = set()
+    candidate_paths = [
+        os.path.expanduser("~/.claude/local/node_modules/@anthropic-ai/claude-code/cli.js"),
+        os.path.expanduser("~/.local/bin/claude"),
+        shutil.which("claude"),
+    ]
+
+    for p in candidate_paths:
+        if not p or not os.path.exists(p):
+            continue
+        real_p = os.path.realpath(p)
+        targets = [p] if real_p == p else [p, real_p]
+        for target in targets:
+            if not os.path.isfile(target):
+                continue
+            try:
+                with open(target, "r", errors="ignore") as f:
+                    content = f.read(15000000)
+                matches = re.findall(r'firstParty:\"(claude-[^\"]+)\"', content)
+                for m in matches:
+                    if m not in scanned_seen:
+                        scanned_seen.add(m)
+                        discovered_slugs.append(m)
+            except Exception as e:
+                logger.debug("Failed to scan claude path %s: %s", target, e)
+
+    def model_priority(m: str) -> int:
+        score = 0
+        ml = m.lower()
+        if "4-6" in ml or "4.6" in ml:
+            score += 600
+        elif "4-5" in ml:
+            score += 500
+        elif "4-1" in ml:
+            score += 400
+        elif "opus-4" in ml or "sonnet-4" in ml:
+            score += 300
+        elif "3-7" in ml:
+            score += 200
+        elif "3-5" in ml:
+            score += 100
+
+        if "opus" in ml:
+            score += 20
+        elif "sonnet" in ml:
+            score += 15
+        elif "haiku" in ml:
+            score += 10
+        return -score
+
+    discovered_slugs.sort(key=model_priority)
 
     if not discovered_slugs:
         discovered_slugs = [
-            "claude-3-7-sonnet-20250219",
+            "claude-opus-4-6",
+            "claude-sonnet-4-6",
+            "claude-opus-4-5-20251101",
             "claude-sonnet-4-5-20250929",
+            "claude-haiku-4-5-20251001",
             "claude-opus-4-1-20250805",
             "claude-sonnet-4-20250514",
             "claude-opus-4-20250514",
+            "claude-3-7-sonnet-20250219",
             "claude-3-5-sonnet-20241022",
-            "claude-haiku-4-5-20251001",
             "claude-3-5-haiku-20241022",
         ]
 

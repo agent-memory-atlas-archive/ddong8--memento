@@ -1,7 +1,7 @@
 {
-  "version": "1.0.24",
-  "title": "Memento v1.0.24",
-  "release_notes": "1. 零硬编码动态模型感知：实现 Claude Code 本地运行时首方模型二进制动态扫描（无缝支持 claude-3-7-sonnet、claude-sonnet-4-5、claude-opus-4-1 等），后续官方更新模型无需发版即可自动识别\n2. 修复 Claude Code 模型混淆：校准 Claude Code 真实模型列表，引入 Anthropic 官方动态别名（sonnet、opus、haiku），自动保持最新模型路由\n3. Codex 与 Antigravity 动态机制巩固：Codex 实时读取 ~/.codex/models_cache.json 动态缓存，Antigravity 自动分级调度，支持自定义任意模型输入\n4. 优化客户端与服务端模型能力同步：全平台（Web、Flutter 客户端、Python Collector、Server）模型探测逻辑完全对齐",
+  "version": "1.0.25",
+  "title": "Memento v1.0.25",
+  "release_notes": "1. 全面对齐 2026 Claude Code 旗舰模型：准确识别 Claude Sonnet 4.6 (当前主力) 与 Claude Opus 4.6 (顶级旗舰)，支持 Opus 4.5、Sonnet 4.5 与 Haiku 4.5\n2. 优先扫描 ~/.claude/local 本地安装：智能解析 Anthropic 新版本地安装路径与符号链接，秒级提取本地 CLI 包含的全部官方首方模型\n3. 官方动态别名无缝映射：sonnet 动态指向 Claude Sonnet 4.6，opus 动态指向 Claude Opus 4.6，haiku 动态指向 Claude Haiku 4.5，无需发版即可始终紧跟官方升级\n4. 模型优先级智能加权排序：按 4.6 > 4.5 > 4.1 > 4.0 > 3.7 自动降序排列，最新旗舰稳居首位",
   "platforms": {
     "windows": {
       "asset_name": "Memento-windows-x64-setup.exe",
