@@ -255,17 +255,22 @@ class WsTaskClient {
         {
           'id': 'sonnet',
           'name': 'sonnet (官方动态最新 Sonnet 别名)',
-          'desc': '官方推荐别名，自动指向最新主力 (当前为 Claude Sonnet 4.6)',
+          'desc': '官方推荐别名，自动指向最新主力 (当前为 Claude Sonnet 5)',
         },
         {
           'id': 'opus',
           'name': 'opus (官方动态最新 Opus 别名)',
-          'desc': '官方推荐别名，极高智能与超长上下文 (当前为 Claude Opus 4.6)',
+          'desc': '官方推荐别名，极高智能与超长上下文 (当前为 Claude Opus 5)',
+        },
+        {
+          'id': 'fable',
+          'name': 'fable (官方动态最新 Fable 别名)',
+          'desc': '官方推荐别名，最强智能体与高阶科学推理 (当前为 Claude Fable 5.1)',
         },
         {
           'id': 'opus[1m]',
           'name': 'opus[1m] (100万上下文增强版)',
-          'desc': 'Claude Opus 4.6 深度思维 / 100万 Token 超大上下文',
+          'desc': 'Claude Opus 深度思维 / 100万 Token 超大上下文',
         },
         {
           'id': 'haiku',
@@ -274,7 +279,7 @@ class WsTaskClient {
         },
       ];
 
-      final seenClaudeIds = <String>{'', 'sonnet', 'opus', 'opus[1m]', 'haiku'};
+      final seenClaudeIds = <String>{'', 'sonnet', 'opus', 'fable', 'opus[1m]', 'haiku'};
       if (defaultModel.isNotEmpty && !seenClaudeIds.contains(defaultModel)) {
         claudeModels.add({
           'id': defaultModel,
@@ -286,11 +291,27 @@ class WsTaskClient {
 
       final discoveredClaudeSlugs = <String>[];
       final scannedSeen = <String>{};
-      final candidateClaudePaths = <String>[
+      final candidateClaudePaths = <String>[];
+
+      try {
+        final vscodeExtDir = Directory('$home/.vscode/extensions');
+        if (await vscodeExtDir.exists()) {
+          for (final entity in vscodeExtDir.listSync()) {
+            if (entity is Directory && entity.path.contains('anthropic.claude-code')) {
+              final binFile = File('${entity.path}/resources/native-binary/claude');
+              if (binFile.existsSync()) candidateClaudePaths.add(binFile.path);
+            }
+          }
+        }
+      } catch (_) {}
+
+      candidateClaudePaths.addAll([
+        '$home/.claude/local/node_modules/@anthropic-ai/claude-code/bin/claude.exe',
         '$home/.claude/local/node_modules/@anthropic-ai/claude-code/cli.js',
+        '$home/.claude/local/claude',
         '$home/.local/bin/claude',
         claudePath,
-      ];
+      ]);
 
       for (final p in candidateClaudePaths) {
         final cFile = File(p);
@@ -301,12 +322,20 @@ class WsTaskClient {
           final tFile = File(target);
           if (!await tFile.exists()) continue;
           try {
-            final stream = tFile.openRead(0, 15000000);
-            final text = await utf8.decodeStream(stream.handleError((_) => ''));
-            final matches = RegExp(r'firstParty:"(claude-[^"]+)"').allMatches(text);
+            final bytes = await tFile.readAsBytes();
+            final text = latin1.decode(bytes);
+            final matches = RegExp(r'(?:id|default|firstParty|voice_model):["\x27](claude-[a-z0-9\.\-]+)["\x27]').allMatches(text);
             for (final m in matches) {
               final slug = m.group(1);
-              if (slug != null && !scannedSeen.contains(slug)) {
+              if (slug == null) continue;
+              final sl = slug.toLowerCase();
+              if (!sl.contains('fable') && !sl.contains('mythos') && !sl.contains('opus') && !sl.contains('sonnet') && !sl.contains('haiku')) {
+                continue;
+              }
+              if (sl.contains('token') || sl.contains('key') || sl.contains('dist') || sl.contains('header') || sl.contains('release')) {
+                continue;
+              }
+              if (!scannedSeen.contains(slug)) {
                 scannedSeen.add(slug);
                 discoveredClaudeSlugs.add(slug);
               }
@@ -318,21 +347,29 @@ class WsTaskClient {
       int modelPriority(String m) {
         int score = 0;
         final ml = m.toLowerCase();
-        if (ml.contains('4-6') || ml.contains('4.6')) {
+        if (RegExp(r'5[_\-\.]1').hasMatch(ml)) {
+          score += 800;
+        } else if (RegExp(r'(?<![0-9])[_\-\.]5(?:$|[_\-\.])').hasMatch(ml)) {
+          score += 700;
+        } else if (RegExp(r'4[_\-\.][678]').hasMatch(ml)) {
           score += 600;
-        } else if (ml.contains('4-5')) {
+        } else if (RegExp(r'4[_\-\.]5').hasMatch(ml)) {
           score += 500;
-        } else if (ml.contains('4-1')) {
+        } else if (RegExp(r'4[_\-\.]1').hasMatch(ml)) {
           score += 400;
-        } else if (ml.contains('opus-4') || ml.contains('sonnet-4')) {
+        } else if (RegExp(r'4[_\-\.]0').hasMatch(ml) || ml.contains('opus-4') || ml.contains('sonnet-4')) {
           score += 300;
-        } else if (ml.contains('3-7')) {
+        } else if (RegExp(r'3[_\-\.]7').hasMatch(ml)) {
           score += 200;
-        } else if (ml.contains('3-5')) {
+        } else if (RegExp(r'3[_\-\.]5').hasMatch(ml)) {
           score += 100;
         }
 
-        if (ml.contains('opus')) {
+        if (ml.contains('fable')) {
+          score += 25;
+        } else if (ml.contains('mythos')) {
+          score += 22;
+        } else if (ml.contains('opus')) {
           score += 20;
         } else if (ml.contains('sonnet')) {
           score += 15;
@@ -346,6 +383,10 @@ class WsTaskClient {
 
       if (discoveredClaudeSlugs.isEmpty) {
         discoveredClaudeSlugs.addAll([
+          'claude-fable-5-1',
+          'claude-opus-5',
+          'claude-sonnet-5',
+          'claude-opus-4-8',
           'claude-opus-4-6',
           'claude-sonnet-4-6',
           'claude-opus-4-5-20251101',
@@ -575,8 +616,16 @@ class WsTaskClient {
 
   static String _formatClaudeDisplayName(String modelId) {
     final m = modelId.toLowerCase();
-    if (m.contains('sonnet-4-6') || m.contains('sonnet-4.6')) return 'Claude Sonnet 4.6';
+    if (m.contains('fable-5-1') || m.contains('fable-5.1')) return 'Claude Fable 5.1';
+    if (m.contains('mythos-5-1') || m.contains('mythos-5.1')) return 'Claude Mythos 5.1';
+    if (m.contains('fable-5')) return 'Claude Fable 5';
+    if (m.contains('mythos-5')) return 'Claude Mythos 5';
+    if (RegExp(r'(?<![0-9])opus-5').hasMatch(m)) return 'Claude Opus 5';
+    if (RegExp(r'(?<![0-9])sonnet-5').hasMatch(m)) return 'Claude Sonnet 5';
+    if (m.contains('opus-4-8')) return 'Claude Opus 4.8';
+    if (m.contains('opus-4-7')) return 'Claude Opus 4.7';
     if (m.contains('opus-4-6')) return 'Claude Opus 4.6';
+    if (m.contains('sonnet-4-6') || m.contains('sonnet-4.6')) return 'Claude Sonnet 4.6';
     if (m.contains('opus-4-5')) return 'Claude Opus 4.5';
     if (m.contains('sonnet-4-5')) return 'Claude Sonnet 4.5';
     if (m.contains('haiku-4-5')) return 'Claude Haiku 4.5';

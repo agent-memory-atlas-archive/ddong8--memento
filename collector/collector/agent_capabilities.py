@@ -115,11 +115,28 @@ def get_codex_capabilities() -> dict[str, Any]:
 
 
 def _format_claude_display_name(model_id: str) -> tuple[str, str]:
+    import re
     m = model_id.lower()
-    if "sonnet-4-6" in m or "sonnet-4.6" in m:
-        return "Claude Sonnet 4.6", "官方最新主力编码与推理模型 (当前主力)"
+    if "fable-5-1" in m or "fable-5.1" in m:
+        return "Claude Fable 5.1", "官方最强智能体与高阶科学推理模型 (顶尖旗舰)"
+    if "mythos-5-1" in m or "mythos-5.1" in m:
+        return "Claude Mythos 5.1", "官方超高维度推演与复杂攻坚模型"
+    if "fable-5" in m:
+        return "Claude Fable 5", "前沿复杂逻辑与长程智能体模型"
+    if "mythos-5" in m:
+        return "Claude Mythos 5", "前沿高阶科学推演模型"
+    if re.search(r"(?<![0-9])opus-5", m):
+        return "Claude Opus 5", "官方顶级旗舰架构设计与复杂推演 (当前旗舰)"
+    if re.search(r"(?<![0-9])sonnet-5", m):
+        return "Claude Sonnet 5", "官方最新主力编码与推理模型 (当前主力)"
+    if "opus-4-8" in m:
+        return "Claude Opus 4.8", "高阶复杂推理模型"
+    if "opus-4-7" in m:
+        return "Claude Opus 4.7", "高阶复杂推理模型"
     if "opus-4-6" in m:
-        return "Claude Opus 4.6", "官方顶级旗舰架构设计与复杂推演模型"
+        return "Claude Opus 4.6", "前沿架构分析与深度推演"
+    if "sonnet-4-6" in m or "sonnet-4.6" in m:
+        return "Claude Sonnet 4.6", "前沿高效编码与推理模型"
     if "opus-4-5" in m:
         return "Claude Opus 4.5", "高阶深度思维与复杂推演模型"
     if "sonnet-4-5" in m:
@@ -148,6 +165,7 @@ def _format_claude_display_name(model_id: str) -> tuple[str, str]:
 def get_claude_capabilities() -> dict[str, Any]:
     import shutil
     import re
+    import glob
 
     claude_settings_file = os.path.expanduser("~/.claude/settings.json")
     default_model = ""
@@ -172,17 +190,22 @@ def get_claude_capabilities() -> dict[str, Any]:
         {
             "id": "sonnet",
             "name": "sonnet (官方动态最新 Sonnet 别名)",
-            "desc": "官方推荐别名，自动指向最新主力 (当前为 Claude Sonnet 4.6)",
+            "desc": "官方推荐别名，自动指向最新主力 (当前为 Claude Sonnet 5)",
         },
         {
             "id": "opus",
             "name": "opus (官方动态最新 Opus 别名)",
-            "desc": "官方推荐别名，极高智能与超长上下文 (当前为 Claude Opus 4.6)",
+            "desc": "官方推荐别名，极高智能与超长上下文 (当前为 Claude Opus 5)",
+        },
+        {
+            "id": "fable",
+            "name": "fable (官方动态最新 Fable 别名)",
+            "desc": "官方推荐别名，最强智能体与高阶科学推理 (当前为 Claude Fable 5.1)",
         },
         {
             "id": "opus[1m]",
             "name": "opus[1m] (100万上下文增强版)",
-            "desc": "Claude Opus 4.6 深度思维 / 100万 Token 超大上下文",
+            "desc": "Claude Opus 深度思维 / 100万 Token 超大上下文",
         },
         {
             "id": "haiku",
@@ -191,7 +214,7 @@ def get_claude_capabilities() -> dict[str, Any]:
         },
     ]
 
-    seen_ids = {"", "sonnet", "opus", "opus[1m]", "haiku"}
+    seen_ids = {"", "sonnet", "opus", "fable", "opus[1m]", "haiku"}
 
     # Include user custom configured model if special (e.g. opus[1m])
     if default_model and default_model not in seen_ids:
@@ -205,11 +228,22 @@ def get_claude_capabilities() -> dict[str, Any]:
     # Dynamically scan models supported by locally installed Claude Code runtime
     discovered_slugs = []
     scanned_seen = set()
-    candidate_paths = [
+    candidate_paths = []
+
+    # Check VSCode extension native binaries
+    for vp in glob.glob(os.path.expanduser("~/.vscode/extensions/anthropic.claude-code-*/resources/native-binary/claude")):
+        candidate_paths.append(vp)
+
+    candidate_paths.extend([
+        os.path.expanduser("~/.claude/local/node_modules/@anthropic-ai/claude-code/bin/claude.exe"),
         os.path.expanduser("~/.claude/local/node_modules/@anthropic-ai/claude-code/cli.js"),
+        os.path.expanduser("~/.claude/local/claude"),
         os.path.expanduser("~/.local/bin/claude"),
-        shutil.which("claude"),
-    ]
+    ])
+
+    which_claude = shutil.which("claude")
+    if which_claude:
+        candidate_paths.append(which_claude)
 
     for p in candidate_paths:
         if not p or not os.path.exists(p):
@@ -220,10 +254,16 @@ def get_claude_capabilities() -> dict[str, Any]:
             if not os.path.isfile(target):
                 continue
             try:
-                with open(target, "r", errors="ignore") as f:
-                    content = f.read(15000000)
-                matches = re.findall(r'firstParty:\"(claude-[^\"]+)\"', content)
-                for m in matches:
+                with open(target, "rb") as f:
+                    content = f.read()
+                matches = re.findall(rb'(?:id|default|firstParty|voice_model):[\x22\x27](claude-[a-z0-9\.\-]+)[\x22\x27]', content)
+                for mb in matches:
+                    m = mb.decode("utf-8", "ignore")
+                    ml = m.lower()
+                    if not any(k in ml for k in ["fable", "mythos", "opus", "sonnet", "haiku"]):
+                        continue
+                    if any(k in ml for k in ["token", "key", "dist", "header", "release"]):
+                        continue
                     if m not in scanned_seen:
                         scanned_seen.add(m)
                         discovered_slugs.append(m)
@@ -233,20 +273,28 @@ def get_claude_capabilities() -> dict[str, Any]:
     def model_priority(m: str) -> int:
         score = 0
         ml = m.lower()
-        if "4-6" in ml or "4.6" in ml:
+        if re.search(r"5[_\-\.]1", ml):
+            score += 800
+        elif re.search(r"(?<![0-9])[_\-\.]5(?:$|[_\-\.])", ml):
+            score += 700
+        elif re.search(r"4[_\-\.][678]", ml):
             score += 600
-        elif "4-5" in ml:
+        elif re.search(r"4[_\-\.]5", ml):
             score += 500
-        elif "4-1" in ml:
+        elif re.search(r"4[_\-\.]1", ml):
             score += 400
-        elif "opus-4" in ml or "sonnet-4" in ml:
+        elif re.search(r"4[_\-\.]0", ml) or "opus-4" in ml or "sonnet-4" in ml:
             score += 300
-        elif "3-7" in ml:
+        elif re.search(r"3[_\-\.]7", ml):
             score += 200
-        elif "3-5" in ml:
+        elif re.search(r"3[_\-\.]5", ml):
             score += 100
 
-        if "opus" in ml:
+        if "fable" in ml:
+            score += 25
+        elif "mythos" in ml:
+            score += 22
+        elif "opus" in ml:
             score += 20
         elif "sonnet" in ml:
             score += 15
@@ -258,6 +306,10 @@ def get_claude_capabilities() -> dict[str, Any]:
 
     if not discovered_slugs:
         discovered_slugs = [
+            "claude-fable-5-1",
+            "claude-opus-5",
+            "claude-sonnet-5",
+            "claude-opus-4-8",
             "claude-opus-4-6",
             "claude-sonnet-4-6",
             "claude-opus-4-5-20251101",
