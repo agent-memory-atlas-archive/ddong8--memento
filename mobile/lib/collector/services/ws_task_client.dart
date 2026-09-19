@@ -248,7 +248,8 @@ class WsTaskClient {
     }
 
     // Check Antigravity (agy)
-    final agyPath = await _findExecutable(['agy', 'antigravity']);
+    await _ensureAgyCliInstalled();
+    final agyPath = await _findExecutable(['agy', 'agy_cli.py', 'agentapi']);
     if (agyPath != null) {
       caps['antigravity'] = {
         'available': true,
@@ -370,7 +371,6 @@ class WsTaskClient {
         '$home/.fnm/current/bin',
         '$home/.asdf/shims',
         '/Applications/ChatGPT.app/Contents/Resources',
-        '/Applications/Antigravity.app/Contents/MacOS',
       ]);
 
       // Scan dynamic nvm / asdf node directories
@@ -414,6 +414,300 @@ class WsTaskClient {
         }
       }
     }
+    return null;
+  }
+
+  static Map<String, String>? _cachedAntigravityEnv;
+  static DateTime? _cachedAntigravityTime;
+
+  /// Ensure ~/.gemini/antigravity/bin/agy_cli.py exists and wrapper is available.
+  static Future<void> _ensureAgyCliInstalled() async {
+    try {
+      final home = CollectorConfig.homeDir;
+      final agyDir = Directory('$home/.gemini/antigravity/bin');
+      if (!await agyDir.exists()) {
+        await agyDir.create(recursive: true);
+      }
+      final pyScript = File('${agyDir.path}/agy_cli.py');
+      bool needsWrite = true;
+      if (await pyScript.exists()) {
+        try {
+          final content = await pyScript.readAsString();
+          if (content.contains('_auto_discover_antigravity_ls')) {
+            needsWrite = false;
+          }
+        } catch (_) {}
+      }
+      if (needsWrite) {
+        await pyScript.writeAsString(_kEmbeddedAgyCliPy);
+        if (Platform.isMacOS || Platform.isLinux) {
+          await Process.run('chmod', ['+x', pyScript.path]);
+        }
+      }
+
+      // Also ensure ~/.local/bin/agy wrapper exists on Mac / Linux
+      if (Platform.isMacOS || Platform.isLinux) {
+        final localBin = Directory('$home/.local/bin');
+        if (!await localBin.exists()) {
+          await localBin.create(recursive: true);
+        }
+        final agyBin = File('${localBin.path}/agy');
+        if (!await agyBin.exists()) {
+          await agyBin.writeAsString('#!/bin/sh\nexec python3 "${pyScript.path}" "\$@"\n');
+          await Process.run('chmod', ['+x', agyBin.path]);
+        }
+      } else if (Platform.isWindows) {
+        final winBin = Directory('$home\\AppData\\Local\\agy\\bin');
+        if (!await winBin.exists()) {
+          await winBin.create(recursive: true);
+        }
+        final agyCmd = File('${winBin.path}\\agy.cmd');
+        if (!await agyCmd.exists()) {
+          await agyCmd.writeAsString('@echo off\r\npython "${pyScript.path}" %*\r\n');
+        }
+      }
+    } catch (_) {}
+  }
+
+  /// Discover running Antigravity language_server port, CSRF token, and Project ID.
+  static Future<Map<String, String>?> discoverAntigravityEnv({bool forceRefresh = false}) async {
+    if (!forceRefresh && _cachedAntigravityEnv != null && _cachedAntigravityTime != null) {
+      if (DateTime.now().difference(_cachedAntigravityTime!).inSeconds < 30) {
+        return _cachedAntigravityEnv;
+      }
+    }
+
+    try {
+      String? pid;
+      String? csrfToken;
+
+      if (Platform.isMacOS || Platform.isLinux) {
+        final res = await Process.run('ps', ['-eo', 'pid,command']);
+        if (res.exitCode == 0) {
+          final lines = res.stdout.toString().split('\n');
+          for (final line in lines) {
+            if (line.contains('language_server') &&
+                line.contains('antigravity') &&
+                !line.contains('grep')) {
+              final pidMatch = RegExp(r'^\s*(\d+)').firstMatch(line);
+              if (pidMatch != null) {
+                pid = pidMatch.group(1);
+              }
+              final tokenMatch = RegExp(r'--csrf_token\s+([^\s]+)').firstMatch(line);
+              if (tokenMatch != null) {
+                csrfToken = tokenMatch.group(1);
+              }
+              break;
+            }
+          }
+        }
+
+        if (pid == null) {
+          if (Platform.isMacOS) {
+            final appDir = Directory('/Applications/Antigravity.app');
+            if (await appDir.exists()) {
+              await Process.run('open', ['-a', 'Antigravity']);
+              await Future.delayed(const Duration(seconds: 3));
+              final retryRes = await Process.run('ps', ['-eo', 'pid,command']);
+              if (retryRes.exitCode == 0) {
+                for (final line in retryRes.stdout.toString().split('\n')) {
+                  if (line.contains('language_server') &&
+                      line.contains('antigravity') &&
+                      !line.contains('grep')) {
+                    final pidMatch = RegExp(r'^\s*(\d+)').firstMatch(line);
+                    if (pidMatch != null) pid = pidMatch.group(1);
+                    final tokenMatch = RegExp(r'--csrf_token\s+([^\s]+)').firstMatch(line);
+                    if (tokenMatch != null) csrfToken = tokenMatch.group(1);
+                    break;
+                  }
+                }
+              }
+            }
+          }
+          if (pid == null) {
+            _cachedAntigravityEnv = null;
+            return null;
+          }
+        }
+
+        final lsofRes = await Process.run('lsof', ['-nP', '-a', '-iTCP', '-sTCP:LISTEN', '-p', pid]);
+        final ports = <int>[];
+        if (lsofRes.exitCode == 0) {
+          final lsofLines = lsofRes.stdout.toString().split('\n');
+          for (final line in lsofLines) {
+            final portMatch = RegExp(r'TCP\s+(?:127\.0\.0\.1|localhost|\*):(\d+)\s+\(LISTEN\)').firstMatch(line);
+            if (portMatch != null) {
+              final pVal = int.tryParse(portMatch.group(1)!);
+              if (pVal != null && !ports.contains(pVal)) {
+                ports.add(pVal);
+              }
+            }
+          }
+        }
+
+        int? validPort;
+        final client = HttpClient()..connectionTimeout = const Duration(milliseconds: 1500);
+        for (final port in ports) {
+          try {
+            final req = await client.getUrl(Uri.parse('http://127.0.0.1:$port/'));
+            req.headers.set('User-Agent', 'Antigravity-Probe');
+            final resp = await req.close().timeout(const Duration(milliseconds: 1500));
+            if (resp.statusCode == 200) {
+              final body = await resp.transform(utf8.decoder).join();
+              if (body.contains('antigravity') || body.contains('csrfToken')) {
+                validPort = port;
+                if (csrfToken == null || csrfToken.isEmpty) {
+                  final m = RegExp(r'"csrfToken":"([^"]+)"').firstMatch(body);
+                  if (m != null) csrfToken = m.group(1);
+                }
+                break;
+              }
+            }
+          } catch (_) {}
+        }
+        client.close(force: true);
+
+        if (validPort == null) {
+          _cachedAntigravityEnv = null;
+          return null;
+        }
+
+        String? projectId;
+        final home = CollectorConfig.homeDir;
+        final storageFiles = [
+          File('$home/Library/Application Support/Antigravity/app_storage.json'),
+          File('$home/.config/Antigravity/app_storage.json'),
+        ];
+        for (final f in storageFiles) {
+          if (await f.exists()) {
+            try {
+              final jsonStr = await f.readAsString();
+              final map = jsonDecode(jsonStr);
+              if (map is Map && map['lastCreatedProjectId'] != null) {
+                projectId = map['lastCreatedProjectId'].toString();
+                break;
+              }
+            } catch (_) {}
+          }
+        }
+
+        final result = <String, String>{
+          'ANTIGRAVITY_LS_ADDRESS': 'localhost:$validPort',
+        };
+        if (csrfToken != null && csrfToken.isNotEmpty) {
+          result['ANTIGRAVITY_CSRF_TOKEN'] = csrfToken;
+        }
+        if (projectId != null && projectId.isNotEmpty) {
+          result['ANTIGRAVITY_PROJECT_ID'] = projectId;
+        }
+        _cachedAntigravityEnv = result;
+        _cachedAntigravityTime = DateTime.now();
+        return result;
+      } else if (Platform.isWindows) {
+        final psRes = await Process.run('powershell', [
+          '-NoProfile',
+          '-Command',
+          'Get-CimInstance Win32_Process -Filter "Name LIKE \'%language_server%\'" | Select-Object -Property ProcessId, CommandLine | ConvertTo-Json',
+        ]);
+        if (psRes.exitCode == 0) {
+          final raw = psRes.stdout.toString().trim();
+          if (raw.isNotEmpty) {
+            try {
+              final decoded = jsonDecode(raw);
+              final list = decoded is List ? decoded : [decoded];
+              for (final item in list) {
+                if (item is Map) {
+                  final cmd = item['CommandLine']?.toString() ?? '';
+                  if (cmd.contains('antigravity')) {
+                    pid = item['ProcessId']?.toString();
+                    final tokenMatch = RegExp(r'--csrf_token\s+([^\s]+)').firstMatch(cmd);
+                    if (tokenMatch != null) {
+                      csrfToken = tokenMatch.group(1);
+                    }
+                    break;
+                  }
+                }
+              }
+            } catch (_) {}
+          }
+        }
+
+        if (pid == null) {
+          _cachedAntigravityEnv = null;
+          return null;
+        }
+
+        final netstatRes = await Process.run('cmd', ['/c', 'netstat -ano | findstr $pid']);
+        final ports = <int>[];
+        if (netstatRes.exitCode == 0) {
+          final lines = netstatRes.stdout.toString().split('\n');
+          for (final line in lines) {
+            if (line.contains('LISTENING')) {
+              final m = RegExp(r'127\.0\.0\.1:(\d+)').firstMatch(line);
+              if (m != null) {
+                final pVal = int.tryParse(m.group(1)!);
+                if (pVal != null && !ports.contains(pVal)) {
+                  ports.add(pVal);
+                }
+              }
+            }
+          }
+        }
+
+        int? validPort;
+        final client = HttpClient()..connectionTimeout = const Duration(milliseconds: 1500);
+        for (final port in ports) {
+          try {
+            final req = await client.getUrl(Uri.parse('http://127.0.0.1:$port/'));
+            req.headers.set('User-Agent', 'Antigravity-Probe');
+            final resp = await req.close().timeout(const Duration(milliseconds: 1500));
+            if (resp.statusCode == 200) {
+              final body = await resp.transform(utf8.decoder).join();
+              if (body.contains('antigravity') || body.contains('csrfToken')) {
+                validPort = port;
+                if (csrfToken == null || csrfToken.isEmpty) {
+                  final m = RegExp(r'"csrfToken":"([^"]+)"').firstMatch(body);
+                  if (m != null) csrfToken = m.group(1);
+                }
+                break;
+              }
+            }
+          } catch (_) {}
+        }
+        client.close(force: true);
+
+        if (validPort == null) {
+          _cachedAntigravityEnv = null;
+          return null;
+        }
+
+        String? projectId;
+        final appData = Platform.environment['APPDATA'] ?? '';
+        final storageFile = File('$appData\\Antigravity\\app_storage.json');
+        if (await storageFile.exists()) {
+          try {
+            final jsonStr = await storageFile.readAsString();
+            final map = jsonDecode(jsonStr);
+            if (map is Map && map['lastCreatedProjectId'] != null) {
+              projectId = map['lastCreatedProjectId'].toString();
+            }
+          } catch (_) {}
+        }
+
+        final result = <String, String>{
+          'ANTIGRAVITY_LS_ADDRESS': 'localhost:$validPort',
+        };
+        if (csrfToken != null && csrfToken.isNotEmpty) {
+          result['ANTIGRAVITY_CSRF_TOKEN'] = csrfToken;
+        }
+        if (projectId != null && projectId.isNotEmpty) {
+          result['ANTIGRAVITY_PROJECT_ID'] = projectId;
+        }
+        _cachedAntigravityEnv = result;
+        _cachedAntigravityTime = DateTime.now();
+        return result;
+      }
+    } catch (_) {}
     return null;
   }
 
@@ -515,6 +809,7 @@ class WsTaskClient {
 
     String exe = '';
     List<String> args = [];
+    bool isAntigravity = false;
 
     if (action == 'shell') {
       final command = payload['command']?.toString() ?? '';
@@ -534,9 +829,17 @@ class WsTaskClient {
       final effort = payload['effort']?.toString() ?? '';
       final sysAppend = payload['system_prompt_append']?.toString() ?? '';
 
+      isAntigravity = binary.contains('agy') || binary.contains('antigravity');
+      if (isAntigravity) {
+        await _ensureAgyCliInstalled();
+      }
+
       final candidates = <String>[binary];
-      if (binary == 'agy') candidates.add('antigravity');
-      if (binary == 'antigravity') candidates.add('agy');
+      if (binary == 'agy') {
+        candidates.addAll(['agy_cli.py', 'agentapi']);
+      } else if (binary == 'antigravity') {
+        candidates.addAll(['agy', 'agy_cli.py', 'agentapi']);
+      }
 
       final resolvedExe = await _findExecutable(candidates);
       if (resolvedExe == null) {
@@ -618,6 +921,23 @@ class WsTaskClient {
       final useShell = Platform.isWindows &&
           (exe.toLowerCase().endsWith('.cmd') || exe.toLowerCase().endsWith('.bat'));
       final executionEnv = await _buildExecutionEnvironment();
+
+      if (isAntigravity) {
+        final agEnv = await discoverAntigravityEnv();
+        if (agEnv != null) {
+          executionEnv.addAll(agEnv);
+        } else {
+          _sendJson(TaskFinished(
+            taskId: taskId,
+            status: 'failed',
+            exitCode: 1,
+            error: '💡 未检测到正在运行的 Antigravity 应用服务。\n\n'
+                   'Antigravity 需在本地保持运行以便通过 language_server 进行通信。\n'
+                   '请先启动 Antigravity 客户端应用后再试。',
+          ).toJson());
+          return;
+        }
+      }
       proc = await Process.start(
         exe,
         args,
@@ -663,6 +983,50 @@ class WsTaskClient {
 
       var fullOut = stdoutBuf.toString().trim();
       var fullErr = stderrBuf.toString().trim();
+
+      // Reactive retry 0: Antigravity language_server port binding failure
+      if (exitCode != 0 &&
+          action != 'shell' &&
+          isAntigravity &&
+          (fullErr.contains('ANTIGRAVITY_LS_ADDRESS is not set') ||
+           fullOut.contains('ANTIGRAVITY_LS_ADDRESS is not set'))) {
+        const agyNotice = '\n⚡ [环境自愈] 正在重新检测并绑定本地 Antigravity 运行端口...\n\n';
+        stderrBuf.write(agyNotice);
+        _sendJson(TaskChunk(taskId: taskId, stream: 'stderr', text: agyNotice).toJson());
+
+        final agEnv = await discoverAntigravityEnv(forceRefresh: true);
+        if (agEnv != null) {
+          executionEnv.addAll(agEnv);
+          final retryProc = await Process.start(
+            exe,
+            args,
+            workingDirectory: workingDir,
+            environment: executionEnv,
+            runInShell: useShell,
+          );
+          try {
+            await retryProc.stdin.close();
+          } catch (_) {}
+          _runningTasks[taskId] = retryProc;
+          retryProc.stdout.transform(decoder).listen((chunk) {
+            stdoutBuf.write(chunk);
+            _sendJson(TaskChunk(taskId: taskId, stream: 'stdout', text: chunk).toJson());
+          });
+          retryProc.stderr.transform(decoder).listen((chunk) {
+            stderrBuf.write(chunk);
+            _sendJson(TaskChunk(taskId: taskId, stream: 'stderr', text: chunk).toJson());
+          });
+          exitCode = await retryProc.exitCode.timeout(
+            Duration(seconds: task.timeoutSeconds),
+            onTimeout: () {
+              _killTaskProcess(retryProc);
+              return -999;
+            },
+          );
+          fullOut = stdoutBuf.toString().trim();
+          fullErr = stderrBuf.toString().trim();
+        }
+      }
 
       // Reactive retry 1: if resume hit ChatGPT.app active writer lock on Mac, auto fork & retry
       if (exitCode != 0 &&
@@ -960,3 +1324,331 @@ class WsTaskClient {
     }
   }
 }
+
+const String _kEmbeddedAgyCliPy = r'''#!/usr/bin/env python3
+"""Antigravity CLI runner: communicates with the running Antigravity language_server."""
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+import urllib.request
+from pathlib import Path
+
+
+def _auto_discover_antigravity_ls():
+    """Auto-detect ANTIGRAVITY_LS_ADDRESS and ANTIGRAVITY_CSRF_TOKEN if not explicitly exported."""
+    if os.environ.get("ANTIGRAVITY_LS_ADDRESS") and os.environ.get("ANTIGRAVITY_CSRF_TOKEN"):
+        return
+
+    try:
+        if sys.platform in ("darwin", "linux"):
+            out = subprocess.check_output(["ps", "-eo", "pid,command"], text=True)
+            pid = None
+            csrf_token = None
+            for line in out.splitlines():
+                if "language_server" in line and "antigravity" in line and "grep" not in line:
+                    m_pid = re.match(r"^\s*(\d+)", line)
+                    if m_pid:
+                        pid = m_pid.group(1)
+                    m_token = re.search(r"--csrf_token\s+([^\s]+)", line)
+                    if m_token:
+                        csrf_token = m_token.group(1)
+                    break
+            if not pid:
+                return
+
+            lsof_out = subprocess.check_output(["lsof", "-nP", "-a", "-iTCP", "-sTCP:LISTEN", "-p", pid], text=True)
+            ports = []
+            for pline in lsof_out.splitlines():
+                m_port = re.search(r"TCP\s+(?:127\.0\.0\.1|localhost|\*):(\d+)\s+\(LISTEN\)", pline)
+                if m_port:
+                    ports.append(int(m_port.group(1)))
+
+            for port in ports:
+                try:
+                    url = f"http://127.0.0.1:{port}/"
+                    req = urllib.request.Request(url, headers={"User-Agent": "Antigravity-Probe"})
+                    with urllib.request.urlopen(req, timeout=1) as resp:
+                        if resp.status == 200:
+                            content = resp.read(2048).decode("utf-8", errors="ignore")
+                            if "antigravity" in content or "csrfToken" in content:
+                                if not csrf_token:
+                                    m_c = re.search(r'"csrfToken":"([^"]+)"', content)
+                                    if m_c:
+                                        csrf_token = m_c.group(1)
+                                os.environ["ANTIGRAVITY_LS_ADDRESS"] = f"localhost:{port}"
+                                if csrf_token:
+                                    os.environ["ANTIGRAVITY_CSRF_TOKEN"] = csrf_token
+
+                                if not os.environ.get("ANTIGRAVITY_PROJECT_ID"):
+                                    storage_paths = [
+                                        Path.home() / "Library" / "Application Support" / "Antigravity" / "app_storage.json",
+                                        Path.home() / ".config" / "Antigravity" / "app_storage.json",
+                                        Path(os.environ.get("APPDATA", "")) / "Antigravity" / "app_storage.json",
+                                    ]
+                                    for sp in storage_paths:
+                                        if sp.exists():
+                                            try:
+                                                with open(sp, "r", encoding="utf-8") as sf:
+                                                    sdata = json.load(sf)
+                                                    pid_val = sdata.get("lastCreatedProjectId")
+                                                    if pid_val:
+                                                        os.environ["ANTIGRAVITY_PROJECT_ID"] = str(pid_val)
+                                                        break
+                                            except Exception:
+                                                pass
+                                return
+                except Exception:
+                    pass
+        elif sys.platform == "win32":
+            try:
+                ps_cmd = [
+                    "powershell", "-NoProfile", "-Command",
+                    'Get-CimInstance Win32_Process -Filter "Name LIKE \'%language_server%\'" | Select-Object -Property ProcessId, CommandLine | ConvertTo-Json'
+                ]
+                raw = subprocess.check_output(ps_cmd, text=True, timeout=3)
+                data = json.loads(raw)
+                items = data if isinstance(data, list) else [data]
+                pid = None
+                csrf_token = None
+                for item in items:
+                    cmd_line = item.get("CommandLine") or ""
+                    if "antigravity" in cmd_line.lower():
+                        pid = str(item.get("ProcessId"))
+                        m_token = re.search(r"--csrf_token\s+([^\s]+)", cmd_line)
+                        if m_token:
+                            csrf_token = m_token.group(1)
+                        break
+                if pid:
+                    net_out = subprocess.check_output(f"netstat -ano | findstr {pid}", shell=True, text=True)
+                    ports = []
+                    for pline in net_out.splitlines():
+                        if "LISTENING" in pline:
+                            m_port = re.search(r"127\.0\.0\.1:(\d+)", pline)
+                            if m_port:
+                                ports.append(int(m_port.group(1)))
+                    for port in ports:
+                        try:
+                            url = f"http://127.0.0.1:{port}/"
+                            req = urllib.request.Request(url, headers={"User-Agent": "Antigravity-Probe"})
+                            with urllib.request.urlopen(req, timeout=1) as resp:
+                                if resp.status == 200:
+                                    cnt = resp.read(2048).decode("utf-8", errors="ignore")
+                                    if "antigravity" in cnt or "csrfToken" in cnt:
+                                        if not csrf_token:
+                                            m_c = re.search(r'"csrfToken":"([^"]+)"', cnt)
+                                            if m_c:
+                                                csrf_token = m_c.group(1)
+                                        os.environ["ANTIGRAVITY_LS_ADDRESS"] = f"localhost:{port}"
+                                        if csrf_token:
+                                            os.environ["ANTIGRAVITY_CSRF_TOKEN"] = csrf_token
+                                        break
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Antigravity CLI Runner")
+    parser.add_argument("-p", "--prompt", dest="prompt_flag", help="Prompt to send to Antigravity")
+    parser.add_argument("--resume", dest="resume_id", default="", help="Resume an existing conversation by ID")
+    parser.add_argument("--model", dest="model", default="", help="Model tier: flash_lite, flash, or pro")
+    parser.add_argument("--title", dest="title", default="", help="Conversation title")
+    parser.add_argument("prompt_pos", nargs="*", help="Positional prompt words")
+
+    args, unknown = parser.parse_known_args()
+
+    prompt_parts = []
+    if args.prompt_flag:
+        prompt_parts.append(args.prompt_flag)
+    if args.prompt_pos:
+        prompt_parts.extend(args.prompt_pos)
+
+    prompt = " ".join(prompt_parts).strip()
+    if not prompt:
+        if not sys.stdin.isatty():
+            try:
+                prompt = sys.stdin.read().strip()
+            except Exception:
+                pass
+
+    if not prompt:
+        print("Error: empty prompt", file=sys.stderr)
+        sys.exit(1)
+
+    agentapi = Path.home() / ".gemini" / "antigravity" / "bin" / ("agentapi.cmd" if sys.platform == "win32" else "agentapi")
+    if not agentapi.exists():
+        ls_candidates = [
+            Path("/Applications/Antigravity.app/Contents/Resources/bin/language_server"),
+            Path.home() / "AppData" / "Local" / "Programs" / "Antigravity" / "resources" / "bin" / "language_server.exe",
+            Path("C:/Program Files/Antigravity/resources/bin/language_server.exe"),
+        ]
+        for c in ls_candidates:
+            if c.exists():
+                agentapi.parent.mkdir(parents=True, exist_ok=True)
+                if sys.platform == "win32":
+                    with open(agentapi, "w", encoding="utf-8") as f:
+                        f.write(f'@echo off\r\n"{c}" agentapi %*\r\n')
+                else:
+                    with open(agentapi, "w", encoding="utf-8") as f:
+                        f.write(f'#!/bin/sh\nexec "{c}" agentapi "$@"\n')
+                    agentapi.chmod(0o755)
+                break
+
+    if not agentapi.exists():
+        print(f"Error: agentapi not found at {agentapi}", file=sys.stderr)
+        sys.exit(1)
+
+    # Auto-detect Antigravity language_server address and CSRF token if not set
+    if not os.environ.get("ANTIGRAVITY_LS_ADDRESS"):
+        _auto_discover_antigravity_ls()
+
+    if not os.environ.get("ANTIGRAVITY_LS_ADDRESS"):
+        print("💡 未检测到正在运行的 Antigravity 应用服务。请先启动 Antigravity 应用后再试。", file=sys.stderr)
+        sys.exit(1)
+
+    # Normalize model tier
+    model_arg = (args.model or "").lower().strip()
+    if model_arg in ("flash_lite", "flash-lite", "gemini-2.5-flash-lite"):
+        model = "flash_lite"
+    elif model_arg in ("pro", "gemini-2.5-pro"):
+        model = "pro"
+    else:
+        model = "flash"
+
+    title = args.title or prompt[:40]
+    conv_id = args.resume_id.strip()
+    start_pos = 0
+
+    if conv_id:
+        # Resume existing conversation
+        target_log = Path.home() / ".gemini" / "antigravity" / "brain" / conv_id / ".system_generated" / "logs" / "transcript_full.jsonl"
+        fallback_log = Path.home() / ".gemini" / "antigravity" / "brain" / conv_id / ".system_generated" / "logs" / "transcript.jsonl"
+        if target_log.exists():
+            start_pos = target_log.stat().st_size
+        elif fallback_log.exists():
+            start_pos = fallback_log.stat().st_size
+
+        cmd = [
+            str(agentapi),
+            "send-message",
+            f"--title={title}",
+            conv_id,
+            prompt,
+        ]
+        try:
+            res = subprocess.run(cmd, capture_output=True, text=True)
+            if res.returncode != 0:
+                err_text = (res.stderr or res.stdout or "").strip()
+                print(f"Error resuming conversation via Antigravity: {err_text}", file=sys.stderr)
+                sys.exit(1)
+        except Exception as e:
+            print(f"Error resuming conversation via Antigravity: {e}", file=sys.stderr)
+            sys.exit(1)
+    else:
+        # Start new conversation
+        cmd = [
+            str(agentapi),
+            "new-conversation",
+            f"--model={model}",
+            f"--title={title}",
+            prompt,
+        ]
+        try:
+            res = subprocess.run(cmd, capture_output=True, text=True)
+            if res.returncode != 0:
+                err_text = (res.stderr or res.stdout or "").strip()
+                print(f"Error initiating conversation via Antigravity: {err_text}", file=sys.stderr)
+                sys.exit(1)
+            out_json = json.loads(res.stdout)
+            conv_id = out_json["response"]["newConversation"]["conversationId"]
+        except Exception as e:
+            print(f"Error initiating conversation via Antigravity: {e}", file=sys.stderr)
+            sys.exit(1)
+
+    target_log = Path.home() / ".gemini" / "antigravity" / "brain" / conv_id / ".system_generated" / "logs" / "transcript_full.jsonl"
+    fallback_log = Path.home() / ".gemini" / "antigravity" / "brain" / conv_id / ".system_generated" / "logs" / "transcript.jsonl"
+
+    # Wait for transcript file to appear
+    wait_start = time.time()
+    while not target_log.exists() and not fallback_log.exists():
+        if time.time() - wait_start > 20:
+            print("Timed out waiting for Antigravity response log.", file=sys.stderr)
+            sys.exit(1)
+        time.sleep(0.1)
+
+    transcript_file = target_log if target_log.exists() else fallback_log
+
+    # Stream lines from transcript_full.jsonl
+    idle_count = 0
+    with open(transcript_file, "r", encoding="utf-8") as f:
+        if start_pos > 0:
+            f.seek(start_pos)
+
+        while True:
+            line = f.readline()
+            if not line:
+                time.sleep(0.2)
+                idle_count += 1
+                if idle_count > 900:  # 3 minutes idle timeout
+                    break
+                continue
+
+            idle_count = 0
+            line = line.strip()
+            if not line:
+                continue
+
+            try:
+                data = json.loads(line)
+            except Exception:
+                continue
+
+            source = data.get("source")
+            step_type = data.get("type")
+            content = data.get("content") or ""
+            tool_calls = data.get("tool_calls") or []
+
+            # Filter out non-model steps and internal tool output dumps
+            if step_type in ("USER_INPUT", "CHECKPOINT", "GENERIC", "SYSTEM_MESSAGE"):
+                continue
+
+            if step_type == "ERROR_MESSAGE":
+                sys.stderr.write(f"\nAntigravity Error: {content}\n")
+                sys.stderr.flush()
+                break
+
+            if source == "MODEL" and step_type == "PLANNER_RESPONSE":
+                # Render tool action badges if any tools were invoked
+                if tool_calls:
+                    for tc in tool_calls:
+                        tc_name = tc.get("name", "tool")
+                        tc_args = tc.get("args") or {}
+                        if isinstance(tc_args, str):
+                            try:
+                                tc_args = json.loads(tc_args)
+                            except Exception:
+                                tc_args = {}
+                        action = tc_args.get("toolAction") or tc_args.get("toolSummary") or tc_name
+                        if isinstance(action, str):
+                            action = action.strip('"\'')
+                        sys.stdout.write(f"\n⚡ [{action}]\n")
+                        sys.stdout.flush()
+
+                # Render assistant content
+                if content and content.strip():
+                    sys.stdout.write(content.strip() + "\n\n")
+                    sys.stdout.flush()
+
+                    if not tool_calls:
+                        # Final response produced, turn completed!
+                        break
+''';
+

@@ -1,7 +1,7 @@
 {
-  "version": "1.0.20",
-  "title": "Memento v1.0.20",
-  "release_notes": "1. 修复 Antigravity (agy) 调度报错：移除错误的 --dangerously-skip-permissions 参数与 --effort 参数，将会话恢复参数规范为 --resume，彻底解决 Antigravity 任务调度失败问题\n2. 增强 Antigravity 自动自愈：增加跨设备会话不存在时的自动识别与无感新建会话降级机制\n3. 桌面端后台静默更新与一键重启更新支持",
+  "version": "1.0.21",
+  "title": "Memento v1.0.21",
+  "release_notes": "1. 彻底解决 Antigravity 远程调度报 ANTIGRAVITY_LS_ADDRESS is not set 错误：跨平台自动探测 Antigravity 内部 language_server 端口、CSRF Token 与 Project ID 并无感注入执行环境\n2. 增强 Antigravity 客户端未启动时的智能唤起与友好提示自愈机制\n3. 修正 CLI 可执行文件候选，避免错误匹配 Antigravity 桌面 GUI 导致调度异常",
   "platforms": {
     "windows": {
       "asset_name": "Memento-windows-x64-setup.exe",

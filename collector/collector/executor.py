@@ -24,10 +24,15 @@ read-only sync token must not escalate to arbitrary execution.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
+import re
 import shutil
 import subprocess
+import sys
+import time
+import urllib.request
 from pathlib import Path
 
 import httpx
@@ -62,7 +67,6 @@ def build_subprocess_env() -> dict[str, str]:
         os.path.expanduser("~/go/bin"),
         "/Applications/Docker.app/Contents/Resources/bin",
         "/Applications/ChatGPT.app/Contents/Resources",
-        "/Applications/Antigravity.app/Contents/MacOS",
         os.path.expanduser("~/.antigravity/antigravity/bin"),
         os.path.expanduser("~/.gemini/antigravity/bin"),
         os.path.expanduser("~/.fnm/current/bin"),
@@ -296,6 +300,154 @@ def is_codex_thread_locked(session_id: str) -> bool:
         return False
 
 
+def discover_antigravity_env() -> dict[str, str] | None:
+    """Discover running Antigravity language_server port, CSRF token, and project ID."""
+    if os.environ.get("ANTIGRAVITY_LS_ADDRESS") and os.environ.get("ANTIGRAVITY_CSRF_TOKEN"):
+        res = {"ANTIGRAVITY_LS_ADDRESS": os.environ["ANTIGRAVITY_LS_ADDRESS"]}
+        if os.environ.get("ANTIGRAVITY_CSRF_TOKEN"):
+            res["ANTIGRAVITY_CSRF_TOKEN"] = os.environ["ANTIGRAVITY_CSRF_TOKEN"]
+        if os.environ.get("ANTIGRAVITY_PROJECT_ID"):
+            res["ANTIGRAVITY_PROJECT_ID"] = os.environ["ANTIGRAVITY_PROJECT_ID"]
+        return res
+
+    try:
+        if sys.platform in ("darwin", "linux"):
+            out = subprocess.check_output(["ps", "-eo", "pid,command"], text=True)
+            pid = None
+            csrf_token = None
+            for line in out.splitlines():
+                if "language_server" in line and "antigravity" in line and "grep" not in line:
+                    m_pid = re.match(r"^\s*(\d+)", line)
+                    if m_pid:
+                        pid = m_pid.group(1)
+                    m_token = re.search(r"--csrf_token\s+([^\s]+)", line)
+                    if m_token:
+                        csrf_token = m_token.group(1)
+                    break
+            if not pid:
+                return None
+
+            lsof_out = subprocess.check_output(["lsof", "-nP", "-a", "-iTCP", "-sTCP:LISTEN", "-p", pid], text=True)
+            ports = []
+            for pline in lsof_out.splitlines():
+                m_port = re.search(r"TCP\s+(?:127\.0\.0\.1|localhost|\*):(\d+)\s+\(LISTEN\)", pline)
+                if m_port:
+                    ports.append(int(m_port.group(1)))
+
+            valid_port = None
+            for port in ports:
+                try:
+                    url = f"http://127.0.0.1:{port}/"
+                    req = urllib.request.Request(url, headers={"User-Agent": "Antigravity-Probe"})
+                    with urllib.request.urlopen(req, timeout=1) as resp:
+                        if resp.status == 200:
+                            content = resp.read(2048).decode("utf-8", errors="ignore")
+                            if "antigravity" in content or "csrfToken" in content:
+                                valid_port = port
+                                if not csrf_token:
+                                    m_c = re.search(r'"csrfToken":"([^"]+)"', content)
+                                    if m_c:
+                                        csrf_token = m_c.group(1)
+                                break
+                except Exception:
+                    pass
+
+            if not valid_port:
+                return None
+
+            proj_id = None
+            storage_paths = [
+                Path.home() / "Library" / "Application Support" / "Antigravity" / "app_storage.json",
+                Path.home() / ".config" / "Antigravity" / "app_storage.json",
+            ]
+            for sp in storage_paths:
+                if sp.exists():
+                    try:
+                        with open(sp, "r", encoding="utf-8") as sf:
+                            sdata = json.load(sf)
+                            proj_id = sdata.get("lastCreatedProjectId")
+                            if proj_id:
+                                break
+                    except Exception:
+                        pass
+
+            res = {"ANTIGRAVITY_LS_ADDRESS": f"localhost:{valid_port}"}
+            if csrf_token:
+                res["ANTIGRAVITY_CSRF_TOKEN"] = csrf_token
+            if proj_id:
+                res["ANTIGRAVITY_PROJECT_ID"] = str(proj_id)
+            return res
+        elif sys.platform == "win32":
+            ps_cmd = [
+                "powershell", "-NoProfile", "-Command",
+                'Get-CimInstance Win32_Process -Filter "Name LIKE \'%language_server%\'" | Select-Object -Property ProcessId, CommandLine | ConvertTo-Json'
+            ]
+            raw = subprocess.check_output(ps_cmd, text=True, timeout=3)
+            data = json.loads(raw)
+            items = data if isinstance(data, list) else [data]
+            pid = None
+            csrf_token = None
+            for item in items:
+                cmd_line = item.get("CommandLine") or ""
+                if "antigravity" in cmd_line.lower():
+                    pid = str(item.get("ProcessId"))
+                    m_token = re.search(r"--csrf_token\s+([^\s]+)", cmd_line)
+                    if m_token:
+                        csrf_token = m_token.group(1)
+                    break
+            if not pid:
+                return None
+
+            net_out = subprocess.check_output(f"netstat -ano | findstr {pid}", shell=True, text=True)
+            ports = []
+            for pline in net_out.splitlines():
+                if "LISTENING" in pline:
+                    m_port = re.search(r"127\.0\.0\.1:(\d+)", pline)
+                    if m_port:
+                        ports.append(int(m_port.group(1)))
+
+            valid_port = None
+            for port in ports:
+                try:
+                    url = f"http://127.0.0.1:{port}/"
+                    req = urllib.request.Request(url, headers={"User-Agent": "Antigravity-Probe"})
+                    with urllib.request.urlopen(req, timeout=1) as resp:
+                        if resp.status == 200:
+                            cnt = resp.read(2048).decode("utf-8", errors="ignore")
+                            if "antigravity" in cnt or "csrfToken" in cnt:
+                                valid_port = port
+                                if not csrf_token:
+                                    m_c = re.search(r'"csrfToken":"([^"]+)"', cnt)
+                                    if m_c:
+                                        csrf_token = m_c.group(1)
+                                break
+                except Exception:
+                    pass
+
+            if not valid_port:
+                return None
+
+            proj_id = None
+            app_data = os.environ.get("APPDATA", "")
+            if app_data:
+                storage_file = Path(app_data) / "Antigravity" / "app_storage.json"
+                if storage_file.exists():
+                    try:
+                        with open(storage_file, "r", encoding="utf-8") as sf:
+                            proj_id = json.load(sf).get("lastCreatedProjectId")
+                    except Exception:
+                        pass
+
+            res = {"ANTIGRAVITY_LS_ADDRESS": f"localhost:{valid_port}"}
+            if csrf_token:
+                res["ANTIGRAVITY_CSRF_TOKEN"] = csrf_token
+            if proj_id:
+                res["ANTIGRAVITY_PROJECT_ID"] = str(proj_id)
+            return res
+    except Exception:
+        return None
+
+
 def build_agent_command(
     binary: str,
     resolved: str,
@@ -414,6 +566,30 @@ def _run_agent(payload: dict | None, timeout: int) -> dict[str, Any]:
     extra = (payload or {}).get("args")
     fork_mode = bool((payload or {}).get("fork"))
     sys_append = str((payload or {}).get("system_prompt_append") or "").strip()
+
+    # Auto-discover Antigravity language_server address if needed
+    if binary in ("agy", "antigravity"):
+        if not sub_env.get("ANTIGRAVITY_LS_ADDRESS"):
+            ag_env = discover_antigravity_env()
+            if ag_env:
+                sub_env.update(ag_env)
+            else:
+                if sys.platform == "darwin" and os.path.exists("/Applications/Antigravity.app"):
+                    try:
+                        subprocess.run(["open", "-a", "Antigravity"], timeout=3)
+                        time.sleep(3)
+                        ag_env = discover_antigravity_env()
+                        if ag_env:
+                            sub_env.update(ag_env)
+                    except Exception:
+                        pass
+            if not sub_env.get("ANTIGRAVITY_LS_ADDRESS"):
+                return {
+                    "status": "failed",
+                    "exit_code": 1,
+                    "stdout": "",
+                    "stderr": "💡 未检测到正在运行的 Antigravity 应用服务。\n\nAntigravity 需在本地保持运行以便通过 language_server 进行通信。\n请先启动 Antigravity 客户端应用后再试。",
+                }
 
     # Auto-fork if session is currently locked by active writer
     if not fork_mode and binary in ("codex", "codex-cli") and session_id and is_codex_thread_locked(session_id):
