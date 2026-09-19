@@ -278,11 +278,15 @@ async def check_update(
         if local_platform_asset:
             asset_name = local_platform_asset.name
             asset_size = local_platform_asset.stat().st_size
-        elif gh_asset and gh_asset.get("size"):
-            # If download comes from GitHub Releases, GitHub asset size is authoritative
-            asset_size = gh_asset.get("size")
-            if not asset_name:
-                asset_name = gh_asset.get("name")
+        elif gh_release:
+            assets = gh_release.get("assets", [])
+            exact_gh_asset = next((a for a in assets if a.get("name") == asset_name), None) if asset_name and isinstance(assets, list) else None
+            matched = exact_gh_asset or gh_asset
+            if matched and matched.get("size"):
+                asset_size = matched.get("size")
+                if not asset_name:
+                    asset_name = matched.get("name")
+                gh_asset = matched
 
     upstream_url = None
     if gh_asset:

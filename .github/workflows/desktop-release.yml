@@ -280,12 +280,18 @@ jobs:
           if 'platforms' not in meta:
               meta['platforms'] = {}
 
-          # Find windows asset (prefer .zip for hot-update)
+          # Find windows asset (prefer setup.exe, fallback .zip)
           for p in glob.glob('dist/windows-release/*'):
               fn = os.path.basename(p)
-              if fn.endswith('.zip'):
+              if fn.endswith('setup.exe') or fn.endswith('.exe'):
                   meta['platforms']['windows'] = {'asset_name': fn, 'size': os.path.getsize(p)}
                   break
+          if 'windows' not in meta.get('platforms', {}):
+              for p in glob.glob('dist/windows-release/*'):
+                  fn = os.path.basename(p)
+                  if fn.endswith('.zip'):
+                      meta['platforms']['windows'] = {'asset_name': fn, 'size': os.path.getsize(p)}
+                      break
 
           # Find macos asset (prefer .zip for hot-update, fallback .dmg)
           for p in glob.glob('dist/macos-release/*'):

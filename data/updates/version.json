@@ -1,7 +1,7 @@
 {
-  "version": "1.0.27",
-  "title": "Memento v1.0.27",
-  "release_notes": "1. 彻底修复 Windows 平台进程执行因路径包含空格（如 C:\\Program Files\\nodejs\\codex.cmd）导致 'C:\\Program' 不是内部或外部命令的系统错误\n2. 深度优化 Windows 批处理文件执行：对 npm 全局安装的 CLI 工具（Codex、Claude 等）自动解析底层 node.exe 与脚本直接启动，消除 cmd.exe 壳层干扰与引号截断\n3. 健全 Windows 批处理回退调用机制：全面采用 %COMSPEC% /d /c call 保护带空格路径与参数传递\n4. 优化 Windows 可执行文件发现顺序：优先选用原生 .exe 独立二进制",
+  "version": "1.0.28",
+  "title": "Memento v1.0.28",
+  "release_notes": "1. 彻底解决桌面端自动静默更新包大小校验异常导致更新失败与重启按钮未显示的系统缺陷\n2. 健全客户端下载校验容错保护：兼容元数据轻微偏差，杜绝误删有效更新包\n3. 界面全面增强：侧边栏与顶栏新增下载中进度展示、更新中断即时重试按钮与新版本就绪提示\n4. 服务端动态适配 GitHub Release 权威包大小，多源下载更稳定可靠",
   "platforms": {
     "windows": {
       "asset_name": "Memento-windows-x64-setup.exe",
