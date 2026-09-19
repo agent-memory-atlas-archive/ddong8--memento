@@ -114,7 +114,35 @@ def get_codex_capabilities() -> dict[str, Any]:
     }
 
 
+def _format_claude_display_name(model_id: str) -> tuple[str, str]:
+    m = model_id.lower()
+    if "sonnet-4-5" in m:
+        return "Claude Sonnet 4.5", "前沿多步推理与编码模型"
+    if "sonnet-4" in m:
+        return "Claude Sonnet 4", "前沿高智能推理模型"
+    if "opus-4-1" in m:
+        return "Claude Opus 4.1", "顶级复杂推理与工程攻坚"
+    if "opus-4" in m:
+        return "Claude Opus 4", "高阶架构设计与深度思维"
+    if "3-7-sonnet" in m:
+        return "Claude 3.7 Sonnet", "经典混合推理与编码模型 (当前主力)"
+    if "3-5-sonnet" in m:
+        return "Claude 3.5 Sonnet", "经典高性价比编码模型"
+    if "haiku-4-5" in m:
+        return "Claude Haiku 4.5", "毫秒级响应极速轻量模型"
+    if "3-5-haiku" in m:
+        return "Claude 3.5 Haiku", "极速轻量日常模型"
+    if "opus" in m:
+        return "Claude Opus", "高阶推理模型"
+    parts = model_id.replace("claude-", "").split("-")
+    name = "Claude " + " ".join(p.capitalize() for p in parts)
+    return name, "官方支持模型"
+
+
 def get_claude_capabilities() -> dict[str, Any]:
+    import shutil
+    import re
+
     claude_settings_file = os.path.expanduser("~/.claude/settings.json")
     default_model = ""
     default_effort = ""
@@ -128,7 +156,7 @@ def get_claude_capabilities() -> dict[str, Any]:
         except Exception as e:
             logger.debug("Failed to read claude settings.json: %s", e)
 
-    models = [
+    models: list[dict[str, Any]] = [
         {
             "id": "",
             "name": f"⚡ 默认模型 (跟随客户端配置: {default_model})" if default_model else "⚡ 默认模型 (跟随客户端/CLI配置)",
@@ -137,45 +165,66 @@ def get_claude_capabilities() -> dict[str, Any]:
         },
         {
             "id": "sonnet",
-            "name": "sonnet (最新 Sonnet 别名 / 4.6)",
-            "desc": "官方推荐别名，自动指向最新版本 (Claude Sonnet 4.6)",
+            "name": "sonnet (官方动态最新 Sonnet 别名)",
+            "desc": "官方推荐别名，自动指向最新版本 (Claude 3.7 Sonnet / Sonnet 4.5)",
         },
         {
             "id": "opus",
-            "name": "opus (最新 Opus 别名 / 4.6)",
-            "desc": "官方推荐别名，极高智能与超长上下文 (Claude Opus 4.6)",
-        },
-        {
-            "id": "opus[1m]",
-            "name": "opus[1m] (100万上下文增强版)",
-            "desc": "Claude Opus 4.6 深度思维 / 100万 Token 超大上下文",
+            "name": "opus (官方动态最新 Opus 别名)",
+            "desc": "官方推荐别名，极高智能与超长上下文 (Claude Opus 4.1 / Opus 4)",
         },
         {
             "id": "haiku",
-            "name": "haiku (最新 Haiku 别名 / 4.5)",
-            "desc": "官方推荐别名，极速轻量 (Claude Haiku 4.5)",
-        },
-        {
-            "id": "claude-sonnet-4-6",
-            "name": "Claude Sonnet 4.6",
-            "desc": "最新一代主力编码推理模型",
-        },
-        {
-            "id": "claude-opus-4-6",
-            "name": "Claude Opus 4.6",
-            "desc": "顶级架构分析与复杂逻辑推演",
-        },
-        {
-            "id": "claude-haiku-4-5",
-            "name": "Claude Haiku 4.5",
-            "desc": "毫秒级响应轻量模型",
-        },
-        {
-            "id": "claude-3-7-sonnet",
-            "name": "Claude 3.7 Sonnet",
-            "desc": "经典混合推理与编码模型",
+            "name": "haiku (官方动态最新 Haiku 别名)",
+            "desc": "官方推荐别名，极速轻量 (Claude Haiku 4.5 / 3.5 Haiku)",
         },
     ]
+
+    seen_ids = {"", "sonnet", "opus", "haiku"}
+
+    # Include user custom configured model if special (e.g. opus[1m])
+    if default_model and default_model not in seen_ids:
+        models.append({
+            "id": default_model,
+            "name": f"{default_model} (当前本地配置)",
+            "desc": "本地 ~/.claude/settings.json 中配置的模型",
+        })
+        seen_ids.add(default_model)
+
+    # Dynamically scan models supported by locally installed Claude Code runtime
+    discovered_slugs = []
+    claude_bin = shutil.which("claude")
+    if claude_bin and os.path.isfile(claude_bin):
+        try:
+            with open(claude_bin, "r", errors="ignore") as f:
+                content = f.read(8000000)
+            matches = re.findall(r'firstParty:\"(claude-[^\"]+)\"', content)
+            discovered_slugs = list(dict.fromkeys(matches))
+        except Exception as e:
+            logger.debug("Failed to scan claude binary: %s", e)
+
+    if not discovered_slugs:
+        discovered_slugs = [
+            "claude-3-7-sonnet-20250219",
+            "claude-sonnet-4-5-20250929",
+            "claude-opus-4-1-20250805",
+            "claude-sonnet-4-20250514",
+            "claude-opus-4-20250514",
+            "claude-3-5-sonnet-20241022",
+            "claude-haiku-4-5-20251001",
+            "claude-3-5-haiku-20241022",
+        ]
+
+    for slug in discovered_slugs:
+        if slug in seen_ids:
+            continue
+        seen_ids.add(slug)
+        dname, desc = _format_claude_display_name(slug)
+        models.append({
+            "id": slug,
+            "name": f"{slug} ({dname})",
+            "desc": desc,
+        })
 
     effort_options = [
         {

@@ -1,7 +1,7 @@
 {
-  "version": "1.0.23",
-  "title": "Memento v1.0.23",
-  "release_notes": "1. 同步 2026 最新官方模型库：全面对齐 Antigravity 最新模型矩阵（Gemini 3.8 Flash、Gemini 3.7 Flash、Gemini 3.6 Flash、Gemini 3.1 Pro、Claude Sonnet 4.6 Thinking、Claude Opus 4.6 Thinking、GPT-OSS 120B 等）\n2. 全面更新 Codex 与 Claude Code 模型库：支持 GPT-6-Astra、GPT-Reserve、GPT-5.6-Sol、GPT-5.6-Terra，Claude Opus 4.6 (1M 上下文增强版 opus[1m])、Claude Sonnet 4.6、Claude Haiku 4.5 等\n3. 动态探测本地客户端配置：智能嗅探 ~/.codex/config.toml、~/.codex/models_cache.json、~/.claude/settings.json，自动识别默认模型与 reasoning effort 思考量级别\n4. 增强模型下拉选择容错：彻底解决老旧设备上报简略模型字符串导致的解析与渲染异常",
+  "version": "1.0.24",
+  "title": "Memento v1.0.24",
+  "release_notes": "1. 零硬编码动态模型感知：实现 Claude Code 本地运行时首方模型二进制动态扫描（无缝支持 claude-3-7-sonnet、claude-sonnet-4-5、claude-opus-4-1 等），后续官方更新模型无需发版即可自动识别\n2. 修复 Claude Code 模型混淆：校准 Claude Code 真实模型列表，引入 Anthropic 官方动态别名（sonnet、opus、haiku），自动保持最新模型路由\n3. Codex 与 Antigravity 动态机制巩固：Codex 实时读取 ~/.codex/models_cache.json 动态缓存，Antigravity 自动分级调度，支持自定义任意模型输入\n4. 优化客户端与服务端模型能力同步：全平台（Web、Flutter 客户端、Python Collector、Server）模型探测逻辑完全对齐",
   "platforms": {
     "windows": {
       "asset_name": "Memento-windows-x64-setup.exe",
