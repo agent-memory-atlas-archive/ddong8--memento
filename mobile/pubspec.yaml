@@ -1,7 +1,7 @@
 name: memento_mobile
 description: "Memento Mobile - AI Coding Memory & Cross-Device Remote Dispatch Assistant"
 publish_to: "none"
-version: 1.0.26+27
+version: 1.0.27+28
 
 environment:
   sdk: ">=3.0.0 <4.0.0"

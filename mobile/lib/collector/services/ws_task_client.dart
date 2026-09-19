@@ -6,6 +6,19 @@ import 'package:path/path.dart' as p;
 import '../models/collector_config.dart';
 import '../models/task_message.dart';
 
+/// Represents a prepared command line ready to be spawned via Process.start.
+class ResolvedExecution {
+  final String executable;
+  final List<String> arguments;
+  final bool runInShell;
+
+  const ResolvedExecution({
+    required this.executable,
+    required this.arguments,
+    this.runInShell = false,
+  });
+}
+
 /// WebSocket client for real-time task streaming and execution between server and device.
 class WsTaskClient {
   final CollectorConfig config;
@@ -809,7 +822,7 @@ class WsTaskClient {
     final envPath = execEnv['PATH'] ?? '';
     final paths = envPath.split(pathSeparator).where((p) => p.isNotEmpty).toList();
 
-    final extensions = Platform.isWindows ? ['.cmd', '.exe', '.bat', '.ps1', ''] : [''];
+    final extensions = Platform.isWindows ? ['.exe', '.cmd', '.bat', '.ps1', ''] : [''];
 
     for (final name in names) {
       for (final ext in extensions) {
@@ -824,6 +837,104 @@ class WsTaskClient {
       }
     }
     return null;
+  }
+
+  /// Prepare command execution on current OS.
+  /// On Windows, handles:
+  /// 1. Node.js batch scripts (npm CLI wrappers like codex.cmd, claude.cmd) -> runs node.exe directly with script.
+  /// 2. Python batch scripts (like agy.cmd) -> runs python directly with script.
+  /// 3. Other batch files (.cmd/.bat) -> runs via %COMSPEC% /d /c call "exe" to avoid cmd whitespace split bugs.
+  /// 4. Executables with spaces -> runs directly with runInShell: false.
+  static Future<ResolvedExecution> prepareCommand(
+    String exe,
+    List<String> args, {
+    bool? isWindowsOverride,
+    String? comSpecOverride,
+    Future<String?> Function(String path)? fileReaderOverride,
+    bool Function(String path)? fileExistsOverride,
+  }) async {
+    final isWindows = isWindowsOverride ?? Platform.isWindows;
+    if (!isWindows) {
+      return ResolvedExecution(executable: exe, arguments: args, runInShell: false);
+    }
+
+    final lowerExe = exe.toLowerCase();
+    final isBatch = lowerExe.endsWith('.cmd') || lowerExe.endsWith('.bat');
+
+    if (isBatch) {
+      // 1. Try to resolve npm / node or python batch scripts directly to avoid cmd.exe altogether
+      try {
+        final exists = fileExistsOverride != null ? fileExistsOverride(exe) : await File(exe).exists();
+        if (exists) {
+          final content = fileReaderOverride != null
+              ? await fileReaderOverride(exe) ?? ''
+              : await File(exe).readAsString();
+          final pathContext = isWindows ? p.windows : p.posix;
+          final dir = pathContext.dirname(exe);
+
+          // Check for node.js script: "%dp0%\node_modules\..." or "%~dp0\node_modules\..."
+          final nodeMatch = RegExp(r'["\x27]?%(?:~)?dp0%?\\([^"\r\n\x27]+\.js)["\x27]?').firstMatch(content);
+          if (nodeMatch != null) {
+            final relJs = nodeMatch.group(1)!.replaceAll('/', pathContext.separator).replaceAll('\\', pathContext.separator);
+            final fullJs = pathContext.normalize(pathContext.join(dir, relJs));
+            final jsExists = fileExistsOverride != null ? fileExistsOverride(fullJs) : await File(fullJs).exists();
+            if (jsExists) {
+              final localNodePath = pathContext.join(dir, 'node.exe');
+              final localNodeExists = fileExistsOverride != null ? fileExistsOverride(localNodePath) : await File(localNodePath).exists();
+              final nodeExe = localNodeExists ? localNodePath : 'node';
+              return ResolvedExecution(
+                executable: nodeExe,
+                arguments: [fullJs, ...args],
+                runInShell: false,
+              );
+            }
+          }
+
+          // Check for python script: python "...\script.py" %*
+          final pyMatch = RegExp(r'python(?:\.exe)?\s+["\x27]?([^"\r\n\x27]+\.py)["\x27]?').firstMatch(content);
+          if (pyMatch != null) {
+            final pyPath = pyMatch.group(1)!;
+            final pyExists = fileExistsOverride != null ? fileExistsOverride(pyPath) : await File(pyPath).exists();
+            if (pyExists) {
+              return ResolvedExecution(
+                executable: 'python',
+                arguments: [pyPath, ...args],
+                runInShell: false,
+              );
+            }
+          }
+        }
+      } catch (_) {}
+
+      // 2. If it is a batch file and couldn't be resolved directly to node/python:
+      // On Windows, running batch files with spaces in path via Dart's `runInShell: true`
+      // fails with "'C:\Program' is not recognized..." because Dart does not quote the executable.
+      // Instead, explicitly invoke %COMSPEC% with /d /c call "exe" to preserve quotes and prevent splitting on whitespace.
+      final comSpec = comSpecOverride ?? Platform.environment['COMSPEC'] ?? 'cmd.exe';
+      return ResolvedExecution(
+        executable: comSpec,
+        arguments: ['/d', '/c', 'call', exe, ...args],
+        runInShell: false,
+      );
+    }
+
+    return ResolvedExecution(executable: exe, arguments: args, runInShell: false);
+  }
+
+  Future<Process> _startSafeProcess({
+    required String exe,
+    required List<String> args,
+    String? workingDirectory,
+    Map<String, String>? environment,
+  }) async {
+    final prep = await prepareCommand(exe, args);
+    return Process.start(
+      prep.executable,
+      prep.arguments,
+      workingDirectory: workingDirectory,
+      environment: environment,
+      runInShell: prep.runInShell,
+    );
   }
 
   static Map<String, String>? _cachedAntigravityEnv;
@@ -1328,8 +1439,6 @@ class WsTaskClient {
     Process? proc;
 
     try {
-      final useShell = Platform.isWindows &&
-          (exe.toLowerCase().endsWith('.cmd') || exe.toLowerCase().endsWith('.bat'));
       final executionEnv = await _buildExecutionEnvironment();
 
       // Ensure the directory of the resolved executable is at the front of PATH so shebangs like #!/usr/bin/env node succeed
@@ -1358,12 +1467,11 @@ class WsTaskClient {
           return;
         }
       }
-      proc = await Process.start(
-        exe,
-        args,
+      proc = await _startSafeProcess(
+        exe: exe,
+        args: args,
         workingDirectory: workingDir,
         environment: executionEnv,
-        runInShell: useShell,
       );
       _runningTasks[taskId] = proc;
       try {
@@ -1417,12 +1525,11 @@ class WsTaskClient {
         final agEnv = await discoverAntigravityEnv(forceRefresh: true);
         if (agEnv != null) {
           executionEnv.addAll(agEnv);
-          final retryProc = await Process.start(
-            exe,
-            args,
+          final retryProc = await _startSafeProcess(
+            exe: exe,
+            args: args,
             workingDirectory: workingDir,
             environment: executionEnv,
-            runInShell: useShell,
           );
           try {
             await retryProc.stdin.close();
@@ -1484,12 +1591,11 @@ class WsTaskClient {
         if (mModel.isNotEmpty) retryArgs.addAll(['-m', mModel]);
         retryArgs.addAll([cleanSid, pText]);
 
-        final retryProc = await Process.start(
-          exe,
-          retryArgs,
+        final retryProc = await _startSafeProcess(
+          exe: exe,
+          args: retryArgs,
           workingDirectory: workingDir,
           environment: executionEnv,
-          runInShell: useShell,
         );
         await retryProc.stdin.close();
         _runningTasks[taskId] = retryProc;
@@ -1576,12 +1682,11 @@ class WsTaskClient {
           freshArgs.addAll(['-p', pText]);
         }
 
-        final freshProc = await Process.start(
-          exe,
-          freshArgs,
+        final freshProc = await _startSafeProcess(
+          exe: exe,
+          args: freshArgs,
           workingDirectory: workingDir,
           environment: executionEnv,
-          runInShell: useShell,
         );
         try {
           await freshProc.stdin.close();

@@ -1,7 +1,7 @@
 {
-  "version": "1.0.26",
-  "title": "Memento v1.0.26",
-  "release_notes": "1. 全面同步 2026 Anthropic Claude 5 系列旗舰模型：原生支持 Claude Opus 5、Claude Sonnet 5 与前沿顶尖 Claude Fable 5.1 / Claude Mythos 5.1\n2. 官方动态别名升级：opus 别名实时映射至 Claude Opus 5，sonnet 别名实时映射至 Claude Sonnet 5，fable 别名实时映射至 Claude Fable 5.1\n3. 增强跨运行时二进制智能模型嗅探：深度扫描 VSCode 官方扩展、新旧安装路径及编译产物，秒级提取本地 CLI 模型表\n4. 模型加权排序重构：按 5.1 > 5.0 > 4.8 > 4.6 > 4.5 > 4.1 > 3.7 全局降序，当前最强旗舰稳居首位",
+  "version": "1.0.27",
+  "title": "Memento v1.0.27",
+  "release_notes": "1. 彻底修复 Windows 平台进程执行因路径包含空格（如 C:\\Program Files\\nodejs\\codex.cmd）导致 'C:\\Program' 不是内部或外部命令的系统错误\n2. 深度优化 Windows 批处理文件执行：对 npm 全局安装的 CLI 工具（Codex、Claude 等）自动解析底层 node.exe 与脚本直接启动，消除 cmd.exe 壳层干扰与引号截断\n3. 健全 Windows 批处理回退调用机制：全面采用 %COMSPEC% /d /c call 保护带空格路径与参数传递\n4. 优化 Windows 可执行文件发现顺序：优先选用原生 .exe 独立二进制",
   "platforms": {
     "windows": {
       "asset_name": "Memento-windows-x64-setup.exe",

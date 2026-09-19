@@ -474,6 +474,41 @@ def discover_antigravity_env() -> dict[str, str] | None:
         return None
 
 
+def resolve_batch_script(resolved: str, is_windows: bool | None = None) -> list[str] | None:
+    """If resolved is a Windows batch file (.cmd/.bat), try to extract direct interpreter and target script."""
+    check_win = (os.name == "nt") if is_windows is None else is_windows
+    if not check_win or not resolved.lower().endswith((".cmd", ".bat")):
+        return None
+    try:
+        if not os.path.isfile(resolved):
+            return None
+        with open(resolved, "r", encoding="utf-8", errors="ignore") as f:
+            content = f.read()
+        dir_name = os.path.dirname(resolved)
+
+        # 1. npm-generated .cmd: "%dp0%\node_modules\..." or "%~dp0\node_modules\..."
+        import re
+        m = re.search(r'["\']?%(?:~)?dp0%?\\([^"\r\n\']+\.js)["\']?', content)
+        if m:
+            rel_js = m.group(1).replace("/", os.sep).replace("\\", os.sep)
+            full_js = os.path.normpath(os.path.join(dir_name, rel_js))
+            if os.path.isfile(full_js):
+                local_node = os.path.join(dir_name, "node.exe")
+                node_exe = local_node if os.path.isfile(local_node) else (shutil.which("node") or "node")
+                return [node_exe, full_js]
+
+        # 2. python launcher script: python "...\script.py" %*
+        py_m = re.search(r'python(?:\.exe)?\s+["\']?([^"\r\n\']+\.py)["\']?', content)
+        if py_m:
+            py_file = py_m.group(1)
+            if os.path.isfile(py_file):
+                py_exe = shutil.which("python") or shutil.which("python3") or "python"
+                return [py_exe, py_file]
+    except Exception:
+        pass
+    return None
+
+
 def build_agent_command(
     binary: str,
     resolved: str,
@@ -485,11 +520,22 @@ def build_agent_command(
     args: list[Any] | None = None,
     fork: bool = False,
     system_prompt_append: str = "",
+    is_windows: bool | None = None,
 ) -> list[str]:
     """Build CLI argument list for the target agent runner."""
+    is_win = (os.name == "nt") if is_windows is None else is_windows
+    direct_prefix = resolve_batch_script(resolved, is_windows=is_win)
+    if direct_prefix:
+        head = list(direct_prefix)
+    elif is_win and resolved.lower().endswith((".cmd", ".bat")):
+        comspec = os.environ.get("COMSPEC", "cmd.exe")
+        head = [comspec, "/d", "/c", "call", resolved]
+    else:
+        head = [resolved]
+
     binary_norm = binary.strip().lower()
     if binary_norm in ("claude", "claude-code"):
-        cmd = [resolved, "-p"]
+        cmd = [*head, "-p"]
         if session_id:
             cmd += ["-r", session_id]
         if system_prompt_append:
@@ -510,7 +556,7 @@ def build_agent_command(
         subcmd = "fork" if fork else "resume"
         if session_id:
             cmd = [
-                resolved,
+                *head,
                 "exec",
                 subcmd,
                 "--dangerously-bypass-approvals-and-sandbox",
@@ -525,7 +571,7 @@ def build_agent_command(
             cmd += [session_id, prompt]
         else:
             cmd = [
-                resolved,
+                *head,
                 "exec",
                 "--dangerously-bypass-approvals-and-sandbox",
                 "--skip-git-repo-check",
@@ -540,7 +586,7 @@ def build_agent_command(
         return cmd
 
     if binary_norm in ("agy", "antigravity"):
-        cmd = [resolved]
+        cmd = [*head]
         if session_id:
             cmd += ["--resume", session_id]
         if model:
@@ -551,7 +597,7 @@ def build_agent_command(
         return cmd
 
     # Default fallback
-    cmd = [resolved]
+    cmd = [*head]
     if session_id:
         cmd += ["--resume", session_id]
     if model:
