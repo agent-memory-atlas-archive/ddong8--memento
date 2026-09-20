@@ -721,9 +721,15 @@ echo "Located source app: \$SRC_APP"
 
 if [ -n "\$SRC_APP" ] && [ -d "\$SRC_APP" ] && [ -n "\$TARGET_APP" ]; then
     echo "Replacing \$TARGET_APP with \$SRC_APP"
-    rm -rf "\$TARGET_APP"
-    cp -R "\$SRC_APP" "\$TARGET_APP"
-    xattr -cr "\$TARGET_APP" 2>/dev/null || true
+    PARENT_DIR=\$(dirname "\$TARGET_APP")
+    if [ ! -w "\$PARENT_DIR" ] || ( [ -e "\$TARGET_APP" ] && [ ! -w "\$TARGET_APP" ] ); then
+        echo "Target app requires elevated permissions, using osascript..."
+        osascript -e "do shell script \"rm -rf \\\"\$TARGET_APP\\\" && cp -R \\\"\$SRC_APP\\\" \\\"\$TARGET_APP\\\" && xattr -cr \\\"\$TARGET_APP\\\"\" with administrator privileges" 2>/dev/null || true
+    else
+        rm -rf "\$TARGET_APP"
+        cp -R "\$SRC_APP" "\$TARGET_APP"
+        xattr -cr "\$TARGET_APP" 2>/dev/null || true
+    fi
     codesign --force --deep -s - -r='designated => identifier "com.ihasy.memento"' "\$TARGET_APP" 2>/dev/null || true
     echo "Application replacement successful"
 else
@@ -870,6 +876,9 @@ rm -f "\$0"
     [string]$ExePath
 )
 
+$SourceDir = $SourceDir.TrimEnd('\')
+$DestDir = $DestDir.TrimEnd('\')
+
 # 1. Wait safely for the previous process to exit
 if ($TargetPid -gt 0) {
     try {
@@ -899,7 +908,8 @@ try {
 
 if (-not $hasPermission) {
     # Relaunch updater with Administrator privileges (UAC prompt) to overwrite Program Files safely
-    Start-Process powershell.exe -Verb RunAs -ArgumentList @("-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "`"$($MyInvocation.MyCommand.Path)`"", "0", "`"$SourceDir`"", "`"$DestDir`"", "`"$ExePath`"")
+    $scriptPath = $MyInvocation.MyCommand.Path
+    Start-Process powershell.exe -Verb RunAs -ArgumentList "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$scriptPath`" 0 `"$SourceDir`" `"$DestDir`" `"$ExePath`""
     exit 0
 }
 
@@ -1000,9 +1010,15 @@ sleep 1
 # 2. Overwrite application bundle cleanly
 if [ -n "\$SRC_APP" ] && [ -d "\$SRC_APP" ] && [ -n "\$TARGET_APP" ]; then
     echo "Replacing \$TARGET_APP with \$SRC_APP"
-    rm -rf "\$TARGET_APP"
-    cp -R "\$SRC_APP" "\$TARGET_APP"
-    xattr -cr "\$TARGET_APP" 2>/dev/null || true
+    PARENT_DIR=\$(dirname "\$TARGET_APP")
+    if [ ! -w "\$PARENT_DIR" ] || ( [ -e "\$TARGET_APP" ] && [ ! -w "\$TARGET_APP" ] ); then
+        echo "Target app requires elevated permissions, using osascript..."
+        osascript -e "do shell script \"rm -rf \\\"\$TARGET_APP\\\" && cp -R \\\"\$SRC_APP\\\" \\\"\$TARGET_APP\\\" && xattr -cr \\\"\$TARGET_APP\\\"\" with administrator privileges" 2>/dev/null || true
+    else
+        rm -rf "\$TARGET_APP"
+        cp -R "\$SRC_APP" "\$TARGET_APP"
+        xattr -cr "\$TARGET_APP" 2>/dev/null || true
+    fi
     codesign --force --deep -s - -r='designated => identifier "com.ihasy.memento"' "\$TARGET_APP" 2>/dev/null || true
     echo "Replacement successful"
 else

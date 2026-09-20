@@ -4,12 +4,12 @@
   "release_notes": "1. 修复客户端版本号动态感知，彻底解决 Windows 热升级循环重启提示问题\n2. 构建流水线注入 APP_VERSION，保证编译二进制与发布版本精准对齐\n3. 新增视频播放本地持久化缓存（MediaCacheManager），0 延迟秒开，免流量拖拽\n4. 修复 iOS 18+ UIScene 生命周期与白屏问题",
   "platforms": {
     "windows": {
-      "asset_name": "Memento-windows-x64.zip",
-      "size": 34664839
+      "asset_name": "Memento-windows-x64-setup.exe",
+      "size": 26025173
     },
     "macos": {
-      "asset_name": "Memento-macos-arm64.dmg",
-      "size": 44102386
+      "asset_name": "Memento-macos-arm64.zip",
+      "size": 38443180
     },
     "linux": {
       "asset_name": "Memento-linux-x64.tar.gz",

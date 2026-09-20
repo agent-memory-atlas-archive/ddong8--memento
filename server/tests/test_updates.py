@@ -39,10 +39,10 @@ class TestUpdatesApi(unittest.TestCase):
             {"name": "Memento-linux-amd64.deb", "size": 9000000},
         ]
 
-        # Windows prefers .zip for seamless in-place hot replacement; fallback to setup.exe
+        # Windows prefers setup.exe for reliable Inno Setup UAC upgrade; fallback to .zip
         win_asset = _match_github_asset(assets, "windows")
         self.assertIsNotNone(win_asset)
-        self.assertEqual(win_asset["name"], "Memento-windows-x64.zip")
+        self.assertEqual(win_asset["name"], "Memento-windows-x64-setup.exe")
 
         # macOS prefers .zip
         mac_asset = _match_github_asset(assets, "macos")
