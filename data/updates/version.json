@@ -1,7 +1,7 @@
 {
-  "version": "1.0.31",
-  "title": "Memento v1.0.31",
-  "release_notes": "1. 彻底修复 Windows 桌面端重启更新按钮点击后闪退或无响应的问题\n2. 修复 Windows 解压后单子目录判定失效导致的更新中断，全面兼容旧版客户端（v1.0.28/v1.0.29）\n3. 优化在位静默热替换目录定位与进程覆盖逻辑，杜绝升级后仍显示旧版本的问题\n4. 缩短下载超时阈值并增强多 CDN 镜像故障转移机制",
+  "version": "1.0.32",
+  "title": "Memento v1.0.32",
+  "release_notes": "1. 支持音视频产物 IPv6 点对点直连（P2P）超高速播放，突破云端中继带宽限制\n2. 宿主采集端内置轻量 HTTP Range 媒体服务，支持视频任意拖拽与流式边下边播\n3. 播放端集成毫秒级 Happy-Eyeballs 直连探测，并保持云端中继无缝自动兜底\n4. 视频播放器增加「⚡ IPv6 直连 (P2P)」与「🌐 云端中继」状态指示角标",
   "platforms": {
     "windows": {
       "asset_name": "Memento-windows-x64.zip",
