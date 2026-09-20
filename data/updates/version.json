@@ -1,6 +1,6 @@
 {
-  "version": "1.0.32",
-  "title": "Memento v1.0.32",
+  "version": "1.0.33",
+  "title": "Memento v1.0.33",
   "release_notes": "1. 支持音视频产物 IPv6 点对点直连（P2P）超高速播放，突破云端中继带宽限制\n2. 宿主采集端内置轻量 HTTP Range 媒体服务，支持视频任意拖拽与流式边下边播\n3. 播放端集成毫秒级 Happy-Eyeballs 直连探测，并保持云端中继无缝自动兜底\n4. 视频播放器增加「⚡ IPv6 直连 (P2P)」与「🌐 云端中继」状态指示角标",
   "platforms": {
     "windows": {
