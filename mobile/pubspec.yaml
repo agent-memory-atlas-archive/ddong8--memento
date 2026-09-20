@@ -1,7 +1,7 @@
 name: memento_mobile
 description: "Memento Mobile - AI Coding Memory & Cross-Device Remote Dispatch Assistant"
 publish_to: "none"
-version: 1.0.33+34
+version: 1.0.34+35
 
 environment:
   sdk: ">=3.0.0 <4.0.0"
@@ -18,6 +18,7 @@ dependencies:
   intl: ^0.19.0
   url_launcher: ^6.3.0
   cupertino_icons: ^1.0.8
+  package_info_plus: ^9.0.1
   path: ^1.9.0
   crypto: ^3.0.3
   media_kit: ^1.2.6

@@ -38,7 +38,18 @@ jobs:
 
       - name: Build macOS Release
         working-directory: mobile
-        run: flutter build macos --release
+        run: |
+          VERSION="${{ github.event.inputs.tag_name }}"
+          VERSION="${VERSION#v}"
+          if [ -z "$VERSION" ] && [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            VERSION="${{ github.ref_name }}"
+            VERSION="${VERSION#v}"
+          fi
+          if [ -z "$VERSION" ]; then
+            VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: //' | cut -d'+' -f1 | tr -d ' ')
+          fi
+          echo "Building macOS Release with version: $VERSION"
+          flutter build macos --release --dart-define=APP_VERSION=$VERSION
 
       - name: Sign macOS App with Stable Designated Requirement
         working-directory: mobile/build/macos/Build/Products/Release
@@ -81,7 +92,17 @@ jobs:
 
       - name: Build Windows Release
         working-directory: mobile
-        run: flutter build windows --release
+        shell: pwsh
+        run: |
+          $version = "${{ github.event.inputs.tag_name }}".TrimStart('v')
+          if (-not $version -and "${{ github.ref }}" -like "refs/tags/v*") {
+            $version = "${{ github.ref_name }}".TrimStart('v')
+          }
+          if (-not $version) {
+            $version = (Get-Content pubspec.yaml | Select-String '^version:\s*(.+)$').Matches.Groups[1].Value.Split('+')[0].Trim()
+          }
+          Write-Host "Building Windows Release with version: $version"
+          flutter build windows --release --dart-define=APP_VERSION=$version
 
       - name: Package Windows ZIP
         shell: pwsh
@@ -174,7 +195,18 @@ jobs:
 
       - name: Build Linux Release
         working-directory: mobile
-        run: flutter build linux --release
+        run: |
+          VERSION="${{ github.event.inputs.tag_name }}"
+          VERSION="${VERSION#v}"
+          if [ -z "$VERSION" ] && [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            VERSION="${{ github.ref_name }}"
+            VERSION="${VERSION#v}"
+          fi
+          if [ -z "$VERSION" ]; then
+            VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: //' | cut -d'+' -f1 | tr -d ' ')
+          fi
+          echo "Building Linux Release with version: $VERSION"
+          flutter build linux --release --dart-define=APP_VERSION=$VERSION
 
       - name: Package Linux Artifacts (.tar.gz and .deb)
         run: |

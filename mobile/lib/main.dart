@@ -1,13 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:media_kit/media_kit.dart';
+import 'core/services/update_service.dart';
 import 'core/theme/aurora_theme.dart';
 import 'state/auth_state.dart';
 import 'ui/screens/login_screen.dart';
 import 'ui/screens/shell_screen.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await UpdateService.initVersion();
 
   // Safeguard MediaKit initialization to prevent unhandled native framework errors from blocking app launch
   try {
