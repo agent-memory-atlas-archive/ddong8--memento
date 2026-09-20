@@ -1,19 +1,19 @@
 {
-  "version": "1.0.29",
-  "title": "Memento v1.0.29",
-  "release_notes": "1. 彻底修复 Antigravity 远程执行 CLI 脚本因入口未触发 main() 导致立即以退出码 0 返回空内容的问题\n2. 健全 Antigravity 运行环境自检、会话 ID 回传与多轮连续对话 (--resume) 能力\n3. 包含全部安装包校验容错保护与桌面端更新可视化、即时重试能力",
+  "version": "1.0.30",
+  "title": "Memento v1.0.30",
+  "release_notes": "1. 彻底修复 Windows 桌面端自更新失败与热替换目录定位异常的问题\n2. 修复 Windows 绿色包/自解压包在解压后目录嵌套检查失效导致的更新中断\n3. 优化 Windows 原生安装程序静默升级传参与自动重启逻辑\n4. 完善旧版本客户端自更新向后兼容性保护",
   "platforms": {
     "windows": {
-      "asset_name": "Memento-windows-x64-setup.exe",
-      "size": 25973024
+      "asset_name": "Memento-windows-x64.zip",
+      "size": 34593743
     },
     "macos": {
       "asset_name": "Memento-macos-arm64.dmg",
-      "size": 44064648
+      "size": 44682236
     },
     "linux": {
       "asset_name": "Memento-linux-x64.tar.gz",
-      "size": 11649487
+      "size": 11650627
     }
   }
 }

@@ -7,7 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../storage.dart';
 
 /// Current application version — MUST match pubspec.yaml `version` on every release!
-const String kAppCurrentVersion = '1.0.29';
+const String kAppCurrentVersion = '1.0.30';
 
 class UpdateInfo {
   final String version;
@@ -537,7 +537,72 @@ class UpdateService {
       // 2. Windows: Native installer (.exe / .msi)
       if (Platform.isWindows) {
         if (lowerPath.endsWith('.exe') || lowerPath.endsWith('.msi')) {
-          await Process.start(filePath, [], mode: ProcessStartMode.detached);
+          final currentExe = Platform.resolvedExecutable;
+          final appDir = p.dirname(currentExe);
+          final currentPid = pid;
+          final tempDir = p.dirname(filePath);
+
+          final ps1Path = p.join(tempDir, 'setup_runner.ps1');
+          final vbsPath = p.join(tempDir, 'launcher_setup.vbs');
+
+          const ps1Content = '''param(
+    [int]\$TargetPid,
+    [string]\$InstallerPath,
+    [string]\$AppDir,
+    [string]\$ExePath
+)
+
+# 1. Wait safely for the current app process to exit
+if (\$TargetPid -gt 0) {
+    try {
+        \$proc = Get-Process -Id \$TargetPid -ErrorAction SilentlyContinue
+        if (\$proc) {
+            \$null = \$proc.WaitForExit(10000)
+            Stop-Process -Id \$TargetPid -Force -ErrorAction SilentlyContinue
+        }
+    } catch {}
+}
+Start-Sleep -Milliseconds 800
+
+# 2. Run installer targeting the current application directory
+# Inno Setup flags: /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS /FORCECLOSEAPPLICATIONS /DIR="<appDir>"
+\$setupArgs = "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS /FORCECLOSEAPPLICATIONS /DIR=`"\$AppDir`""
+try {
+    \$installerProc = Start-Process -FilePath "\$InstallerPath" -ArgumentList \$setupArgs -Wait -PassThru
+} catch {
+    # Fallback to normal execution if silent flags fail
+    Start-Process -FilePath "\$InstallerPath" -Wait
+}
+
+# 3. Relaunch the updated app
+Start-Sleep -Milliseconds 500
+if (Test-Path "\$ExePath") {
+    Start-Process -FilePath "\$ExePath" -WorkingDirectory "\$AppDir"
+}
+
+# 4. Clean up installer and runner scripts
+Start-Sleep -Seconds 2
+try {
+    Remove-Item -LiteralPath "\$InstallerPath" -Force -ErrorAction SilentlyContinue
+    \$parentDir = Split-Path -Parent \$MyInvocation.MyCommand.Path
+    Remove-Item -LiteralPath (Join-Path \$parentDir "launcher_setup.vbs") -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath \$MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue
+} catch {}
+''';
+          await File(ps1Path).writeAsString(ps1Content);
+
+          final vbsContent = '''
+Set WshShell = CreateObject("WScript.Shell")
+cmd = "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ""$ps1Path"" $currentPid ""$filePath"" ""$appDir"" ""$currentExe"""
+WshShell.Run cmd, 0, False
+''';
+          await File(vbsPath).writeAsString(vbsContent);
+
+          await Process.start(
+            'wscript.exe',
+            [vbsPath],
+            mode: ProcessStartMode.detached,
+          );
           exit(0);
         } else {
           await Process.run('explorer.exe', ['/select,', filePath]);
@@ -657,9 +722,12 @@ rm -f "\$0"
     try {
       final tempDir = p.dirname(archivePath);
       final extractDir = Directory(p.join(tempDir, 'extracted'));
-      if (!await extractDir.exists()) {
-        await extractDir.create(recursive: true);
+      if (await extractDir.exists()) {
+        try {
+          await extractDir.delete(recursive: true);
+        } catch (_) {}
       }
+      await extractDir.create(recursive: true);
 
       debugPrint('[UpdateService] Extracting $archivePath to ${extractDir.path}...');
 
@@ -693,15 +761,38 @@ rm -f "\$0"
         return false;
       }
 
-      // Detect real source directory (some archives wrap everything in a single
-      // root folder, or contain stray marker files like .release_marker alongside
-      // the actual content directory/app bundle)
+      // Detect real source directory. Only unwrap a single wrapper subfolder if
+      // the root does NOT already contain the application binary.
       var sourceDir = extractDir.path;
       final entries = extractDir.listSync();
-      // Filter to only directories — ignore loose marker files like .release_marker
       final subDirs = entries.whereType<Directory>().toList();
-      if (subDirs.length == 1) {
-        sourceDir = subDirs.first.path;
+      final rootFiles = entries.whereType<File>().toList();
+
+      bool rootHasBinary = false;
+      if (Platform.isWindows) {
+        rootHasBinary = rootFiles.any((f) => f.path.toLowerCase().endsWith('.exe'));
+      } else if (Platform.isMacOS) {
+        rootHasBinary = subDirs.any((d) => d.path.endsWith('.app'));
+      } else if (Platform.isLinux) {
+        rootHasBinary = rootFiles.any((f) => p.basename(f.path) == 'memento');
+      }
+
+      // If the root lacks the binary and there is a single subfolder containing it, dive into it
+      if (!rootHasBinary && subDirs.length == 1) {
+        final singleSubDir = subDirs.first;
+        bool subHasBinary = false;
+        try {
+          if (Platform.isWindows) {
+            subHasBinary = singleSubDir.listSync().any((f) => f.path.toLowerCase().endsWith('.exe'));
+          } else if (Platform.isMacOS) {
+            subHasBinary = singleSubDir.listSync().any((f) => f.path.endsWith('.app'));
+          } else if (Platform.isLinux) {
+            subHasBinary = singleSubDir.listSync().any((f) => p.basename(f.path) == 'memento');
+          }
+        } catch (_) {}
+        if (subHasBinary) {
+          sourceDir = singleSubDir.path;
+        }
       }
 
       final currentExe = Platform.resolvedExecutable;
@@ -738,7 +829,7 @@ if ($TargetPid -gt 0) {
     try {
         $proc = Get-Process -Id $TargetPid -ErrorAction SilentlyContinue
         if ($proc) {
-            $null = $proc.WaitForExit(15000)
+            $null = $proc.WaitForExit(10000)
             Stop-Process -Id $TargetPid -Force -ErrorAction SilentlyContinue
         }
     } catch {}
@@ -762,21 +853,24 @@ try {
 
 if (-not $hasPermission) {
     # Relaunch updater with Administrator privileges (UAC prompt) to overwrite Program Files safely
-    Start-Process powershell.exe -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$($MyInvocation.MyCommand.Path)`" 0 `"$SourceDir`" `"$DestDir`" `"$ExePath`""
+    Start-Process powershell.exe -Verb RunAs -ArgumentList @("-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "`"$($MyInvocation.MyCommand.Path)`"", "0", "`"$SourceDir`"", "`"$DestDir`"", "`"$ExePath`"")
     exit 0
 }
 
 # 3. Overwrite files into target app directory
-try {
-    Copy-Item -Path "$SourceDir\*" -Destination "$DestDir" -Recurse -Force -ErrorAction Stop
-} catch {
-    robocopy "$SourceDir" "$DestDir" /E /IS /IT /NP /R:3 /W:1 *>$null
+# Use robocopy first for robust directory synchronization without PowerShell Copy-Item nesting bugs
+$roboProc = Start-Process -FilePath "robocopy.exe" -ArgumentList "`"$SourceDir`" `"$DestDir`" /E /IS /IT /NP /R:5 /W:1" -NoNewWindow -Wait -PassThru
+if ($roboProc.ExitCode -ge 8) {
+    # Fallback to Copy-Item if robocopy fails
+    Get-ChildItem -LiteralPath "$SourceDir" | ForEach-Object {
+        Copy-Item -LiteralPath $_.FullName -Destination "$DestDir" -Recurse -Force -ErrorAction SilentlyContinue
+    }
 }
 
 # 4. Relaunch new version of the application
 Start-Process -FilePath "$ExePath" -WorkingDirectory "$DestDir"
 
-# 4. Clean up temporary extracted folder and updater scripts
+# 5. Clean up temporary extracted folder and updater scripts
 Start-Sleep -Seconds 2
 try {
     Remove-Item -LiteralPath "$SourceDir" -Recurse -Force -ErrorAction SilentlyContinue

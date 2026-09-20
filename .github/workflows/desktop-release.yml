@@ -87,6 +87,9 @@ jobs:
         shell: pwsh
         run: |
           $src = "mobile/build/windows/x64/runner/Release"
+          # Create a secondary directory to ensure backwards compatibility with older clients (v1.0.28-v1.0.29)
+          # where subDirs.length == 1 caused the updater to erroneously dive into the data/ directory.
+          New-Item -ItemType Directory -Path "$src\plugins" -Force | Out-Null
           $outZip = "mobile/build/windows/Memento-windows-x64.zip"
           Compress-Archive -Path "$src\*" -DestinationPath "$outZip" -Force
 
@@ -280,16 +283,16 @@ jobs:
           if 'platforms' not in meta:
               meta['platforms'] = {}
 
-          # Find windows asset (prefer setup.exe, fallback .zip)
+          # Find windows asset (prefer .zip for in-place hot-replacement, fallback setup.exe)
           for p in glob.glob('dist/windows-release/*'):
               fn = os.path.basename(p)
-              if fn.endswith('setup.exe') or fn.endswith('.exe'):
+              if fn.endswith('.zip'):
                   meta['platforms']['windows'] = {'asset_name': fn, 'size': os.path.getsize(p)}
                   break
           if 'windows' not in meta.get('platforms', {}):
               for p in glob.glob('dist/windows-release/*'):
                   fn = os.path.basename(p)
-                  if fn.endswith('.zip'):
+                  if fn.endswith('setup.exe') or fn.endswith('.exe'):
                       meta['platforms']['windows'] = {'asset_name': fn, 'size': os.path.getsize(p)}
                       break
 
