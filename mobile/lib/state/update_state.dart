@@ -102,11 +102,23 @@ class AppUpdateNotifier extends StateNotifier<AppUpdateState> {
       return;
     }
 
-    // If update is already downloaded and verified, keep readyToInstall
-    if (state.isReadyToInstall && state.downloadedPath != null) {
+    // Check if this version has already been fully downloaded and cached locally
+    if (state.isReadyToInstall && state.downloadedPath != null && state.info != null) {
       final f = File(state.downloadedPath!);
       if (await f.exists() && await f.length() > 1024) {
-        return;
+        // Still verify if a newer version has been released on the server
+        try {
+          final latestInfo = await UpdateService.checkUpdate();
+          if (latestInfo != null && latestInfo.hasUpdate) {
+            if (latestInfo.version == state.info!.version) {
+              // Current readyToInstall package is already the latest, retain it
+              return;
+            }
+            debugPrint('[AppUpdateNotifier] Discarding outdated readyToInstall v${state.info!.version} in favor of v${latestInfo.version}');
+          }
+        } catch (_) {
+          return;
+        }
       }
     }
 
@@ -192,23 +204,27 @@ class AppUpdateNotifier extends StateNotifier<AppUpdateState> {
   }
 
   /// User clicked the "Restart to Update" button
-  Future<bool> applyUpdateAndRestart() async {
+  Future<bool> applyUpdateAndRestart({void Function(String message)? onFeedback}) async {
     final path = state.downloadedPath;
     if (path == null) {
+      const err = '未找到已下载的更新包，请稍候重试';
       state = state.copyWith(
         status: AppUpdateStatus.error,
-        errorMessage: '未找到已下载的更新包',
+        errorMessage: err,
       );
+      onFeedback?.call(err);
       return false;
     }
 
     final file = File(path);
     if (!await file.exists()) {
+      const err = '更新包文件已不存在或未完成下载，正在重新为您下载...';
       state = state.copyWith(
-        status: AppUpdateStatus.idle,
+        status: AppUpdateStatus.checking,
         downloadedPath: null,
-        errorMessage: '更新包文件已不存在，请重新下载',
+        errorMessage: err,
       );
+      onFeedback?.call(err);
       checkAndDownloadInBackground(silent: false);
       return false;
     }
@@ -217,10 +233,12 @@ class AppUpdateNotifier extends StateNotifier<AppUpdateState> {
 
     final ok = await UpdateService.installPackage(path);
     if (!ok) {
+      const err = '重启更新执行失败，请检查文件权限或手动解压安装';
       state = state.copyWith(
         status: AppUpdateStatus.readyToInstall,
-        errorMessage: '重启更新失败，请手动解压安装或稍后重试',
+        errorMessage: err,
       );
+      onFeedback?.call(err);
       return false;
     }
 

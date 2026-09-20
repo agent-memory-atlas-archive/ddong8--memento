@@ -437,7 +437,7 @@ class UpdateService {
             responseType: ResponseType.bytes,
             followRedirects: true,
             sendTimeout: const Duration(seconds: 15),
-            receiveTimeout: const Duration(minutes: 10),
+            receiveTimeout: const Duration(seconds: 25),
           ),
         );
 
@@ -445,8 +445,8 @@ class UpdateService {
           final len = await partFile.length();
           if (len > 1024) {
             if (info.assetSize != null && info.assetSize! > 0) {
-              // Ensure the file is not truncated or empty (allow minor packaging differences, but reject incomplete downloads)
-              if (len < (info.assetSize! * 0.5).toInt()) {
+              // Ensure the file is not truncated or empty (require at least 90% of expected size)
+              if (len < (info.assetSize! * 0.9).toInt()) {
                 throw Exception('下载包大小 ($len) 明显小于预期 (${info.assetSize})，疑似下载中断');
               }
             }
@@ -657,10 +657,14 @@ WshShell.Run cmd, 0, False
       final shPath = p.join(tempDir, 'dmg_updater.sh');
 
       const shContent = '''#!/bin/sh
+LOG_FILE="/tmp/memento_dmg_updater.log"
+exec >> "\$LOG_FILE" 2>&1
+echo "=== macOS DMG Updater started at \$(date) ==="
 TARGET_PID="\$1"
 DMG_PATH="\$2"
 TARGET_APP="\$3"
 TEMP_DIR="\$4"
+echo "TARGET_PID=\$TARGET_PID, DMG_PATH=\$DMG_PATH, TARGET_APP=\$TARGET_APP"
 
 # 1. Wait for current process to exit (with max 10s fallback)
 COUNT=0
@@ -668,6 +672,7 @@ while kill -0 "\$TARGET_PID" 2>/dev/null; do
     sleep 0.5
     COUNT=\$((COUNT + 1))
     if [ "\$COUNT" -ge 20 ]; then
+        echo "Process \$TARGET_PID still running after 10s, forcing kill -9"
         kill -9 "\$TARGET_PID" 2>/dev/null
         break
     fi
@@ -676,19 +681,31 @@ sleep 1
 
 # 2. Attach DMG silently
 MOUNT_DIR=\$(mktemp -d /tmp/memento_mnt.XXXXXX)
-hdiutil attach -nobrowse -readonly -mountpoint "\$MOUNT_DIR" "\$DMG_PATH"
+echo "Mounting DMG at \$MOUNT_DIR"
+if ! hdiutil attach -nobrowse -readonly -mountpoint "\$MOUNT_DIR" "\$DMG_PATH"; then
+    echo "hdiutil attach failed! Fallback to open DMG directly in Finder"
+    open "\$DMG_PATH"
+    exit 0
+fi
 
 # 3. Locate source .app inside mounted DMG
 SRC_APP=\$(find "\$MOUNT_DIR" -maxdepth 2 -name "*.app" 2>/dev/null | head -n 1)
+echo "Located source app: \$SRC_APP"
 
 if [ -n "\$SRC_APP" ] && [ -d "\$SRC_APP" ] && [ -n "\$TARGET_APP" ]; then
+    echo "Replacing \$TARGET_APP with \$SRC_APP"
     rm -rf "\$TARGET_APP"
     cp -R "\$SRC_APP" "\$TARGET_APP"
     xattr -cr "\$TARGET_APP" 2>/dev/null || true
     codesign --force --deep -s - -r='designated => identifier "com.ihasy.memento"' "\$TARGET_APP" 2>/dev/null || true
+    echo "Application replacement successful"
+else
+    echo "Could not find .app in mounted DMG, falling back to open DMG"
+    open "\$DMG_PATH"
 fi
 
 # 4. Detach DMG and clean up
+echo "Detaching DMG"
 hdiutil detach "\$MOUNT_DIR" -force 2>/dev/null || true
 rm -rf "\$MOUNT_DIR"
 rm -f "\$DMG_PATH"
@@ -697,8 +714,10 @@ if [ -n "\$TEMP_DIR" ] && [ -d "\$TEMP_DIR" ]; then
 fi
 
 # 5. Relaunch single instance
-open "\$TARGET_APP"
+echo "Relaunching \$TARGET_APP"
+open "\$TARGET_APP" || open -n "\$TARGET_APP"
 
+echo "=== Updater finished at \$(date) ==="
 rm -f "\$0"
 ''';
       await File(shPath).writeAsString(shContent);
@@ -929,10 +948,14 @@ WshShell.Run cmd, 0, False
 
         final shPath = p.join(tempDir, 'updater.sh');
         const shContent = '''#!/bin/sh
+LOG_FILE="/tmp/memento_updater.log"
+exec >> "\$LOG_FILE" 2>&1
+echo "=== macOS In-Place Updater started at \$(date) ==="
 TARGET_PID="\$1"
 SRC_APP="\$2"
 TARGET_APP="\$3"
 TEMP_DIR="\$4"
+echo "TARGET_PID=\$TARGET_PID, SRC_APP=\$SRC_APP, TARGET_APP=\$TARGET_APP"
 
 # 1. Wait for existing process to exit (with max 10s fallback)
 COUNT=0
@@ -940,6 +963,7 @@ while kill -0 "\$TARGET_PID" 2>/dev/null; do
     sleep 0.5
     COUNT=\$((COUNT + 1))
     if [ "\$COUNT" -ge 20 ]; then
+        echo "Process \$TARGET_PID still running after 10s, forcing kill -9"
         kill -9 "\$TARGET_PID" 2>/dev/null
         break
     fi
@@ -948,10 +972,14 @@ sleep 1
 
 # 2. Overwrite application bundle cleanly
 if [ -n "\$SRC_APP" ] && [ -d "\$SRC_APP" ] && [ -n "\$TARGET_APP" ]; then
+    echo "Replacing \$TARGET_APP with \$SRC_APP"
     rm -rf "\$TARGET_APP"
     cp -R "\$SRC_APP" "\$TARGET_APP"
     xattr -cr "\$TARGET_APP" 2>/dev/null || true
     codesign --force --deep -s - -r='designated => identifier "com.ihasy.memento"' "\$TARGET_APP" 2>/dev/null || true
+    echo "Replacement successful"
+else
+    echo "Error: SRC_APP=\$SRC_APP or TARGET_APP=\$TARGET_APP missing"
 fi
 
 # 3. Clean up temporary extraction folder completely
@@ -960,8 +988,10 @@ if [ -n "\$TEMP_DIR" ] && [ -d "\$TEMP_DIR" ]; then
 fi
 
 # 4. Relaunch single instance cleanly via open
-open "\$TARGET_APP"
+echo "Relaunching \$TARGET_APP"
+open "\$TARGET_APP" || open -n "\$TARGET_APP"
 
+echo "=== Updater finished at \$(date) ==="
 rm -f "\$0"
 ''';
         await File(shPath).writeAsString(shContent);

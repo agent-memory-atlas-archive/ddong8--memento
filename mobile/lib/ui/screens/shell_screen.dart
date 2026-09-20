@@ -411,7 +411,19 @@ class _DesktopUpdateWidget extends ConsumerWidget {
             color: Colors.transparent,
             child: InkWell(
               borderRadius: BorderRadius.circular(10),
-              onTap: () => ref.read(appUpdateProvider.notifier).applyUpdateAndRestart(),
+              onTap: () => ref.read(appUpdateProvider.notifier).applyUpdateAndRestart(
+                onFeedback: (msg) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(msg),
+                        backgroundColor: const Color(0xFFEF4444),
+                        duration: const Duration(seconds: 4),
+                      ),
+                    );
+                  }
+                },
+              ),
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                 child: Row(

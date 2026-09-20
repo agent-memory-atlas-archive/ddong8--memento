@@ -1533,7 +1533,19 @@ class _AskScreenState extends ConsumerState<AskScreen> {
                         v.isNotEmpty ? '重启更新 (v$v)' : '重启更新',
                         style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white),
                       ),
-                      onPressed: () => ref.read(appUpdateProvider.notifier).applyUpdateAndRestart(),
+                      onPressed: () => ref.read(appUpdateProvider.notifier).applyUpdateAndRestart(
+                        onFeedback: (msg) {
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(msg),
+                                backgroundColor: const Color(0xFFEF4444),
+                                duration: const Duration(seconds: 4),
+                              ),
+                            );
+                          }
+                        },
+                      ),
                     ),
                   ),
                 );
