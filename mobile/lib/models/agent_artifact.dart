@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:path/path.dart' as p;
 import '../core/storage.dart';
+import '../core/services/media_cache_manager.dart';
 
 enum ArtifactType {
   video,
@@ -59,6 +60,7 @@ class PlaybackSourceInfo {
   final String relayUrl;
   final bool hasP2p;
   final String? deviceName;
+  final bool isLocalCache;
 
   const PlaybackSourceInfo({
     required this.primaryUrl,
@@ -66,6 +68,7 @@ class PlaybackSourceInfo {
     required this.relayUrl,
     this.hasP2p = false,
     this.deviceName,
+    this.isLocalCache = false,
   });
 }
 
@@ -109,18 +112,19 @@ class AgentArtifact {
     return url;
   }
 
-  /// Check if the artifact physical file exists directly on the local filesystem.
+  /// Check if the artifact physical file exists directly on the local filesystem or local media cache.
   bool get isLocalFile {
     if (rawPath.isEmpty) return false;
     final clean = rawPath.replaceFirst(RegExp(r'^file://'), '');
     try {
-      return File(clean).existsSync();
+      if (File(clean).existsSync()) return true;
+      return MediaCacheManager.instance.isCached(rawPath);
     } catch (_) {
       return false;
     }
   }
 
-  /// Returns local physical file if it exists on current host machine,
+  /// Returns local physical file or cached file if it exists on current host machine,
   /// otherwise returns server relay stream URL.
   String getPlayableSource(String serverBaseUrl, {String? token}) {
     if (rawPath.isNotEmpty) {
@@ -129,6 +133,13 @@ class AgentArtifact {
         final f = File(clean);
         if (f.existsSync()) {
           return f.path;
+        }
+      } catch (_) {}
+
+      try {
+        final cached = MediaCacheManager.instance.getCachedFileSync(rawPath);
+        if (cached != null && cached.existsSync()) {
+          return cached.path;
         }
       } catch (_) {}
     }
@@ -142,7 +153,7 @@ class AgentArtifact {
     String? token,
     Dio? dioClient,
   }) async {
-    // 1. If it exists on local filesystem of current device, play directly!
+    // 1. If it exists on local filesystem of current device or in local media cache, play directly!
     if (rawPath.isNotEmpty) {
       final clean = rawPath.replaceFirst(RegExp(r'^file://'), '');
       try {
@@ -152,6 +163,18 @@ class AgentArtifact {
             primaryUrl: f.path,
             relayUrl: f.path,
             hasP2p: false,
+          );
+        }
+      } catch (_) {}
+
+      try {
+        final cached = MediaCacheManager.instance.getCachedFileSync(rawPath);
+        if (cached != null && cached.existsSync()) {
+          return PlaybackSourceInfo(
+            primaryUrl: cached.path,
+            relayUrl: cached.path,
+            hasP2p: false,
+            isLocalCache: true,
           );
         }
       } catch (_) {}

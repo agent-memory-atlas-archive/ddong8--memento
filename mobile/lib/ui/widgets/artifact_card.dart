@@ -75,6 +75,7 @@ class _ArtifactCardState extends State<ArtifactCard> {
                 EmbeddedVideoPlayer(
                   streamUrl: sourceInfo.relayUrl,
                   p2pUrl: sourceInfo.p2pUrl,
+                  cacheKey: widget.artifact.rawPath,
                   title: widget.artifact.title,
                 ),
                 Positioned(

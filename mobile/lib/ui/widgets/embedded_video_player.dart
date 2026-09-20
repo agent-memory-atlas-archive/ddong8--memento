@@ -3,19 +3,24 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
+import '../../core/services/media_cache_manager.dart';
 
 class EmbeddedVideoPlayer extends StatefulWidget {
   final String streamUrl;
   final String? p2pUrl;
+  final String? cacheKey;
   final String? title;
   final VoidCallback? onLaunchExternal;
+  final bool autoCache;
 
   const EmbeddedVideoPlayer({
     super.key,
     required this.streamUrl,
     this.p2pUrl,
+    this.cacheKey,
     this.title,
     this.onLaunchExternal,
+    this.autoCache = true,
   });
 
   @override
@@ -35,12 +40,50 @@ class _EmbeddedVideoPlayerState extends State<EmbeddedVideoPlayer> {
   Timer? _hideControlsTimer;
 
   bool _isP2pActive = false;
+  bool _isLocalCached = false;
+  bool _isCaching = false;
+  double _cacheProgress = 0.0;
   String? _activeUrl;
+  StreamSubscription<MediaCacheProgress>? _cacheSubscription;
 
   @override
   void initState() {
     super.initState();
+    _initCacheState();
     _initPlayer();
+  }
+
+  void _initCacheState() {
+    _cacheSubscription?.cancel();
+    _cacheSubscription = null;
+
+    final key = widget.cacheKey;
+    if (key == null || key.isEmpty) return;
+
+    final progress = MediaCacheManager.instance.getProgress(key);
+    if (progress != null) {
+      _cacheProgress = progress.progress;
+      _isCaching = progress.isCaching;
+      _isLocalCached = progress.isCompleted;
+    } else if (MediaCacheManager.instance.isCached(key)) {
+      _isLocalCached = true;
+      _cacheProgress = 1.0;
+      _isCaching = false;
+    }
+
+    _cacheSubscription = MediaCacheManager.instance.progressStream
+        .where((p) => p.cacheKey == key)
+        .listen((p) {
+      if (mounted) {
+        setState(() {
+          _cacheProgress = p.progress;
+          _isCaching = p.isCaching;
+          if (p.isCompleted) {
+            _isLocalCached = true;
+          }
+        });
+      }
+    });
   }
 
   void _initPlayer() {
@@ -67,6 +110,11 @@ class _EmbeddedVideoPlayerState extends State<EmbeddedVideoPlayer> {
     _player.stream.error.listen((err) {
       if (mounted) setState(() => _errorMessage = err);
     });
+    _player.stream.completed.listen((completed) {
+      if (completed && widget.autoCache && !_isLocalCached && widget.cacheKey != null) {
+        _triggerBackgroundCache(_activeUrl ?? widget.streamUrl);
+      }
+    });
 
     _resolveAndPlay();
   }
@@ -74,10 +122,32 @@ class _EmbeddedVideoPlayerState extends State<EmbeddedVideoPlayer> {
   Future<void> _resolveAndPlay() async {
     String targetUrl = widget.streamUrl;
     bool isP2p = false;
+    bool isLocal = false;
 
-    // Dual-mode Happy-Eyeballs probing:
-    // If an IPv6 P2P direct URL is provided, probe reachability with 500ms timeout
-    if (widget.p2pUrl != null && widget.p2pUrl!.isNotEmpty) {
+    // 1. Check local file or existing local cache
+    final key = widget.cacheKey;
+    if (key != null && key.isNotEmpty) {
+      try {
+        final clean = key.replaceFirst(RegExp(r'^file://'), '');
+        final directFile = File(clean);
+        if (directFile.existsSync() && directFile.lengthSync() > 1024) {
+          targetUrl = directFile.path;
+          isLocal = true;
+        }
+      } catch (_) {}
+
+      if (!isLocal) {
+        final cached = await MediaCacheManager.instance.getCachedFile(key);
+        if (cached != null && cached.existsSync()) {
+          targetUrl = cached.path;
+          isLocal = true;
+        }
+      }
+    }
+
+    // 2. Dual-mode Happy-Eyeballs probing:
+    // If not local, and an IPv6 P2P direct URL is provided, probe reachability with 500ms timeout
+    if (!isLocal && widget.p2pUrl != null && widget.p2pUrl!.isNotEmpty) {
       try {
         final client = HttpClient()..connectionTimeout = const Duration(milliseconds: 500);
         final uri = Uri.parse(widget.p2pUrl!);
@@ -96,6 +166,7 @@ class _EmbeddedVideoPlayerState extends State<EmbeddedVideoPlayer> {
 
     if (mounted) {
       setState(() {
+        _isLocalCached = isLocal;
         _isP2pActive = isP2p;
         _activeUrl = targetUrl;
       });
@@ -103,6 +174,39 @@ class _EmbeddedVideoPlayerState extends State<EmbeddedVideoPlayer> {
 
     _player.open(Media(targetUrl), play: true);
     _startHideTimer();
+
+    // 3. Initiate background cache if not already cached and autoCache is true
+    if (!isLocal && widget.autoCache && key != null && key.isNotEmpty) {
+      _triggerBackgroundCache(targetUrl);
+    }
+  }
+
+  void _triggerBackgroundCache(String downloadUrl) {
+    final key = widget.cacheKey;
+    if (key == null || key.isEmpty || _isLocalCached || _isCaching) return;
+
+    setState(() => _isCaching = true);
+    MediaCacheManager.instance.startCaching(
+      downloadUrl,
+      key,
+      onProgress: (p) {
+        if (mounted) {
+          setState(() {
+            _cacheProgress = p;
+            _isCaching = true;
+          });
+        }
+      },
+      onCompleted: (file) {
+        if (mounted) {
+          setState(() {
+            _isLocalCached = true;
+            _isCaching = false;
+            _cacheProgress = 1.0;
+          });
+        }
+      },
+    );
   }
 
   void _startHideTimer() {
@@ -124,14 +228,18 @@ class _EmbeddedVideoPlayerState extends State<EmbeddedVideoPlayer> {
   @override
   void didUpdateWidget(covariant EmbeddedVideoPlayer oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.streamUrl != widget.streamUrl || oldWidget.p2pUrl != widget.p2pUrl) {
+    if (oldWidget.streamUrl != widget.streamUrl ||
+        oldWidget.p2pUrl != widget.p2pUrl ||
+        oldWidget.cacheKey != widget.cacheKey) {
       _errorMessage = null;
+      _initCacheState();
       _resolveAndPlay();
     }
   }
 
   @override
   void dispose() {
+    _cacheSubscription?.cancel();
     _hideControlsTimer?.cancel();
     _player.dispose();
     super.dispose();
@@ -271,8 +379,8 @@ class _EmbeddedVideoPlayerState extends State<EmbeddedVideoPlayer> {
                   ),
                 ),
 
-              // 3. Top Title & P2P Connection Status Bar
-              if (_showControls && (widget.title != null || widget.p2pUrl != null))
+              // 3. Top Title & P2P / Cache Connection Status Bar
+              if (_showControls && (widget.title != null || widget.p2pUrl != null || widget.cacheKey != null))
                 Positioned(
                   top: 0,
                   left: 0,
@@ -340,7 +448,7 @@ class _EmbeddedVideoPlayerState extends State<EmbeddedVideoPlayer> {
                             trackHeight: 3.5,
                             thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
                             overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
-                            activeTrackColor: const Color(0xFF38BDF8),
+                            activeTrackColor: _isLocalCached ? const Color(0xFF10B981) : const Color(0xFF38BDF8),
                             inactiveTrackColor: Colors.white24,
                             thumbColor: Colors.white,
                           ),
@@ -374,6 +482,14 @@ class _EmbeddedVideoPlayerState extends State<EmbeddedVideoPlayer> {
                             ),
                             const SizedBox(width: 8),
                             _buildConnectionBadge(),
+                            if (!_isLocalCached && !_isCaching && widget.cacheKey != null && widget.cacheKey!.isNotEmpty) ...[
+                              const SizedBox(width: 4),
+                              IconButton(
+                                icon: const Icon(Icons.download_for_offline_outlined, color: Colors.white70, size: 18),
+                                tooltip: '下载缓存到本地',
+                                onPressed: () => _triggerBackgroundCache(_activeUrl ?? widget.streamUrl),
+                              ),
+                            ],
                             const Spacer(),
                             if (widget.onLaunchExternal != null)
                               IconButton(
@@ -395,6 +511,93 @@ class _EmbeddedVideoPlayerState extends State<EmbeddedVideoPlayer> {
   }
 
   Widget _buildConnectionBadge() {
+    if (_isLocalCached) {
+      return Tooltip(
+        message: '正在使用本地磁盘缓存直接播放 (0 延时、无网络流量消耗)\n路径: ${_activeUrl ?? ""}',
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+          decoration: BoxDecoration(
+            color: const Color(0xFF059669).withOpacity(0.25),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: const Color(0xFF10B981),
+              width: 0.8,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 6,
+                height: 6,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF34D399),
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF34D399).withOpacity(0.6),
+                      blurRadius: 4,
+                      spreadRadius: 1,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 4.5),
+              const Text(
+                '💾 本地缓存 (秒开)',
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFFD1FAE5),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (_isCaching) {
+      final percent = (_cacheProgress * 100).toInt().clamp(0, 100);
+      return Tooltip(
+        message: '视频正在后台边播边缓存到本地设备...\n已下载: ${_cacheProgress > 0 ? "$percent%" : "计算中"}',
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+          decoration: BoxDecoration(
+            color: const Color(0xFF4F46E5).withOpacity(0.25),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: const Color(0xFF818CF8),
+              width: 0.8,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                width: 8,
+                height: 8,
+                child: CircularProgressIndicator(
+                  strokeWidth: 1.5,
+                  value: _cacheProgress > 0 ? _cacheProgress : null,
+                  color: const Color(0xFFA5B4FC),
+                ),
+              ),
+              const SizedBox(width: 5),
+              Text(
+                _cacheProgress > 0 ? '⏳ 缓存中 $percent%' : '⏳ 缓存中...',
+                style: const TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFFE0E7FF),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     final isP2p = _isP2pActive;
     return Tooltip(
       message: isP2p

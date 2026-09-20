@@ -19,6 +19,7 @@ dependencies:
   url_launcher: ^6.3.0
   cupertino_icons: ^1.0.8
   path: ^1.9.0
+  crypto: ^3.0.3
   media_kit: ^1.2.6
   media_kit_video: ^2.0.1
   media_kit_libs_windows_video: ^1.0.11

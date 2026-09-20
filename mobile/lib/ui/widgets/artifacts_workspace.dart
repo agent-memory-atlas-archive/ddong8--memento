@@ -316,6 +316,7 @@ class _ArtifactsWorkspaceState extends State<ArtifactsWorkspace> {
           key: ValueKey(a.rawPath),
           streamUrl: _playbackSourceInfo?.relayUrl ?? streamUrl,
           p2pUrl: _playbackSourceInfo?.p2pUrl,
+          cacheKey: a.rawPath,
           title: a.title,
           onLaunchExternal: _handleLaunchExternal,
         ),
