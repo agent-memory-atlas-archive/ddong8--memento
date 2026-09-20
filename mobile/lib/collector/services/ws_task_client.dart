@@ -953,7 +953,9 @@ class WsTaskClient {
       if (await pyScript.exists()) {
         try {
           final content = await pyScript.readAsString();
-          if (content.contains('_auto_discover_antigravity_ls') && content.contains('gemini-3.8-flash')) {
+          if (content.contains('_auto_discover_antigravity_ls') &&
+              content.contains('gemini-3.8-flash') &&
+              content.contains('if __name__ == "__main__":')) {
             needsWrite = false;
           }
         } catch (_) {}
@@ -2045,6 +2047,8 @@ def main():
         model = "flash_lite"
     elif model_arg in ("pro", "gemini-3.1-pro", "gemini-2.5-pro", "claude-sonnet-4-6", "claude-opus-4-6", "claude-3-7-sonnet"):
         model = "pro"
+    elif model_arg in ("flash", "gemini-3.8-flash", "gemini-3.7-flash"):
+        model = "flash"
     else:
         model = "flash"
 
@@ -2097,6 +2101,9 @@ def main():
         except Exception as e:
             print(f"Error initiating conversation via Antigravity: {e}", file=sys.stderr)
             sys.exit(1)
+
+    sys.stderr.write(f"session id: {conv_id}\n")
+    sys.stderr.flush()
 
     target_log = Path.home() / ".gemini" / "antigravity" / "brain" / conv_id / ".system_generated" / "logs" / "transcript_full.jsonl"
     fallback_log = Path.home() / ".gemini" / "antigravity" / "brain" / conv_id / ".system_generated" / "logs" / "transcript.jsonl"
@@ -2175,5 +2182,9 @@ def main():
                     if not tool_calls:
                         # Final response produced, turn completed!
                         break
+
+
+if __name__ == "__main__":
+    main()
 ''';
 
