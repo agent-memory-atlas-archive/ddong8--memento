@@ -294,7 +294,8 @@ async def check_update(
 
     download_url = None
     if asset_name:
-        download_url = f"/api/system/update/download?file={asset_name}"
+        v_param = f"&version={latest_ver}" if latest_ver else ""
+        download_url = f"/api/system/update/download?file={asset_name}{v_param}"
 
     return UpdateCheckResponse(
         has_update=has_update,
@@ -314,6 +315,7 @@ async def check_update(
 @router.get("/download")
 async def download_update(
     file: str = Query(..., description="Asset filename to download"),
+    version: str | None = Query(None, description="Target release version"),
 ):
     """Download update asset file with directory traversal protection.
     
@@ -340,26 +342,38 @@ async def download_update(
 
     # Asset is not present in local filesystem: redirect (302) to upstream GitHub Releases
     tag = ""
-    gh_release = _RELEASE_CACHE.get("data")
-    if gh_release and "tag_name" in gh_release:
-        tag = str(gh_release["tag_name"]).strip()
+    if version:
+        tag = version.strip()
 
     if not tag:
         version_file = _UPDATES_DIR / "version.json"
+        local_ver = ""
         if version_file.exists():
             try:
                 with open(version_file, "r", encoding="utf-8") as f:
                     meta = json.load(f)
-                    tag = str(meta.get("version", "")).strip()
+                    local_ver = str(meta.get("version", "")).strip().lstrip("vV")
             except Exception:
                 pass
+
+        gh_ver = ""
+        gh_release = _RELEASE_CACHE.get("data")
+        if gh_release and "tag_name" in gh_release:
+            gh_ver = str(gh_release["tag_name"]).strip().lstrip("vV")
+
+        if gh_ver and local_ver:
+            tag = gh_ver if _compare_semver(gh_ver, local_ver) else local_ver
+        elif gh_ver:
+            tag = gh_ver
+        elif local_ver:
+            tag = local_ver
 
     if not tag:
         m = re.search(r"[vV]?(\d+\.\d+\.\d+)", safe_name)
         if m:
             tag = m.group(1)
 
-    tag_name = tag if tag.startswith("v") else (f"v{tag}" if tag else "v1.0.13")
+    tag_name = tag if tag.startswith("v") else (f"v{tag}" if tag else "v1.0.34")
     target_url = f"https://github.com/{GITHUB_REPO}/releases/download/{tag_name}/{safe_name}"
     logger.info("Local update asset '%s' not found on server disk, redirecting 302 to upstream: %s", safe_name, target_url)
     return RedirectResponse(url=target_url, status_code=302)

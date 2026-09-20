@@ -349,12 +349,19 @@ class UpdateService {
       final targetFile = File(p.join(cacheDir.path, fileName));
       if (await targetFile.exists()) {
         final size = await targetFile.length();
-        // If we know expected size, verify size match or reasonable threshold; otherwise require > 1MB
+        // If expected size is provided, strictly verify match or within 1KB
         if (info.assetSize != null && info.assetSize! > 0) {
-          if (size == info.assetSize || (size > 1024 * 1024 && size >= (info.assetSize! * 0.5).toInt())) {
+          if ((size - info.assetSize!).abs() <= 1024) {
             return targetFile.path;
           }
-        } else if (size > 1024 * 1024) {
+          // File size mismatch (truncated or obsolete download): purge it cleanly
+          debugPrint('[UpdateService] Cached file size ($size) != expected (${info.assetSize}), removing corrupt cache');
+          try {
+            await targetFile.delete();
+          } catch (_) {}
+          return null;
+        } else if (size > 8 * 1024 * 1024) {
+          // Fallback when size unknown: ensure at least 8MB
           return targetFile.path;
         }
       }
@@ -504,6 +511,7 @@ class UpdateService {
     String? upstreamUrl,
     String? version,
     String? fileName,
+    int? assetSize,
     void Function(String sourceLabel)? onSourceChanged,
     required void Function(int received, int total) onProgress,
     required void Function(String error) onError,
@@ -519,6 +527,7 @@ class UpdateService {
         downloadUrl: downloadUrl,
         upstreamUrl: upstreamUrl,
         assetName: fileName,
+        assetSize: assetSize,
         htmlUrl: downloadUrl,
       );
 

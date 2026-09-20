@@ -72,6 +72,7 @@ class _UpdateDialogState extends State<UpdateDialog> {
       upstreamUrl: widget.info.upstreamUrl,
       version: widget.info.version,
       fileName: widget.info.assetName,
+      assetSize: widget.info.assetSize,
       onSourceChanged: (sourceLabel) {
         if (!mounted) return;
         setState(() {

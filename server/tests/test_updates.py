@@ -140,7 +140,7 @@ class TestUpdatesApi(unittest.TestCase):
                         self.assertTrue(data_mac["has_update"])
                         self.assertEqual(data_mac["latest_version"], "1.0.10")
                         self.assertEqual(data_mac["asset_name"], "Memento-macos-arm64.zip")
-                        self.assertEqual(data_mac["download_url"], "/api/system/update/download?file=Memento-macos-arm64.zip")
+                        self.assertEqual(data_mac["download_url"], "/api/system/update/download?file=Memento-macos-arm64.zip&version=1.0.10")
 
                         # 2. Windows check from same latest version
                         res_win = await client.get("/api/system/update/check?platform=windows&version=1.0.10")
