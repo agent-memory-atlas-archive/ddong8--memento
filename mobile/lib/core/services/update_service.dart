@@ -4,10 +4,15 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:url_launcher/url_launcher.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import '../storage.dart';
 
-/// Current application version — MUST match pubspec.yaml `version` on every release!
-const String kAppCurrentVersion = '1.0.33';
+/// Compile-time or environment-defined application version fallback
+const String kAppDefaultVersion = String.fromEnvironment('APP_VERSION', defaultValue: '1.0.34');
+String _currentAppVersion = kAppDefaultVersion;
+
+/// Dynamically resolved current application version
+String get kAppCurrentVersion => _currentAppVersion;
 
 class UpdateInfo {
   final String version;
@@ -47,6 +52,19 @@ class UpdateService {
       'User-Agent': 'Memento-Client/$kAppCurrentVersion',
     },
   ));
+
+  /// Initialize runtime application version from platform metadata (e.g. pubspec.yaml)
+  static Future<void> initVersion() async {
+    try {
+      final info = await PackageInfo.fromPlatform();
+      if (info.version.isNotEmpty) {
+        _currentAppVersion = info.version;
+        debugPrint('[UpdateService] Successfully initialized app version from platform: $_currentAppVersion');
+      }
+    } catch (e) {
+      debugPrint('[UpdateService] initVersion fallback to compile-time version ($_currentAppVersion): $e');
+    }
+  }
 
   /// Check update from primary Memento Server, with fallback to GitHub Releases
   static Future<UpdateInfo?> checkUpdate({String? customServerUrl, String? customRepo}) async {
