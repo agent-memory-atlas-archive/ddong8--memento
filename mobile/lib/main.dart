@@ -8,7 +8,20 @@ import 'ui/screens/shell_screen.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  MediaKit.ensureInitialized();
+
+  // Safeguard MediaKit initialization to prevent unhandled native framework errors from blocking app launch
+  try {
+    MediaKit.ensureInitialized();
+  } catch (e, st) {
+    debugPrint('[Main] MediaKit initialization skipped or failed: $e\n$st');
+  }
+
+  // Global Flutter error handler
+  FlutterError.onError = (details) {
+    FlutterError.presentError(details);
+    debugPrint('[FlutterError] ${details.exceptionAsString()}');
+  };
+
   runApp(const ProviderScope(child: MementoApp()));
 }
 
