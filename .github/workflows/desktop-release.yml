@@ -87,9 +87,13 @@ jobs:
         shell: pwsh
         run: |
           $src = "mobile/build/windows/x64/runner/Release"
-          # Create a secondary directory to ensure backwards compatibility with older clients (v1.0.28-v1.0.29)
+          # Create secondary directories with marker files to ensure backwards compatibility with older clients (v1.0.28-v1.0.29)
           # where subDirs.length == 1 caused the updater to erroneously dive into the data/ directory.
+          # Note: Compress-Archive ignores empty directories, so a non-empty marker file (.keep) is required.
           New-Item -ItemType Directory -Path "$src\plugins" -Force | Out-Null
+          Set-Content -Path "$src\plugins\.keep" -Value "memento"
+          New-Item -ItemType Directory -Path "$src\resources" -Force | Out-Null
+          Set-Content -Path "$src\resources\.keep" -Value "memento"
           $outZip = "mobile/build/windows/Memento-windows-x64.zip"
           Compress-Archive -Path "$src\*" -DestinationPath "$outZip" -Force
 
