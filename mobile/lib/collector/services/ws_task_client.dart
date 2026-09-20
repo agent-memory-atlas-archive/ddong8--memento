@@ -5,6 +5,7 @@ import 'package:path/path.dart' as p;
 
 import '../models/collector_config.dart';
 import '../models/task_message.dart';
+import 'p2p_media_server.dart';
 
 /// Represents a prepared command line ready to be spawned via Process.start.
 class ResolvedExecution {
@@ -28,6 +29,7 @@ class WsTaskClient {
   bool _disposed = false;
   WebSocket? _ws;
   Timer? _pingTimer;
+  P2pMediaServer? _p2pServer;
   final Map<String, Process> _runningTasks = {};
   final Map<String, StringBuffer> _activeStdoutBuffers = {};
 
@@ -65,6 +67,8 @@ class WsTaskClient {
     _disposed = true;
     _pingTimer?.cancel();
     _ws?.close();
+    unawaited(_p2pServer?.stop());
+    _p2pServer = null;
     // Kill any active tasks cleanly
     for (final entry in _runningTasks.entries) {
       _killTaskProcess(entry.value);
@@ -76,6 +80,17 @@ class WsTaskClient {
   /// Start persistent connection loop with automatic reconnect.
   Future<void> start() async {
     int backoffSeconds = 2;
+
+    // Start local IPv6 P2P Media Server for direct, zero-relay video streaming
+    try {
+      _p2pServer ??= P2pMediaServer(
+        authToken: config.token,
+        onLog: _log,
+      );
+      await _p2pServer!.start();
+    } catch (e) {
+      _log('Failed to start IPv6 P2P server: $e');
+    }
 
     while (!_disposed) {
       try {
@@ -113,6 +128,9 @@ class WsTaskClient {
         // Report agent capabilities
         _reportCapabilities();
 
+        // Report IPv6 P2P streaming capabilities
+        unawaited(_reportP2pInfo());
+
         // Listen for incoming server frames
         await for (final raw in _ws!) {
           try {
@@ -122,11 +140,13 @@ class WsTaskClient {
             if (type == 'connected') {
               onConnectionStatus?.call(true);
               _log('Handshake verified by server (${data['device_name']})');
+              unawaited(_reportP2pInfo());
             } else if (type == 'pong') {
               // Heartbeat ack from server
               continue;
             } else if (type == 'get_agent_capabilities') {
               _reportCapabilities();
+              unawaited(_reportP2pInfo());
             } else if (type == 'task_dispatch') {
               final taskJson = data['task'] as Map<String, dynamic>?;
               if (taskJson != null) {
@@ -205,13 +225,39 @@ class WsTaskClient {
 
   void _startPingTimer() {
     _pingTimer?.cancel();
+    int pingCount = 0;
     _pingTimer = Timer.periodic(const Duration(seconds: 25), (_) {
       if (_ws != null && _ws!.readyState == WebSocket.open) {
         try {
           _ws!.add(jsonEncode({'type': 'ping'}));
         } catch (_) {}
+
+        pingCount++;
+        // Refresh and report P2P IPv6 status every ~5 minutes (12 pings)
+        if (pingCount % 12 == 0) {
+          unawaited(_reportP2pInfo());
+        }
       }
     });
+  }
+
+  Future<void> _reportP2pInfo() async {
+    if (_p2pServer == null || !_p2pServer!.isRunning) return;
+    try {
+      final ipv6 = await _p2pServer!.refreshIpv6Address();
+      final port = _p2pServer!.port;
+      if (port != null && ipv6 != null && ipv6.isNotEmpty) {
+        _sendJson({
+          'type': 'p2p_network_info',
+          'ipv6': ipv6,
+          'port': port,
+          'token': config.token,
+        });
+        _log('Registered IPv6 P2P streaming endpoint with coordinator: [$ipv6]:$port');
+      }
+    } catch (e) {
+      _log('Failed to report P2P info: $e');
+    }
   }
 
   void _sendJson(Map<String, dynamic> data) {

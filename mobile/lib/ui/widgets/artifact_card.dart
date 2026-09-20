@@ -44,7 +44,8 @@ class _ArtifactCardState extends State<ArtifactCard> {
   }
 
   Future<void> _handlePlayOrOpen() async {
-    final streamUrl = widget.artifact.getPlayableSource(_serverUrl ?? 'https://mem.ihasy.com', token: _token);
+    final serverBase = _serverUrl ?? 'https://mem.ihasy.com';
+    final streamUrl = widget.artifact.getPlayableSource(serverBase, token: _token);
     
     // 1. If desktop wide screen workspace callback provided, open directly in side canvas
     if (widget.onOpenWorkspace != null) {
@@ -52,8 +53,11 @@ class _ArtifactCardState extends State<ArtifactCard> {
       return;
     }
 
-    // 2. If video artifact, open embedded dialog directly inside the app (never jump to browser!)
+    // 2. If video artifact, resolve dual-mode source (IPv6 P2P + Relay fallback) and open embedded dialog
     if (widget.artifact.type == ArtifactType.video) {
+      final sourceInfo = await widget.artifact.resolvePlaybackSource(serverBase, token: _token);
+      if (!mounted) return;
+
       showDialog(
         context: context,
         builder: (ctx) => Dialog(
@@ -69,7 +73,8 @@ class _ArtifactCardState extends State<ArtifactCard> {
             child: Stack(
               children: [
                 EmbeddedVideoPlayer(
-                  streamUrl: streamUrl,
+                  streamUrl: sourceInfo.relayUrl,
+                  p2pUrl: sourceInfo.p2pUrl,
                   title: widget.artifact.title,
                 ),
                 Positioned(

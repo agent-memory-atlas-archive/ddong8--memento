@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:dio/dio.dart';
 import 'package:path/path.dart' as p;
 import '../core/storage.dart';
 
@@ -48,6 +49,24 @@ enum ArtifactType {
         return '💻';
     }
   }
+}
+
+/// Dual-mode playback source descriptor containing both direct IPv6 P2P URL
+/// and central server relay fallback URL.
+class PlaybackSourceInfo {
+  final String primaryUrl;
+  final String? p2pUrl;
+  final String relayUrl;
+  final bool hasP2p;
+  final String? deviceName;
+
+  const PlaybackSourceInfo({
+    required this.primaryUrl,
+    this.p2pUrl,
+    required this.relayUrl,
+    this.hasP2p = false,
+    this.deviceName,
+  });
 }
 
 class AgentArtifact {
@@ -114,6 +133,81 @@ class AgentArtifact {
       } catch (_) {}
     }
     return getStreamUrl(serverBaseUrl, token: token);
+  }
+
+  /// Resolves dual-mode playback sources: queries the server's playback-source endpoint
+  /// for an IPv6 P2P direct URL while guaranteeing seamless server relay fallback.
+  Future<PlaybackSourceInfo> resolvePlaybackSource(
+    String serverBaseUrl, {
+    String? token,
+    Dio? dioClient,
+  }) async {
+    // 1. If it exists on local filesystem of current device, play directly!
+    if (rawPath.isNotEmpty) {
+      final clean = rawPath.replaceFirst(RegExp(r'^file://'), '');
+      try {
+        final f = File(clean);
+        if (f.existsSync()) {
+          return PlaybackSourceInfo(
+            primaryUrl: f.path,
+            relayUrl: f.path,
+            hasP2p: false,
+          );
+        }
+      } catch (_) {}
+    }
+
+    final relayUrl = getStreamUrl(serverBaseUrl, token: token);
+
+    // 2. Query playback-source discovery API
+    try {
+      final cleanPath = rawPath.replaceFirst(RegExp(r'^file://'), '');
+      final base = serverBaseUrl.replaceAll(RegExp(r'/+$'), '');
+      final dev = deviceId != null && deviceId!.isNotEmpty ? deviceId! : 'auto';
+      final effectiveToken = token ?? AppStorage.currentToken;
+
+      final dio = dioClient ?? Dio(BaseOptions(
+        connectTimeout: const Duration(milliseconds: 1500),
+        receiveTimeout: const Duration(milliseconds: 1500),
+      ));
+
+      final uri = '$base/api/devices/$dev/files/playback-source';
+      final queryParams = <String, dynamic>{
+        'path': cleanPath,
+        if (effectiveToken != null && effectiveToken.isNotEmpty) 'token': effectiveToken,
+      };
+
+      final resp = await dio.get(
+        uri,
+        queryParameters: queryParams,
+        options: Options(headers: {
+          if (effectiveToken != null && effectiveToken.isNotEmpty) 'Authorization': 'Bearer $effectiveToken',
+        }),
+      );
+
+      if (resp.statusCode == 200 && resp.data is Map) {
+        final data = resp.data as Map<String, dynamic>;
+        final hasP2p = data['has_p2p'] == true;
+        final p2pUrl = data['p2p_url']?.toString();
+        final serverRelay = data['relay_url']?.toString() ?? relayUrl;
+        final devName = data['device_name']?.toString();
+
+        return PlaybackSourceInfo(
+          primaryUrl: (hasP2p && p2pUrl != null && p2pUrl.isNotEmpty) ? p2pUrl : serverRelay,
+          p2pUrl: hasP2p ? p2pUrl : null,
+          relayUrl: serverRelay,
+          hasP2p: hasP2p && p2pUrl != null && p2pUrl.isNotEmpty,
+          deviceName: devName,
+        );
+      }
+    } catch (_) {}
+
+    return PlaybackSourceInfo(
+      primaryUrl: relayUrl,
+      p2pUrl: null,
+      relayUrl: relayUrl,
+      hasP2p: false,
+    );
   }
 
   /// Sniff and extract artifacts from agent message turns.

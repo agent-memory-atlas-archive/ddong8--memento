@@ -41,7 +41,21 @@ class _ArtifactsWorkspaceState extends State<ArtifactsWorkspace> {
                 type: ArtifactType.document,
                 rawPath: '',
               ));
-    _loadServerUrl();
+    _loadServerUrl().then((_) => _loadPlaybackSource());
+  }
+
+  PlaybackSourceInfo? _playbackSourceInfo;
+
+  void _loadPlaybackSource() {
+    _playbackSourceInfo = null;
+    final a = _selectedArtifact;
+    if (a.type == ArtifactType.video && a.rawPath.isNotEmpty) {
+      a.resolvePlaybackSource(_serverUrl, token: _token).then((info) {
+        if (mounted && _selectedArtifact.rawPath == a.rawPath) {
+          setState(() => _playbackSourceInfo = info);
+        }
+      });
+    }
   }
 
   @override
@@ -49,6 +63,7 @@ class _ArtifactsWorkspaceState extends State<ArtifactsWorkspace> {
     super.didUpdateWidget(oldWidget);
     if (widget.initialSelected != null && widget.initialSelected != _selectedArtifact) {
       _selectedArtifact = widget.initialSelected!;
+      _loadPlaybackSource();
     }
   }
 
@@ -64,7 +79,7 @@ class _ArtifactsWorkspaceState extends State<ArtifactsWorkspace> {
   }
 
   Future<void> _handleLaunchExternal() async {
-    final streamUrl = _selectedArtifact.getStreamUrl(_serverUrl ?? 'https://mem.ihasy.com', token: _token);
+    final streamUrl = _selectedArtifact.getStreamUrl(_serverUrl, token: _token);
     final uri = Uri.parse(streamUrl);
     try {
       if (await canLaunchUrl(uri)) {
@@ -79,7 +94,7 @@ class _ArtifactsWorkspaceState extends State<ArtifactsWorkspace> {
   }
 
   void _copyStreamUrl() {
-    final streamUrl = _selectedArtifact.getStreamUrl(_serverUrl ?? 'https://mem.ihasy.com', token: _token);
+    final streamUrl = _selectedArtifact.getStreamUrl(_serverUrl, token: _token);
     Clipboard.setData(ClipboardData(text: streamUrl));
     _showFeedback('已复制媒体流 URL');
   }
@@ -97,7 +112,7 @@ class _ArtifactsWorkspaceState extends State<ArtifactsWorkspace> {
   @override
   Widget build(BuildContext context) {
     final a = _selectedArtifact;
-    final playableSource = a.getPlayableSource(_serverUrl ?? 'https://mem.ihasy.com', token: _token);
+    final playableSource = a.getPlayableSource(_serverUrl, token: _token);
 
     return Container(
       decoration: const BoxDecoration(
@@ -140,9 +155,12 @@ class _ArtifactsWorkspaceState extends State<ArtifactsWorkspace> {
                         return Padding(
                           padding: const EdgeInsets.only(right: 6),
                           child: InkWell(
-                            onTap: () => setState(() {
-                              _selectedArtifact = art;
-                            }),
+                            onTap: () {
+                              setState(() {
+                                _selectedArtifact = art;
+                              });
+                              _loadPlaybackSource();
+                            },
                             borderRadius: BorderRadius.circular(6),
                             child: Container(
                               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -295,7 +313,9 @@ class _ArtifactsWorkspaceState extends State<ArtifactsWorkspace> {
         ),
         clipBehavior: Clip.antiAlias,
         child: EmbeddedVideoPlayer(
-          streamUrl: streamUrl,
+          key: ValueKey(a.rawPath),
+          streamUrl: _playbackSourceInfo?.relayUrl ?? streamUrl,
+          p2pUrl: _playbackSourceInfo?.p2pUrl,
           title: a.title,
           onLaunchExternal: _handleLaunchExternal,
         ),

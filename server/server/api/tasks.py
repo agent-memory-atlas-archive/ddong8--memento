@@ -526,6 +526,23 @@ async def device_websocket_endpoint(
                 if machine.id:
                     _device_capabilities[str(machine.id)] = caps
                 logger.info("Received dynamic agent capabilities from device %s (%s)", real_device_id, machine.name)
+            elif msg_type == "p2p_network_info":
+                ipv6 = data.get("ipv6")
+                port = data.get("port")
+                token = data.get("token")
+                if ipv6 and port:
+                    info = {
+                        "ipv6": str(ipv6),
+                        "port": int(port),
+                        "token": str(token or ""),
+                        "updated_at": datetime.now(timezone.utc).timestamp(),
+                    }
+                    ws_manager.set_p2p_info(real_device_id, info)
+                    if machine.name:
+                        ws_manager.set_p2p_info(machine.name, info)
+                    if machine.id:
+                        ws_manager.set_p2p_info(str(machine.id), info)
+                    logger.info("Registered P2P IPv6 endpoint for %s: [%s]:%s", machine.name or real_device_id, ipv6, port)
             elif msg_type == "task_progress":
                 tid = data.get("task_id")
                 if tid:

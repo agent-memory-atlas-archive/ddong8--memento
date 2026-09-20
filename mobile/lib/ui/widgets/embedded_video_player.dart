@@ -1,16 +1,19 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
 class EmbeddedVideoPlayer extends StatefulWidget {
   final String streamUrl;
+  final String? p2pUrl;
   final String? title;
   final VoidCallback? onLaunchExternal;
 
   const EmbeddedVideoPlayer({
     super.key,
     required this.streamUrl,
+    this.p2pUrl,
     this.title,
     this.onLaunchExternal,
   });
@@ -30,6 +33,9 @@ class _EmbeddedVideoPlayerState extends State<EmbeddedVideoPlayer> {
   String? _errorMessage;
   bool _showControls = true;
   Timer? _hideControlsTimer;
+
+  bool _isP2pActive = false;
+  String? _activeUrl;
 
   @override
   void initState() {
@@ -62,7 +68,40 @@ class _EmbeddedVideoPlayerState extends State<EmbeddedVideoPlayer> {
       if (mounted) setState(() => _errorMessage = err);
     });
 
-    _player.open(Media(widget.streamUrl), play: true);
+    _resolveAndPlay();
+  }
+
+  Future<void> _resolveAndPlay() async {
+    String targetUrl = widget.streamUrl;
+    bool isP2p = false;
+
+    // Dual-mode Happy-Eyeballs probing:
+    // If an IPv6 P2P direct URL is provided, probe reachability with 500ms timeout
+    if (widget.p2pUrl != null && widget.p2pUrl!.isNotEmpty) {
+      try {
+        final client = HttpClient()..connectionTimeout = const Duration(milliseconds: 500);
+        final uri = Uri.parse(widget.p2pUrl!);
+        final req = await client.headUrl(uri).timeout(const Duration(milliseconds: 500));
+        final resp = await req.close().timeout(const Duration(milliseconds: 500));
+        if (resp.statusCode == HttpStatus.ok || resp.statusCode == HttpStatus.partialContent) {
+          targetUrl = widget.p2pUrl!;
+          isP2p = true;
+          debugPrint('[EmbeddedVideoPlayer] Direct IPv6 P2P connectivity verified: $targetUrl');
+        }
+        client.close();
+      } catch (e) {
+        debugPrint('[EmbeddedVideoPlayer] IPv6 P2P probe failed or timed out ($e), falling back to relay: ${widget.streamUrl}');
+      }
+    }
+
+    if (mounted) {
+      setState(() {
+        _isP2pActive = isP2p;
+        _activeUrl = targetUrl;
+      });
+    }
+
+    _player.open(Media(targetUrl), play: true);
     _startHideTimer();
   }
 
@@ -85,9 +124,9 @@ class _EmbeddedVideoPlayerState extends State<EmbeddedVideoPlayer> {
   @override
   void didUpdateWidget(covariant EmbeddedVideoPlayer oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.streamUrl != widget.streamUrl) {
+    if (oldWidget.streamUrl != widget.streamUrl || oldWidget.p2pUrl != widget.p2pUrl) {
       _errorMessage = null;
-      _player.open(Media(widget.streamUrl), play: true);
+      _resolveAndPlay();
     }
   }
 
@@ -232,7 +271,48 @@ class _EmbeddedVideoPlayerState extends State<EmbeddedVideoPlayer> {
                   ),
                 ),
 
-              // 3. Custom Aurora Floating Controller Bar
+              // 3. Top Title & P2P Connection Status Bar
+              if (_showControls && (widget.title != null || widget.p2pUrl != null))
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.black.withOpacity(0.75),
+                          Colors.black.withOpacity(0.2),
+                          Colors.transparent,
+                        ],
+                      ),
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    child: Row(
+                      children: [
+                        if (widget.title != null)
+                          Expanded(
+                            child: Text(
+                              widget.title!,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        const SizedBox(width: 8),
+                        _buildConnectionBadge(),
+                      ],
+                    ),
+                  ),
+                ),
+
+              // 4. Custom Aurora Floating Controller Bar
               if (_showControls)
                 Positioned(
                   bottom: 0,
@@ -292,6 +372,8 @@ class _EmbeddedVideoPlayerState extends State<EmbeddedVideoPlayer> {
                               '${_formatDuration(_position)} / ${_formatDuration(_duration)}',
                               style: const TextStyle(fontSize: 11.5, color: Colors.white70, fontFamily: 'monospace'),
                             ),
+                            const SizedBox(width: 8),
+                            _buildConnectionBadge(),
                             const Spacer(),
                             if (widget.onLaunchExternal != null)
                               IconButton(
@@ -307,6 +389,59 @@ class _EmbeddedVideoPlayerState extends State<EmbeddedVideoPlayer> {
                 ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildConnectionBadge() {
+    final isP2p = _isP2pActive;
+    return Tooltip(
+      message: isP2p
+          ? '正在通过公网 IPv6 点对点直连播放 (无中继延迟)\n源: ${_activeUrl ?? widget.p2pUrl ?? ""}'
+          : '正在通过中心服务器中继播放\n源: ${_activeUrl ?? widget.streamUrl}',
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+        decoration: BoxDecoration(
+          color: isP2p
+              ? const Color(0xFF0284C7).withOpacity(0.3)
+              : Colors.white.withOpacity(0.08),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: isP2p ? const Color(0xFF38BDF8) : Colors.white24,
+            width: 0.8,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 6,
+              height: 6,
+              decoration: BoxDecoration(
+                color: isP2p ? const Color(0xFF38BDF8) : const Color(0xFFF59E0B),
+                shape: BoxShape.circle,
+                boxShadow: isP2p
+                    ? [
+                        BoxShadow(
+                          color: const Color(0xFF38BDF8).withOpacity(0.6),
+                          blurRadius: 4,
+                          spreadRadius: 1,
+                        )
+                      ]
+                    : null,
+              ),
+            ),
+            const SizedBox(width: 4.5),
+            Text(
+              isP2p ? '⚡ IPv6 直连 (P2P)' : '🌐 云端中继',
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
+                color: isP2p ? const Color(0xFFE0F2FE) : Colors.white70,
+              ),
+            ),
+          ],
         ),
       ),
     );
