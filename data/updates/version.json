@@ -4,9 +4,9 @@
   "release_notes": "1. 升级体验全面升级：Windows 统一由 setup.exe 执行安装引导提升 UAC 权限，macOS 引入 osascript 管理员提权覆盖安装\n2. 严格校验本地缓存升级包大小与完整性，服务端下载重定向精准锁定版本参数\n3. 彻底修复客户端热升级循环重启提示，CI 构建流水线自动注入 APP_VERSION",
   "platforms": {
     "windows": {
-      "asset_name": "Memento-windows-x64-setup.exe",
-      "size": 26026112,
-      "sha256": "b270186405c5c39ee462e96921fb18a5e764aa23931844300647eba17b4a5897"
+      "asset_name": "Memento-windows-x64.zip",
+      "size": 34664921,
+      "sha256": "596b9629777bc380ce83255973df5bffd612a9d3dd1c44740aa39c923a4882e2"
     },
     "macos": {
       "asset_name": "Memento-macos-arm64.zip",

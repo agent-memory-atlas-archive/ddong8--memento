@@ -234,13 +234,13 @@ class UpdateService {
 
       if (Platform.isWindows) {
         if (aName.contains('win') || aName.contains('windows')) {
-          // Prefer setup.exe for reliable UAC installer upgrade; fallback to .zip
-          if (aName.endsWith('setup.exe') || aName.endsWith('.exe') || aName.endsWith('.msi')) {
+          // Prefer .zip for seamless in-place hot replacement (matching macOS and Linux); fallback to setup.exe
+          if (aName.endsWith('.zip')) {
             downloadUrl = aUrl;
             assetName = raw['name']?.toString();
             assetSize = aSize;
             break;
-          } else if (aName.endsWith('.zip') && downloadUrl == null) {
+          } else if ((aName.endsWith('setup.exe') || aName.endsWith('.exe') || aName.endsWith('.msi')) && downloadUrl == null) {
             downloadUrl = aUrl;
             assetName = raw['name']?.toString();
             assetSize = aSize;
@@ -595,26 +595,45 @@ if (\$TargetPid -gt 0) {
         }
     } catch {}
 }
+# Terminate any lingering background sidecar or collector
+Get-Process -Name "memento-collector*" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 Start-Sleep -Milliseconds 800
 
-# 2. Run installer targeting the current application directory
+# 2. Check write permission on target directory
+\$testFile = Join-Path \$AppDir (".memento_test_" + [Guid]::NewGuid().ToString("N"))
+\$hasPermission = \$false
+try {
+    [IO.File]::WriteAllText(\$testFile, "test")
+    if (Test-Path \$testFile) {
+        Remove-Item \$testFile -Force -ErrorAction SilentlyContinue
+        \$hasPermission = \$true
+    }
+} catch {
+    \$hasPermission = \$false
+}
+
+# 3. Run installer targeting the current application directory
 # Inno Setup flags: /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS /FORCECLOSEAPPLICATIONS /DIR="<appDir>"
 \$setupArgs = "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS /FORCECLOSEAPPLICATIONS /DIR=`"\$AppDir`""
 try {
-    \$installerProc = Start-Process -FilePath "\$InstallerPath" -ArgumentList \$setupArgs -Wait -PassThru
+    if (-not \$hasPermission) {
+        \$installerProc = Start-Process -FilePath "\$InstallerPath" -ArgumentList \$setupArgs -Verb RunAs -Wait -PassThru
+    } else {
+        \$installerProc = Start-Process -FilePath "\$InstallerPath" -ArgumentList \$setupArgs -Wait -PassThru
+    }
 } catch {
-    # Fallback to normal execution if silent flags fail
-    Start-Process -FilePath "\$InstallerPath" -Wait
+    # Fallback to normal execution with elevation if silent flags fail
+    Start-Process -FilePath "\$InstallerPath" -Verb RunAs -Wait
 }
 
-# 3. Relaunch the updated app
-Start-Sleep -Milliseconds 500
+# 4. Relaunch the updated app
+Start-Sleep -Milliseconds 800
 if (Test-Path "\$ExePath") {
     Start-Process -FilePath "\$ExePath" -WorkingDirectory "\$AppDir"
 }
 
-# 4. Clean up installer and runner scripts
-Start-Sleep -Seconds 2
+# 5. Clean up installer and runner scripts
+Start-Sleep -Seconds 3
 try {
     Remove-Item -LiteralPath "\$InstallerPath" -Force -ErrorAction SilentlyContinue
     \$parentDir = Split-Path -Parent \$MyInvocation.MyCommand.Path
