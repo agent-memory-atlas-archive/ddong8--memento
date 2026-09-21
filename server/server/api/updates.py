@@ -278,7 +278,7 @@ async def check_update(
         if local_platform_asset:
             asset_name = local_platform_asset.name
             asset_size = local_platform_asset.stat().st_size
-        elif gh_release:
+        elif gh_release and gh_ver == latest_ver:
             assets = gh_release.get("assets", [])
             exact_gh_asset = next((a for a in assets if a.get("name") == asset_name), None) if asset_name and isinstance(assets, list) else None
             matched = exact_gh_asset or gh_asset
@@ -289,8 +289,11 @@ async def check_update(
                 gh_asset = matched
 
     upstream_url = None
-    if gh_asset:
+    if gh_asset and gh_ver == latest_ver:
         upstream_url = gh_asset.get("browser_download_url")
+    elif latest_ver and asset_name:
+        tag_prefix = latest_ver if latest_ver.startswith("v") else f"v{latest_ver}"
+        upstream_url = f"https://github.com/{GITHUB_REPO}/releases/download/{tag_prefix}/{asset_name}"
 
     download_url = None
     if asset_name:

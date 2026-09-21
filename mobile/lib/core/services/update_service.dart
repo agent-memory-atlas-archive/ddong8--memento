@@ -418,8 +418,14 @@ class UpdateService {
 
     // 2. Upstream GitHub Release Direct URL
     if (info.upstreamUrl != null && info.upstreamUrl!.isNotEmpty) {
-      addCandidate('GitHub 官方源', info.upstreamUrl);
-    } else if (info.version.isNotEmpty) {
+      final uriStr = info.upstreamUrl!;
+      final tagMatch = RegExp(r'/releases/download/([^/]+)/').firstMatch(uriStr);
+      final urlTag = tagMatch?.group(1)?.replaceFirst(RegExp(r'^[vV]'), '');
+      if (urlTag == null || urlTag == info.version) {
+        addCandidate('GitHub 官方源', info.upstreamUrl);
+      }
+    }
+    if (info.version.isNotEmpty) {
       final tag = info.version.startsWith('v') ? info.version : 'v${info.version}';
       addCandidate('GitHub 官方源', 'https://github.com/ddong8/memento/releases/download/$tag/$fileName');
     } else if (downloadUrl.contains('github.com')) {
@@ -979,6 +985,25 @@ WshShell.Run cmd, 0, False
           }
         } catch (_) {}
         srcAppPath ??= sourceDir;
+
+        if (srcAppPath != null && Directory(srcAppPath).existsSync()) {
+          try {
+            final plistFile = File(p.join(srcAppPath, 'Contents', 'Info.plist'));
+            if (plistFile.existsSync()) {
+              final content = plistFile.readAsStringSync();
+              final verMatch = RegExp(r'<key>CFBundleShortVersionString<\/key>\s*<string>([^<]+)<\/string>').firstMatch(content);
+              if (verMatch != null) {
+                final extractedVer = verMatch.group(1)?.trim();
+                if (extractedVer != null && !isNewerVersion(extractedVer, kAppCurrentVersion)) {
+                  debugPrint('[UpdateService] Extracted version ($extractedVer) is not newer than current ($kAppCurrentVersion), aborting hot replacement.');
+                  return false;
+                }
+              }
+            }
+          } catch (e) {
+            debugPrint('[UpdateService] Failed to parse extracted Info.plist: $e');
+          }
+        }
 
         final targetApp = _getMacAppBundlePath(currentExe);
         debugPrint('[UpdateService] macOS hot replace: srcApp=$srcAppPath, targetApp=$targetApp');

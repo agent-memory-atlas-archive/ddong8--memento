@@ -5,15 +5,18 @@
   "platforms": {
     "windows": {
       "asset_name": "Memento-windows-x64-setup.exe",
-      "size": 26025173
+      "size": 26026112,
+      "sha256": "b270186405c5c39ee462e96921fb18a5e764aa23931844300647eba17b4a5897"
     },
     "macos": {
       "asset_name": "Memento-macos-arm64.zip",
-      "size": 38443180
+      "size": 38441859,
+      "sha256": "9152e229ff95873b9d01534e44af91cee08b10ac77aa5dcf3ac05d477ad1fd7d"
     },
     "linux": {
       "asset_name": "Memento-linux-x64.tar.gz",
-      "size": 11702909
+      "size": 11703304,
+      "sha256": "50a36d036c812b96be36bab116b5f512073293d2cc3dde0416fed4d042a9fcde"
     }
   }
 }
