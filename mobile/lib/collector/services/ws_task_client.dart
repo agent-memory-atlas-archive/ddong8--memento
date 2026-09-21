@@ -1001,6 +1001,7 @@ class WsTaskClient {
           final content = await pyScript.readAsString();
           if (content.contains('_auto_discover_antigravity_ls') &&
               content.contains('gemini-3.8-flash') &&
+              content.contains('--timeout') &&
               content.contains('if __name__ == "__main__":')) {
             needsWrite = false;
           }
@@ -1470,6 +1471,9 @@ class WsTaskClient {
         }
         if (model.isNotEmpty) {
           args.addAll(['--model', model]);
+        }
+        if (task.timeoutSeconds > 0) {
+          args.addAll(['--timeout', task.timeoutSeconds.toString()]);
         }
         args.addAll(['-p', prompt]);
       }
@@ -2034,6 +2038,7 @@ def main():
     parser.add_argument("--resume", dest="resume_id", default="", help="Resume an existing conversation by ID")
     parser.add_argument("--model", dest="model", default="", help="Model tier: flash_lite, flash, or pro")
     parser.add_argument("--title", dest="title", default="", help="Conversation title")
+    parser.add_argument("--timeout", type=int, default=1800, help="Timeout in seconds")
     parser.add_argument("prompt_pos", nargs="*", help="Positional prompt words")
 
     args, unknown = parser.parse_known_args()
@@ -2164,19 +2169,27 @@ def main():
 
     transcript_file = target_log if target_log.exists() else fallback_log
 
-    # Stream lines from transcript_full.jsonl
+    start_time = time.time()
     idle_count = 0
+    completed = False
     with open(transcript_file, "r", encoding="utf-8") as f:
         if start_pos > 0:
             f.seek(start_pos)
 
         while True:
+            if time.time() - start_time > args.timeout:
+                sys.stderr.write(f"\n[Agent timeout: 任务执行已达到安全上限（{args.timeout}s）]\n")
+                sys.stderr.flush()
+                sys.exit(124)
+
             line = f.readline()
             if not line:
                 time.sleep(0.2)
                 idle_count += 1
-                if idle_count > 900:  # 3 minutes idle timeout
-                    break
+                if idle_count > 1200:  # 4 minutes idle timeout
+                    sys.stderr.write("\n[Agent timeout: 任务空闲超过 240s 无响应]\n")
+                    sys.stderr.flush()
+                    sys.exit(124)
                 continue
 
             idle_count = 0
@@ -2201,7 +2214,7 @@ def main():
             if step_type == "ERROR_MESSAGE":
                 sys.stderr.write(f"\nAntigravity Error: {content}\n")
                 sys.stderr.flush()
-                break
+                sys.exit(1)
 
             if source == "MODEL" and step_type == "PLANNER_RESPONSE":
                 # Render tool action badges if any tools were invoked
@@ -2227,7 +2240,11 @@ def main():
 
                     if not tool_calls:
                         # Final response produced, turn completed!
+                        completed = True
                         break
+
+    if not completed:
+        sys.exit(124)
 
 
 if __name__ == "__main__":

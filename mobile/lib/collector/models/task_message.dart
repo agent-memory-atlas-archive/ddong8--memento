@@ -13,11 +13,13 @@ class TaskDispatch {
   });
 
   factory TaskDispatch.fromJson(Map<String, dynamic> json) {
+    final act = json['action']?.toString() ?? 'shell';
+    final defaultTimeout = act == 'agent' ? 1800 : 300;
     return TaskDispatch(
       id: json['id']?.toString() ?? '',
-      action: json['action']?.toString() ?? 'shell',
+      action: act,
       payload: (json['payload'] as Map?)?.cast<String, dynamic>() ?? {},
-      timeoutSeconds: (json['timeout_seconds'] as int?) ?? 300,
+      timeoutSeconds: (json['timeout_seconds'] as int?) ?? defaultTimeout,
     );
   }
 }

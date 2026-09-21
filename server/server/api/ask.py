@@ -694,7 +694,7 @@ async def _direct_agent_stream(
         if is_likely_long_running_task(question):
             effective_timeout = 1800  # 30 minutes for migration/archive/build tasks
         else:
-            effective_timeout = 600 if action == "agent" else 45
+            effective_timeout = 1800 if action == "agent" else 45
 
     args = {
         "action": action,
@@ -837,10 +837,24 @@ async def _direct_agent_stream(
         stderr = (result_dict.get("stderr") or "").strip()
         err_msg = result_dict.get("error") or stderr or f"退出码 {exit_code}"
 
+        is_only_tool_calls = False
+        if action == "agent" and stdout:
+            non_empty_lines = [line.strip() for line in stdout.splitlines() if line.strip()]
+            if non_empty_lines and all(l.startswith(("[Tool:", "⚡ [", "[Tool ")) for l in non_empty_lines):
+                is_only_tool_calls = True
+
         if status == "failed":
             summary_text = f"❌ {err_msg}"
+        elif status == "timeout" or exit_code == 124:
+            if stdout:
+                summary_text = f"{stdout}\n\n> ⚠️ *[任务执行耗时较长触发安全保护中断，已记录上述排查过程。请发送“继续”以获取完整结论]*"
+            else:
+                summary_text = f"⚠️ 任务执行超时（{err_msg[:100]}）。您可以发送“继续”继续获取结果。"
         elif action == "agent" and stdout:
-            summary_text = stdout
+            if is_only_tool_calls:
+                summary_text = f"{stdout}\n\n> 💡 *[阶段工具排查已完成，正在生成结论。如未显示完整回复，请发送“继续”]*"
+            else:
+                summary_text = stdout
         elif status == "succeeded" or exit_code == 0:
             summary_text = f"✅ {execution_mode.capitalize()} 任务在设备上执行完毕。"
         elif status == "still_running":

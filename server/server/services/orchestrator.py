@@ -49,8 +49,8 @@ logger = logging.getLogger("server.orchestrator")
 # Tool-call rounds before we stop and let the model summarize. Each round is
 # one LLM call plus however long the dispatched tasks take.
 MAX_ROUNDS = int(os.environ.get("MEMENTO_MAX_ROUNDS", "8"))
-# How long to wait inline for a dispatched task: default 600s (10 min), max 3600s (1 hour).
-TASK_WAIT_SECONDS = int(os.environ.get("MEMENTO_TASK_WAIT_SECONDS", "600"))
+# How long to wait inline for a dispatched task: default 1800s (30 min), max 3600s (1 hour).
+TASK_WAIT_SECONDS = int(os.environ.get("MEMENTO_TASK_WAIT_SECONDS", "1800"))
 MAX_TASK_TIMEOUT = int(os.environ.get("MEMENTO_MAX_TASK_TIMEOUT", "3600"))
 TASK_POLL_INTERVAL = 1.5
 # Trim tool output before it goes back into the prompt — a 100k-char build log

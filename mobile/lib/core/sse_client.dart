@@ -245,7 +245,8 @@ class AskSseClient {
       } else if (hasReceivedContent &&
           (e.error?.toString().contains('Connection closed') == true ||
               e.message?.contains('Connection closed') == true)) {
-        // Ignored: full or partial response already rendered
+        // Response was received but connection closed before done event
+        onDelta('\n\n> ⚠️ *[网络连接提前中断，若回答未完成可发送“继续”]*');
       } else if (e.type == DioExceptionType.receiveTimeout ||
           e.type == DioExceptionType.connectionTimeout ||
           e.type == DioExceptionType.sendTimeout ||
@@ -264,7 +265,8 @@ class AskSseClient {
           (errStr.contains('Connection closed') ||
               errStr.contains('HttpException: Connection closed') ||
               errStr.contains('Software caused connection abort'))) {
-        // Content was already received, clean termination
+        // Content was received but closed before done
+        onDelta('\n\n> ⚠️ *[连接提前中断，若回答未完成可发送“继续”]*');
       } else if (errStr.contains('SocketException') ||
           errStr.contains('Connection refused') ||
           errStr.contains('Network is unreachable')) {
