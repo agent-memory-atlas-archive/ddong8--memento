@@ -373,7 +373,7 @@ async def download_update(
         if m:
             tag = m.group(1)
 
-    tag_name = tag if tag.startswith("v") else (f"v{tag}" if tag else "v1.0.34")
+    tag_name = tag if tag.startswith("v") else (f"v{tag}" if tag else "v1.0.35")
     target_url = f"https://github.com/{GITHUB_REPO}/releases/download/{tag_name}/{safe_name}"
     logger.info("Local update asset '%s' not found on server disk, redirecting 302 to upstream: %s", safe_name, target_url)
     return RedirectResponse(url=target_url, status_code=302)
