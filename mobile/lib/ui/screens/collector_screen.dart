@@ -115,8 +115,15 @@ class _CollectorScreenState extends State<CollectorScreen> {
     } catch (e) {
       if (mounted) {
         setState(() => _checkingUpdate = false);
+        final errStr = e.toString();
+        final msg = (errStr.contains('SocketException') ||
+                errStr.contains('Connection refused') ||
+                errStr.contains('Timeout') ||
+                errStr.contains('connectionError'))
+            ? '网络连接超时或不可用，请稍后重试'
+            : '检查更新异常: $e';
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('检查更新异常: $e')),
+          SnackBar(content: Text(msg)),
         );
       }
     }

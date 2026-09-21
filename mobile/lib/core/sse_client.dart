@@ -63,45 +63,68 @@ class AskSseClient {
     bool isDone = false;
     bool hasReceivedContent = false;
 
-    try {
-      final response = await dio.post<ResponseBody>(
-        '$serverUrl/api/ask',
-        data: {
-          'question': question,
-          if (conversationId != null && conversationId.isNotEmpty)
-            'conversation_id': conversationId,
-          'history': history,
-          'device_id': selectedDevice,
-          if (cwd != null && cwd.trim().isNotEmpty) 'cwd': cwd.trim(),
-          'agent_mode': selectedDevice != 'ask_only',
-          'execution_mode': executionMode,
-          if (model != null && model.isNotEmpty) 'model': model,
-          if (effort != null && effort.isNotEmpty) 'effort': effort,
-          if (projectId != null && projectId.isNotEmpty) 'project_id': projectId,
-          if (sessionId != null && sessionId.isNotEmpty) 'session_id': sessionId,
-          if (compactMode == true) 'compact_mode': true,
-          if (timeoutSeconds != null && timeoutSeconds > 0)
-            'timeout_seconds': timeoutSeconds,
-          if (images != null && images.isNotEmpty) 'images': images,
-          if (attachments != null && attachments.isNotEmpty)
-            'attachments': attachments,
-        },
-        options: Options(
-          responseType: ResponseType.stream,
-          receiveTimeout: const Duration(hours: 2),
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'text/event-stream',
-            if (token != null && token.isNotEmpty)
-              'Authorization': 'Bearer $token',
-          },
-        ),
-        cancelToken: _cancelToken,
-      );
+    ResponseBody? responseStream;
+    const maxRetries = 2;
 
-      final stream = response.data?.stream;
+    for (int attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        final response = await dio.post<ResponseBody>(
+          '$serverUrl/api/ask',
+          data: {
+            'question': question,
+            if (conversationId != null && conversationId.isNotEmpty)
+              'conversation_id': conversationId,
+            'history': history,
+            'device_id': selectedDevice,
+            if (cwd != null && cwd.trim().isNotEmpty) 'cwd': cwd.trim(),
+            'agent_mode': selectedDevice != 'ask_only',
+            'execution_mode': executionMode,
+            if (model != null && model.isNotEmpty) 'model': model,
+            if (effort != null && effort.isNotEmpty) 'effort': effort,
+            if (projectId != null && projectId.isNotEmpty) 'project_id': projectId,
+            if (sessionId != null && sessionId.isNotEmpty) 'session_id': sessionId,
+            if (compactMode == true) 'compact_mode': true,
+            if (timeoutSeconds != null && timeoutSeconds > 0)
+              'timeout_seconds': timeoutSeconds,
+            if (images != null && images.isNotEmpty) 'images': images,
+            if (attachments != null && attachments.isNotEmpty)
+              'attachments': attachments,
+          },
+          options: Options(
+            responseType: ResponseType.stream,
+            receiveTimeout: const Duration(hours: 2),
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'text/event-stream',
+              if (token != null && token.isNotEmpty)
+                'Authorization': 'Bearer $token',
+            },
+          ),
+          cancelToken: _cancelToken,
+        );
+
+        responseStream = response.data;
+        break;
+      } on DioException catch (e) {
+        if (CancelToken.isCancel(e)) return;
+        final isRetryable = e.type == DioExceptionType.connectionError ||
+            e.type == DioExceptionType.connectionTimeout ||
+            e.type == DioExceptionType.sendTimeout ||
+            (e.response?.statusCode != null &&
+                e.response!.statusCode! >= 502 &&
+                e.response!.statusCode! <= 504);
+        if (isRetryable && attempt < maxRetries) {
+          await Future.delayed(const Duration(milliseconds: 1200));
+          continue;
+        }
+        rethrow;
+      }
+    }
+
+    try {
+      final stream = responseStream?.stream;
       if (stream == null) {
-        onError('无法获取服务器响应数据流');
+        onError('无法获取服务器响应数据流，请检查网络连接后重试');
         onDone();
         return;
       }
@@ -225,8 +248,11 @@ class AskSseClient {
         // Ignored: full or partial response already rendered
       } else if (e.type == DioExceptionType.receiveTimeout ||
           e.type == DioExceptionType.connectionTimeout ||
+          e.type == DioExceptionType.sendTimeout ||
           e.type == DioExceptionType.connectionError) {
-        onError('网络连接中断（如切到后台或网络波动导致挂起），请回到前台后重试');
+        onError('网络连接不稳定或中断（如切到后台或网络波动），请检查网络后重试');
+      } else if (e.response?.statusCode != null && e.response!.statusCode! >= 500) {
+        onError('服务端暂时繁忙或正在重启升级（HTTP ${e.response?.statusCode}），请稍候重试');
       } else {
         onError('网络请求失败: ${e.message ?? e.toString()}');
       }
@@ -235,9 +261,14 @@ class AskSseClient {
       if (isDone) {
         // Clean completion
       } else if (hasReceivedContent &&
-          (errStr.contains('Connection closed while receiving data') ||
-              errStr.contains('HttpException: Connection closed'))) {
+          (errStr.contains('Connection closed') ||
+              errStr.contains('HttpException: Connection closed') ||
+              errStr.contains('Software caused connection abort'))) {
         // Content was already received, clean termination
+      } else if (errStr.contains('SocketException') ||
+          errStr.contains('Connection refused') ||
+          errStr.contains('Network is unreachable')) {
+        onError('网络连接不可用，请检查网络连接后重试');
       } else {
         onError('请求异常: $e');
       }
