@@ -1,6 +1,6 @@
 {
-  "version": "1.0.35",
-  "title": "Memento v1.0.35",
+  "version": "1.0.36",
+  "title": "Memento v1.0.36",
   "release_notes": "1. 升级体验全面升级：Windows 统一由 setup.exe 执行安装引导提升 UAC 权限，macOS 引入 osascript 管理员提权覆盖安装\n2. 严格校验本地缓存升级包大小与完整性，服务端下载重定向精准锁定版本参数\n3. 彻底修复客户端热升级循环重启提示，CI 构建流水线自动注入 APP_VERSION",
   "platforms": {
     "windows": {
