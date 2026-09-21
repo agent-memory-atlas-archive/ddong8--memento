@@ -141,6 +141,57 @@ class AskNotifier extends StateNotifier<AskState> {
     }
   }
 
+  /// Silently resynchronize the active conversation when the app returns to foreground.
+  ///
+  /// Solves the iOS background suspension issue: if a stream or remote task was
+  /// interrupted when the user switched to background, this fetches the server's
+  /// latest complete conversation state and replaces the interrupted turn silently.
+  Future<void> syncOnForegroundResumed() async {
+    final activeId = state.activeConversationId;
+    if (activeId == null || activeId.isEmpty) return;
+
+    final lastTurn = state.turns.isNotEmpty ? state.turns.last : null;
+    final needsSync = state.isStreaming ||
+        state.error != null ||
+        (lastTurn != null &&
+            lastTurn.role == 'assistant' &&
+            (lastTurn.content.isEmpty ||
+             lastTurn.content.contains('⚠️ *[网络连接提前中断') ||
+             lastTurn.content.contains('⚠️ *[连接提前中断') ||
+             lastTurn.content.contains('⚠️ *[任务执行耗时较长')));
+
+    if (!needsSync) return;
+
+    try {
+      final res = await ApiClient().getAskConversation(activeId);
+      final rawTurns = res['turns'] as List<dynamic>? ?? [];
+      final serverTurns = rawTurns
+          .whereType<Map<String, dynamic>>()
+          .map((t) => AskTurn.fromJson(t))
+          .toList();
+
+      if (serverTurns.isNotEmpty) {
+        final lastServerTurn = serverTurns.last;
+        // If server has more turns or server's last assistant turn has more/completed content
+        if (serverTurns.length > state.turns.length ||
+            (serverTurns.length == state.turns.length &&
+             lastServerTurn.role == 'assistant' &&
+             (lastServerTurn.content.length > (lastTurn?.content.length ?? 0) ||
+              lastTurn?.content.contains('⚠️ *[') == true))) {
+          _flushPending();
+          state = state.copyWith(
+            turns: serverTurns,
+            isStreaming: false,
+            error: null,
+            activeConversationTitle: res['title']?.toString() ?? state.activeConversationTitle,
+          );
+        }
+      }
+    } catch (_) {
+      // Silently ignore network errors during resume sync
+    }
+  }
+
   Future<void> deleteConversation(String id) async {
     try {
       await ApiClient().deleteAskConversation(id);

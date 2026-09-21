@@ -7,6 +7,7 @@ import '../../core/api_client.dart';
 import '../../state/auth_state.dart';
 import '../../state/device_state.dart';
 import '../../state/collector_state.dart';
+import '../../state/ask_state.dart';
 import '../../collector/models/collector_config.dart';
 import '../../collector/services/autostart_service.dart';
 import '../../core/services/windows_registry_service.dart';
@@ -110,6 +111,8 @@ class _ShellScreenState extends ConsumerState<ShellScreen> with WidgetsBindingOb
     if (state == AppLifecycleState.resumed) {
       // Auto-refresh devices when user returns to foreground
       ref.read(deviceProvider.notifier).loadDevices();
+      // Silently resync active conversation if backgrounded during AI stream
+      ref.read(askProvider.notifier).syncOnForegroundResumed();
     }
   }
 

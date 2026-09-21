@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:dio/dio.dart';
 import '../models/ask_turn.dart';
 import 'api_client.dart';
+import 'background_task_service.dart';
 import 'storage.dart';
 
 class AskSseClient {
@@ -55,6 +56,7 @@ class AskSseClient {
     required void Function() onDone,
   }) async {
     _cancelToken = CancelToken();
+    await BackgroundTaskService.begin(name: 'memento_ask_stream');
 
     final serverUrl = await AppStorage.getServerUrl();
     final token = await AppStorage.getToken();
@@ -275,6 +277,7 @@ class AskSseClient {
         onError('请求异常: $e');
       }
     } finally {
+      await BackgroundTaskService.end();
       _cancelToken = null;
       onDone();
     }
