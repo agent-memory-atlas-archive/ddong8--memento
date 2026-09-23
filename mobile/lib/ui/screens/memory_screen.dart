@@ -524,7 +524,9 @@ class _MemoryScreenState extends State<MemoryScreen> with SingleTickerProviderSt
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('🌙 做梦反思与记忆固化已完成 (涵盖近 $daysBack 天)！'),
+          content: Text(daysBack == 0
+              ? '🌌 全历史全景做梦反思与记忆固化已完成 (涵盖全部历史核心项目)！'
+              : '🌙 做梦反思与记忆固化已完成 (涵盖近 $daysBack 天)！'),
           backgroundColor: AuroraColors.accent,
         ),
       );
@@ -663,6 +665,15 @@ class _MemoryScreenState extends State<MemoryScreen> with SingleTickerProviderSt
                 style: TextStyle(fontSize: 12, color: AuroraColors.fg3),
               ),
               const SizedBox(height: 14),
+              ListTile(
+                leading: const Icon(Icons.auto_awesome, color: AuroraColors.accent),
+                title: const Text('🌌 全历史全景做梦 (Full-History Deep Dreaming)', style: TextStyle(color: AuroraColors.fg1, fontSize: 13.5, fontWeight: FontWeight.bold)),
+                subtitle: const Text('涵盖全部历史 18+ 核心项目、跨年度技术栈与开发规范，全量深睡固化（最全）', style: TextStyle(color: AuroraColors.fg3, fontSize: 11)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _triggerDreamingNow(daysBack: 0);
+                },
+              ),
               ListTile(
                 leading: const Icon(Icons.bolt, color: Colors.amber),
                 title: const Text('全量知识图谱冷启动自举 (Knowledge Bootstrap)', style: TextStyle(color: AuroraColors.fg1, fontSize: 13.5, fontWeight: FontWeight.bold)),
@@ -1795,6 +1806,13 @@ class _MemoryScreenState extends State<MemoryScreen> with SingleTickerProviderSt
                           )
                         : const Icon(Icons.bedtime_outlined, size: 18),
                     label: Text(_isDreamingRunning ? '正在做梦反思与记忆重组...' : '唤醒做梦与历史沉淀 (Trigger Dream)'),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Center(
+                  child: Text(
+                    '💡 提示：若需沉淀历史全部 18+ 核心项目，请点击按钮选择「全历史全景做梦」或「全量自举」',
+                    style: TextStyle(fontSize: 11, color: AuroraColors.fg3),
                   ),
                 ),
               ],

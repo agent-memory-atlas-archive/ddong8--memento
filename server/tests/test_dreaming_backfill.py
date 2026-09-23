@@ -135,9 +135,11 @@ class TestDreamingBackfill(unittest.IsolatedAsyncioTestCase):
 
         mock_db = AsyncMock()
         mock_db.add = MagicMock()
-        # Mock projs, techs, obs queries
-        res_projs = MagicMock()
-        res_projs.all.return_value = [("quant_future", "量化交易项目", 10)]
+        # Mock doc_projects, ke_projects, techs, obs queries
+        res_doc_projs = MagicMock()
+        res_doc_projs.all.return_value = [("quant_future", "量化交易项目", 10)]
+        res_ke_projs = MagicMock()
+        res_ke_projs.all.return_value = []
         res_techs = MagicMock()
         res_techs.all.return_value = [("PostgreSQL", "technology", "数据库配置", 5)]
         res_obs = MagicMock()
@@ -147,7 +149,7 @@ class TestDreamingBackfill(unittest.IsolatedAsyncioTestCase):
         res_existing = MagicMock()
         res_existing.scalar_one_or_none.return_value = None
 
-        mock_db.execute.side_effect = [res_projs, res_techs, res_obs, res_existing, res_existing]
+        mock_db.execute.side_effect = [res_doc_projs, res_ke_projs, res_techs, res_obs, res_existing, res_existing]
 
         res = await bootstrap_memories_from_knowledge_graph(mock_db, user)
 

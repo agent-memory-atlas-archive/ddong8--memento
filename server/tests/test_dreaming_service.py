@@ -100,9 +100,13 @@ class TestDreamingService(unittest.IsolatedAsyncioTestCase):
             mock_ds.summary = "完成了 Windows 自动更新修复"
 
             mock_db.execute.side_effect = [
+                make_mock_result(all_items=[]),           # doc_projects (extract_canonical_projects)
+                make_mock_result(all_items=[]),           # ke_projects (extract_canonical_projects)
                 make_mock_result(scalar_items=[mock_ds]), # daily_summaries
                 make_mock_result(scalar_items=[]),        # ask_convs
                 make_mock_result(all_items=[]),           # recent_msgs
+                make_mock_result(all_items=[]),           # window_docs
+                make_mock_result(all_items=[]),           # window_ents
                 make_mock_result(scalar_items=[]),        # existing_mems
                 make_mock_result(one_item=None),          # check existing for promoted memory
                 make_mock_result(one_item=None),          # check source entity

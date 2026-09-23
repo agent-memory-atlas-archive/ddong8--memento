@@ -655,17 +655,18 @@ async def get_core_memory_tree(
     _user: User = Depends(get_current_user),
 ) -> dict:
     """Retrieve user's core memories organized as a true hierarchical directory tree based on tree_path."""
+    real_category = category if isinstance(category, str) and category.strip() else None
     stmt = (
         select(UserMemory)
         .where(UserMemory.user_id == _user.id)
     )
-    if category:
-        if category in ("rule", "rules"):
+    if real_category:
+        if real_category in ("rule", "rules"):
             stmt = stmt.where(UserMemory.category.in_(["rule", "rules"]))
-        elif category in ("tool", "tools"):
+        elif real_category in ("tool", "tools"):
             stmt = stmt.where(UserMemory.category.in_(["tool", "tools"]))
         else:
-            stmt = stmt.where(UserMemory.category == category)
+            stmt = stmt.where(UserMemory.category == real_category)
     stmt = stmt.order_by(UserMemory.category, UserMemory.tree_path, UserMemory.key)
     res = await db.execute(stmt)
     memories = res.scalars().all()
@@ -968,7 +969,7 @@ async def trigger_on_demand_dream(
     from datetime import date
     from ..services.dreaming_service import run_dreaming_pipeline
 
-    days = body.days_back if body else 1
+    days = body.days_back if (body and body.days_back is not None) else 1
     s_date = date.fromisoformat(body.start_date) if body and body.start_date else None
     e_date = date.fromisoformat(body.end_date) if body and body.end_date else None
 
