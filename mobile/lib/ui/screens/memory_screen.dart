@@ -27,6 +27,7 @@ class _MemoryScreenState extends State<MemoryScreen> with SingleTickerProviderSt
   bool _isTreeView = true;
   List<dynamic> _coreMemories = [];
   List<dynamic> _coreMemoryTree = [];
+  final Set<String> _expandedTreePaths = {};
   String? _coreError;
   String? _selectedCategory;
 
@@ -197,12 +198,15 @@ class _MemoryScreenState extends State<MemoryScreen> with SingleTickerProviderSt
     try {
       final futures = await Future.wait([
         ApiClient().getCoreMemories(category: _selectedCategory),
-        ApiClient().getCoreMemoryTree(),
+        ApiClient().getCoreMemoryTree(category: _selectedCategory),
       ]);
       setState(() {
         _coreMemories = futures[0] as List<dynamic>;
         _coreMemoryTree = (futures[1] as Map<String, dynamic>)['tree'] as List<dynamic>? ?? [];
         _isCoreLoading = false;
+        if (_expandedTreePaths.isEmpty) {
+          _expandDefaultNodes(_coreMemoryTree);
+        }
       });
     } catch (e) {
       setState(() {
@@ -211,6 +215,44 @@ class _MemoryScreenState extends State<MemoryScreen> with SingleTickerProviderSt
       });
     }
   }
+
+  void _expandDefaultNodes(List<dynamic> nodes) {
+    for (final n in nodes) {
+      if (n is Map<String, dynamic> && n['is_folder'] == true) {
+        final tp = n['tree_path']?.toString();
+        if (tp != null) _expandedTreePaths.add(tp);
+        final children = n['children'] as List<dynamic>? ?? [];
+        for (final c in children) {
+          if (c is Map<String, dynamic> && c['is_folder'] == true) {
+            final ctp = c['tree_path']?.toString();
+            if (ctp != null) _expandedTreePaths.add(ctp);
+          }
+        }
+      }
+    }
+  }
+
+  void _toggleExpandAll() {
+    setState(() {
+      if (_expandedTreePaths.isNotEmpty) {
+        _expandedTreePaths.clear();
+      } else {
+        _collectAllFolderPaths(_coreMemoryTree, _expandedTreePaths);
+      }
+    });
+  }
+
+  void _collectAllFolderPaths(List<dynamic> nodes, Set<String> result) {
+    for (final n in nodes) {
+      if (n is Map<String, dynamic> && n['is_folder'] == true) {
+        final tp = n['tree_path']?.toString();
+        if (tp != null) result.add(tp);
+        final children = n['children'] as List<dynamic>? ?? [];
+        _collectAllFolderPaths(children, result);
+      }
+    }
+  }
+
 
   void _showFullMemoryMarkdown() async {
     showModalBottomSheet(
@@ -307,7 +349,7 @@ class _MemoryScreenState extends State<MemoryScreen> with SingleTickerProviderSt
                   children: [
                     Switch(
                       value: isFolder,
-                      activeColor: AuroraColors.accent,
+                      activeThumbColor: AuroraColors.accent,
                       onChanged: (val) {
                         setDialogState(() {
                           isFolder = val;
@@ -948,35 +990,150 @@ class _MemoryScreenState extends State<MemoryScreen> with SingleTickerProviderSt
     return Column(
       children: [
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           decoration: const BoxDecoration(
             border: Border(bottom: BorderSide(color: AuroraColors.border, width: 0.5)),
           ),
-          child: Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    children: [
-                      _buildCategoryChip(null, '全部'),
-                      _buildCategoryChip('rule', '开发铁律'),
-                      _buildCategoryChip('architecture', '架构决策'),
-                      _buildCategoryChip('preference', '个人偏好'),
-                      _buildCategoryChip('project', '项目知识'),
-                    ],
+              Row(
+                children: [
+                  Expanded(
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: [
+                          _buildCategoryChip(null, '全部'),
+                          _buildCategoryChip('architecture', '架构设计'),
+                          _buildCategoryChip('rules', '开发铁律'),
+                          _buildCategoryChip('preference', '个人偏好'),
+                          _buildCategoryChip('project', '项目知识'),
+                          _buildCategoryChip('tools', '工具生态'),
+                        ],
+                      ),
+                    ),
                   ),
-                ),
+                  IconButton(
+                    tooltip: '预览 MEMORY.md 全文',
+                    icon: const Icon(Icons.menu_book, color: AuroraColors.accent, size: 20),
+                    onPressed: _showFullMemoryMarkdown,
+                  ),
+                  IconButton(
+                    tooltip: '手动添加记忆条目',
+                    icon: const Icon(Icons.add_circle_outline, color: AuroraColors.accent, size: 20),
+                    onPressed: () => _showAddOrEditMemoryDialog(),
+                  ),
+                ],
               ),
-              IconButton(
-                tooltip: '预览 MEMORY.md 全文',
-                icon: const Icon(Icons.menu_book, color: AuroraColors.accent, size: 20),
-                onPressed: _showFullMemoryMarkdown,
-              ),
-              IconButton(
-                tooltip: '手动添加记忆条目',
-                icon: const Icon(Icons.add_circle_outline, color: AuroraColors.accent, size: 20),
-                onPressed: () => _showAddOrEditMemoryDialog(),
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  Container(
+                    height: 30,
+                    padding: const EdgeInsets.all(2),
+                    decoration: BoxDecoration(
+                      color: AuroraColors.surface,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: AuroraColors.border, width: 0.5),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        InkWell(
+                          onTap: () => setState(() => _isTreeView = true),
+                          borderRadius: BorderRadius.circular(6),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: _isTreeView ? AuroraColors.accent.withValues(alpha: 0.2) : Colors.transparent,
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.account_tree_outlined,
+                                  size: 14,
+                                  color: _isTreeView ? AuroraColors.accent : AuroraColors.fg3,
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  '树状目录',
+                                  style: TextStyle(
+                                    fontSize: 11.5,
+                                    fontWeight: _isTreeView ? FontWeight.bold : FontWeight.normal,
+                                    color: _isTreeView ? AuroraColors.accent : AuroraColors.fg3,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        InkWell(
+                          onTap: () => setState(() => _isTreeView = false),
+                          borderRadius: BorderRadius.circular(6),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: !_isTreeView ? AuroraColors.accent.withValues(alpha: 0.2) : Colors.transparent,
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.view_headline_outlined,
+                                  size: 14,
+                                  color: !_isTreeView ? AuroraColors.accent : AuroraColors.fg3,
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  '平铺列表',
+                                  style: TextStyle(
+                                    fontSize: 11.5,
+                                    fontWeight: !_isTreeView ? FontWeight.bold : FontWeight.normal,
+                                    color: !_isTreeView ? AuroraColors.accent : AuroraColors.fg3,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (_isTreeView) ...[
+                    const SizedBox(width: 8),
+                    InkWell(
+                      onTap: _toggleExpandAll,
+                      borderRadius: BorderRadius.circular(6),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              _expandedTreePaths.isNotEmpty ? Icons.unfold_less : Icons.unfold_more,
+                              size: 15,
+                              color: AuroraColors.fg2,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              _expandedTreePaths.isNotEmpty ? '折叠全部' : '展开全部',
+                              style: const TextStyle(fontSize: 11, color: AuroraColors.fg2),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                  const Spacer(),
+                  Text(
+                    _isTreeView
+                        ? '${_coreMemoryTree.length} 个根维度'
+                        : '${_coreMemories.length} 条记忆',
+                    style: const TextStyle(fontSize: 11, color: AuroraColors.fg3),
+                  ),
+                ],
               ),
             ],
           ),
@@ -989,137 +1146,582 @@ class _MemoryScreenState extends State<MemoryScreen> with SingleTickerProviderSt
         Expanded(
           child: _isCoreLoading
               ? const Center(child: CircularProgressIndicator(color: AuroraColors.accent))
-              : _coreMemories.isEmpty
-                  ? Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Icon(Icons.lightbulb_outline, size: 40, color: AuroraColors.fg3),
-                          const SizedBox(height: 12),
-                          const Text(
-                            '当前分类下暂无核心记忆',
-                            style: TextStyle(color: AuroraColors.fg3, fontSize: 14),
-                          ),
-                          const SizedBox(height: 12),
-                          ElevatedButton.icon(
-                            icon: const Icon(Icons.add, size: 16),
-                            label: const Text('新增第一条长期记忆'),
-                            onPressed: () => _showAddOrEditMemoryDialog(),
-                          ),
-                        ],
-                      ),
-                    )
-                  : RefreshIndicator(
-                      onRefresh: _loadCoreMemories,
-                      color: AuroraColors.accent,
-                      child: ListView.builder(
-                        padding: const EdgeInsets.all(16),
-                        itemCount: _coreMemories.length,
-                        itemBuilder: (context, index) {
-                          final mem = _coreMemories[index] as Map<String, dynamic>;
-                          final cat = mem['category']?.toString() ?? 'general';
-                          final key = mem['key']?.toString() ?? '';
-                          final content = mem['content']?.toString() ?? '';
-                          final confidence = (mem['confidence'] as num?)?.toDouble() ?? 1.0;
-                          final source = mem['source']?.toString() ?? 'dreaming';
-
-                          return Container(
-                            margin: const EdgeInsets.only(bottom: 12),
-                            child: GlassCard(
-                              padding: const EdgeInsets.all(14),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    children: [
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                        decoration: BoxDecoration(
-                                          color: cat == 'rule'
-                                              ? AuroraColors.danger.withValues(alpha: 0.15)
-                                              : AuroraColors.accent.withValues(alpha: 0.15),
-                                          borderRadius: BorderRadius.circular(4),
-                                        ),
-                                        child: Text(
-                                          cat.toUpperCase(),
-                                          style: TextStyle(
-                                            fontSize: 10,
-                                            fontWeight: FontWeight.bold,
-                                            color: cat == 'rule' ? AuroraColors.danger : AuroraColors.accent,
-                                          ),
-                                        ),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Expanded(
-                                        child: Text(
-                                          key,
-                                          style: const TextStyle(
-                                            fontSize: 13.5,
-                                            fontWeight: FontWeight.bold,
-                                            color: AuroraColors.fg1,
-                                          ),
-                                        ),
-                                      ),
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                                        decoration: BoxDecoration(
-                                          color: AuroraColors.chip,
-                                          borderRadius: BorderRadius.circular(4),
-                                        ),
-                                        child: Text(
-                                          source == 'dreaming' ? '🌙 梦境萃取' : '✍️ 手动',
-                                          style: const TextStyle(fontSize: 10, color: AuroraColors.fg3),
-                                        ),
-                                      ),
-                                      PopupMenuButton<String>(
-                                        icon: const Icon(Icons.more_vert, size: 18, color: AuroraColors.fg3),
-                                        color: AuroraColors.surfaceSolid,
-                                        onSelected: (action) {
-                                          if (action == 'edit') {
-                                            _showAddOrEditMemoryDialog(existing: mem as Map<String, dynamic>);
-                                          } else if (action == 'delete') {
-                                            _deleteMemory(mem['id'].toString());
-                                          }
-                                        },
-                                        itemBuilder: (ctx) => const [
-                                          PopupMenuItem(value: 'edit', child: Text('编辑')),
-                                          PopupMenuItem(value: 'delete', child: Text('遗忘/删除', style: TextStyle(color: AuroraColors.danger))),
-                                        ],
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    content,
-                                    style: const TextStyle(
-                                      fontSize: 13,
-                                      color: AuroraColors.fg1,
-                                      height: 1.45,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      Text(
-                                        '置信度: ${(confidence * 100).toInt()}%',
-                                        style: const TextStyle(fontSize: 11, color: AuroraColors.fg3),
-                                      ),
-                                      Text(
-                                        (mem['updated_at']?.toString() ?? '').split('T').first,
-                                        style: const TextStyle(fontSize: 11, color: AuroraColors.fg3),
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                    ),
+              : _isTreeView
+                  ? _buildDirectoryTreeView()
+                  : _buildFlatListView(),
         ),
       ],
+    );
+  }
+
+  int _countLeaves(Map<String, dynamic> n) {
+    if (n['is_folder'] != true) return 1;
+    int sum = 0;
+    for (final c in (n['children'] as List<dynamic>? ?? [])) {
+      if (c is Map<String, dynamic>) {
+        sum += _countLeaves(c);
+      }
+    }
+    return sum;
+  }
+
+  Color _getCategoryColor(String cat) {
+    switch (cat.toLowerCase()) {
+      case 'rule':
+      case 'rules':
+        return const Color(0xFFF59E0B);
+      case 'architecture':
+        return const Color(0xFF38BDF8);
+      case 'preference':
+        return const Color(0xFFA855F7);
+      case 'project':
+        return const Color(0xFF10B981);
+      case 'tools':
+      case 'tool':
+        return const Color(0xFFFB923C);
+      default:
+        return AuroraColors.accent;
+    }
+  }
+
+  IconData _getDimensionIcon(String path) {
+    if (path.startsWith('/architecture')) return Icons.account_tree_outlined;
+    if (path.startsWith('/rules') || path.startsWith('/rule')) return Icons.security_outlined;
+    if (path.startsWith('/preference')) return Icons.psychology_outlined;
+    if (path.startsWith('/project')) return Icons.rocket_launch_outlined;
+    if (path.startsWith('/tools') || path.startsWith('/tool')) return Icons.construction_outlined;
+    return Icons.folder_outlined;
+  }
+
+  Widget _buildDirectoryTreeView() {
+    if (_coreMemoryTree.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.account_tree_outlined, size: 40, color: AuroraColors.fg3),
+            const SizedBox(height: 12),
+            const Text(
+              '当前分类下暂无树状记忆',
+              style: TextStyle(color: AuroraColors.fg3, fontSize: 14),
+            ),
+            const SizedBox(height: 12),
+            ElevatedButton.icon(
+              icon: const Icon(Icons.add, size: 16),
+              label: const Text('新增第一条长期记忆'),
+              onPressed: () => _showAddOrEditMemoryDialog(),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: _loadCoreMemories,
+      color: AuroraColors.accent,
+      child: ListView.builder(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        itemCount: _coreMemoryTree.length,
+        itemBuilder: (context, index) {
+          final node = _coreMemoryTree[index] as Map<String, dynamic>;
+          return _buildTreeNode(node, depth: 0);
+        },
+      ),
+    );
+  }
+
+  Widget _buildTreeNode(Map<String, dynamic> node, {int depth = 0}) {
+    final bool isFolder = node['is_folder'] == true;
+    final path = node['tree_path']?.toString() ?? '';
+
+    if (isFolder) {
+      final title = node['title']?.toString() ?? path.split('/').last;
+      final children = (node['children'] as List<dynamic>? ?? []);
+      final leafCount = _countLeaves(node);
+      final isExpanded = _expandedTreePaths.contains(path);
+      final isRoot = depth == 0;
+      final iconColor = isRoot
+          ? _getCategoryColor(node['category']?.toString() ?? path.replaceAll('/', ''))
+          : AuroraColors.accent;
+      final folderIcon = isRoot
+          ? _getDimensionIcon(path)
+          : (isExpanded ? Icons.folder_open_rounded : Icons.folder_rounded);
+
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            margin: EdgeInsets.only(
+              left: depth * 14.0,
+              top: isRoot ? 6 : 3,
+              bottom: 3,
+            ),
+            decoration: BoxDecoration(
+              color: isRoot
+                  ? AuroraColors.surface.withValues(alpha: 0.7)
+                  : Colors.transparent,
+              borderRadius: BorderRadius.circular(8),
+              border: isRoot
+                  ? Border.all(color: AuroraColors.border.withValues(alpha: 0.6), width: 0.8)
+                  : null,
+            ),
+            child: InkWell(
+              onTap: () {
+                setState(() {
+                  if (isExpanded) {
+                    _expandedTreePaths.remove(path);
+                  } else {
+                    _expandedTreePaths.add(path);
+                  }
+                });
+              },
+              borderRadius: BorderRadius.circular(8),
+              child: Padding(
+                padding: EdgeInsets.symmetric(horizontal: isRoot ? 12 : 8, vertical: isRoot ? 10 : 6),
+                child: Row(
+                  children: [
+                    Icon(folderIcon, size: isRoot ? 20 : 18, color: iconColor),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        title,
+                        style: TextStyle(
+                          fontSize: isRoot ? 14.5 : 13.5,
+                          fontWeight: isRoot ? FontWeight.bold : FontWeight.w600,
+                          color: isRoot ? AuroraColors.fg1 : AuroraColors.fg2,
+                        ),
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: AuroraColors.surfaceSolid,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        '$leafCount 条',
+                        style: const TextStyle(fontSize: 10, color: AuroraColors.fg3),
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Icon(
+                      isExpanded ? Icons.keyboard_arrow_down : Icons.keyboard_arrow_right,
+                      size: 18,
+                      color: AuroraColors.fg3,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          if (isExpanded) ...[
+            for (final child in children)
+              if (child is Map<String, dynamic>)
+                _buildTreeNode(child, depth: depth + 1),
+          ],
+        ],
+      );
+    } else {
+      // Leaf node / Memory entry
+      final cat = node['category']?.toString() ?? 'general';
+      final key = node['key']?.toString() ?? node['title']?.toString() ?? '';
+      final content = node['content']?.toString() ?? '';
+      final confidence = (node['confidence'] as num?)?.toDouble() ?? 1.0;
+      final source = node['source']?.toString() ?? 'dreaming';
+
+      return Container(
+        margin: EdgeInsets.only(
+          left: depth * 14.0 + 4.0,
+          top: 3,
+          bottom: 5,
+        ),
+        child: InkWell(
+          onTap: () => _showMemoryDetailModal(node),
+          borderRadius: BorderRadius.circular(8),
+          child: GlassCard(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.article_outlined, size: 16, color: _getCategoryColor(cat)),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        key,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          color: AuroraColors.fg1,
+                        ),
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                      decoration: BoxDecoration(
+                        color: _getCategoryColor(cat).withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        cat.toUpperCase(),
+                        style: TextStyle(
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.bold,
+                          color: _getCategoryColor(cat),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                      decoration: BoxDecoration(
+                        color: AuroraColors.chip,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        source == 'dreaming' ? '🌙 梦境' : (source == 'bootstrap' ? '🌟 自举' : '✍️ 手动'),
+                        style: const TextStyle(fontSize: 9.5, color: AuroraColors.fg3),
+                      ),
+                    ),
+                    PopupMenuButton<String>(
+                      icon: const Icon(Icons.more_vert, size: 16, color: AuroraColors.fg3),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                      color: AuroraColors.surfaceSolid,
+                      onSelected: (action) {
+                        if (action == 'edit') {
+                          _showAddOrEditMemoryDialog(existing: node);
+                        } else if (action == 'delete') {
+                          if (node['id'] != null) {
+                            _deleteMemory(node['id'].toString());
+                          }
+                        }
+                      },
+                      itemBuilder: (ctx) => const [
+                        PopupMenuItem(value: 'edit', child: Text('编辑')),
+                        PopupMenuItem(value: 'delete', child: Text('遗忘/删除', style: TextStyle(color: AuroraColors.danger))),
+                      ],
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  content,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    color: AuroraColors.fg2,
+                    height: 1.4,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    Text(
+                      path,
+                      style: const TextStyle(fontSize: 10.5, color: AuroraColors.fg3, fontFamily: 'monospace'),
+                    ),
+                    const Spacer(),
+                    Text(
+                      '置信度: ${(confidence * 100).toInt()}%',
+                      style: const TextStyle(fontSize: 10.5, color: AuroraColors.fg3),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+  }
+
+  void _showMemoryDetailModal(Map<String, dynamic> mem) {
+    final cat = mem['category']?.toString() ?? 'general';
+    final key = mem['key']?.toString() ?? mem['title']?.toString() ?? '';
+    final content = mem['content']?.toString() ?? '';
+    final confidence = (mem['confidence'] as num?)?.toDouble() ?? 1.0;
+    final source = mem['source']?.toString() ?? 'dreaming';
+    final treePath = mem['tree_path']?.toString() ?? '';
+    final updatedAt = (mem['updated_at']?.toString() ?? '').split('T').first;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AuroraColors.surfaceSolid,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return DraggableScrollableSheet(
+          initialChildSize: 0.75,
+          minChildSize: 0.4,
+          maxChildSize: 0.95,
+          expand: false,
+          builder: (context, scrollController) {
+            return ListView(
+              controller: scrollController,
+              padding: const EdgeInsets.all(20),
+              children: [
+                Center(
+                  child: Container(
+                    width: 36,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: AuroraColors.fg3.withValues(alpha: 0.4),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: _getCategoryColor(cat).withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        cat.toUpperCase(),
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: _getCategoryColor(cat),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: AuroraColors.chip,
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        source == 'dreaming'
+                            ? '🌙 梦境萃取'
+                            : (source == 'bootstrap' ? '🌟 知识自举' : '✍️ 手动录入'),
+                        style: const TextStyle(fontSize: 11, color: AuroraColors.fg3),
+                      ),
+                    ),
+                    const Spacer(),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: AuroraColors.accent.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        '置信度: ${(confidence * 100).toInt()}%',
+                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AuroraColors.accent),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  key,
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: AuroraColors.fg1,
+                  ),
+                ),
+                if (treePath.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      const Icon(Icons.folder_open_outlined, size: 14, color: AuroraColors.fg3),
+                      const SizedBox(width: 4),
+                      Text(
+                        treePath,
+                        style: const TextStyle(fontSize: 12, color: AuroraColors.fg3, fontFamily: 'monospace'),
+                      ),
+                    ],
+                  ),
+                ],
+                const SizedBox(height: 16),
+                const Divider(color: AuroraColors.border, height: 1),
+                const SizedBox(height: 16),
+                AppMarkdown(data: content),
+                const SizedBox(height: 24),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('更新于 $updatedAt', style: const TextStyle(fontSize: 12, color: AuroraColors.fg3)),
+                    Row(
+                      children: [
+                        TextButton.icon(
+                          icon: const Icon(Icons.edit_outlined, size: 16),
+                          label: const Text('编辑'),
+                          onPressed: () {
+                            Navigator.pop(context);
+                            _showAddOrEditMemoryDialog(existing: mem);
+                          },
+                        ),
+                        const SizedBox(width: 8),
+                        TextButton.icon(
+                          icon: const Icon(Icons.delete_outline, size: 16, color: AuroraColors.danger),
+                          label: const Text('遗忘/删除', style: TextStyle(color: AuroraColors.danger)),
+                          onPressed: () {
+                            Navigator.pop(context);
+                            if (mem['id'] != null) {
+                              _deleteMemory(mem['id'].toString());
+                            }
+                          },
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildFlatListView() {
+    if (_coreMemories.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.lightbulb_outline, size: 40, color: AuroraColors.fg3),
+            const SizedBox(height: 12),
+            const Text(
+              '当前分类下暂无核心记忆',
+              style: TextStyle(color: AuroraColors.fg3, fontSize: 14),
+            ),
+            const SizedBox(height: 12),
+            ElevatedButton.icon(
+              icon: const Icon(Icons.add, size: 16),
+              label: const Text('新增第一条长期记忆'),
+              onPressed: () => _showAddOrEditMemoryDialog(),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: _loadCoreMemories,
+      color: AuroraColors.accent,
+      child: ListView.builder(
+        padding: const EdgeInsets.all(16),
+        itemCount: _coreMemories.length,
+        itemBuilder: (context, index) {
+          final mem = _coreMemories[index] as Map<String, dynamic>;
+          final cat = mem['category']?.toString() ?? 'general';
+          final key = mem['key']?.toString() ?? '';
+          final content = mem['content']?.toString() ?? '';
+          final confidence = (mem['confidence'] as num?)?.toDouble() ?? 1.0;
+          final source = mem['source']?.toString() ?? 'dreaming';
+
+          return Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            child: InkWell(
+              onTap: () => _showMemoryDetailModal(mem),
+              borderRadius: BorderRadius.circular(12),
+              child: GlassCard(
+                padding: const EdgeInsets.all(14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: _getCategoryColor(cat).withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            cat.toUpperCase(),
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: _getCategoryColor(cat),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            key,
+                            style: const TextStyle(
+                              fontSize: 13.5,
+                              fontWeight: FontWeight.bold,
+                              color: AuroraColors.fg1,
+                            ),
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: AuroraColors.chip,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            source == 'dreaming'
+                                ? '🌙 梦境萃取'
+                                : (source == 'bootstrap' ? '🌟 知识自举' : '✍️ 手动'),
+                            style: const TextStyle(fontSize: 10, color: AuroraColors.fg3),
+                          ),
+                        ),
+                        PopupMenuButton<String>(
+                          icon: const Icon(Icons.more_vert, size: 18, color: AuroraColors.fg3),
+                          color: AuroraColors.surfaceSolid,
+                          onSelected: (action) {
+                            if (action == 'edit') {
+                              _showAddOrEditMemoryDialog(existing: mem);
+                            } else if (action == 'delete') {
+                              _deleteMemory(mem['id'].toString());
+                            }
+                          },
+                          itemBuilder: (ctx) => const [
+                            PopupMenuItem(value: 'edit', child: Text('编辑')),
+                            PopupMenuItem(value: 'delete', child: Text('遗忘/删除', style: TextStyle(color: AuroraColors.danger))),
+                          ],
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      content,
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        color: AuroraColors.fg1,
+                        height: 1.45,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          '置信度: ${(confidence * 100).toInt()}%',
+                          style: const TextStyle(fontSize: 11, color: AuroraColors.fg3),
+                        ),
+                        Text(
+                          (mem['updated_at']?.toString() ?? '').split('T').first,
+                          style: const TextStyle(fontSize: 11, color: AuroraColors.fg3),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
     );
   }
 

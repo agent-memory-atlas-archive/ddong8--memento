@@ -621,7 +621,12 @@ async def get_core_memories(
         .order_by(UserMemory.is_folder.desc(), UserMemory.category, UserMemory.updated_at.desc())
     )
     if category:
-        stmt = stmt.where(UserMemory.category == category)
+        if category in ("rule", "rules"):
+            stmt = stmt.where(UserMemory.category.in_(["rule", "rules"]))
+        elif category in ("tool", "tools"):
+            stmt = stmt.where(UserMemory.category.in_(["tool", "tools"]))
+        else:
+            stmt = stmt.where(UserMemory.category == category)
 
     res = await db.execute(stmt)
     memories = res.scalars().all()
@@ -645,45 +650,112 @@ async def get_core_memories(
 
 @router.get("/core/tree")
 async def get_core_memory_tree(
+    category: str | None = Query(None, description="Filter by category"),
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(get_current_user),
 ) -> dict:
-    """Retrieve user's core memories organized as a hierarchical tree."""
+    """Retrieve user's core memories organized as a true hierarchical directory tree based on tree_path."""
     stmt = (
         select(UserMemory)
         .where(UserMemory.user_id == _user.id)
-        .order_by(UserMemory.is_folder.desc(), UserMemory.category, UserMemory.key)
     )
+    if category:
+        if category in ("rule", "rules"):
+            stmt = stmt.where(UserMemory.category.in_(["rule", "rules"]))
+        elif category in ("tool", "tools"):
+            stmt = stmt.where(UserMemory.category.in_(["tool", "tools"]))
+        else:
+            stmt = stmt.where(UserMemory.category == category)
+    stmt = stmt.order_by(UserMemory.category, UserMemory.tree_path, UserMemory.key)
     res = await db.execute(stmt)
     memories = res.scalars().all()
 
-    nodes_map: dict[str, dict] = {}
-    for m in memories:
-        nodes_map[str(m.id)] = {
-            "id": str(m.id),
-            "parent_id": str(m.parent_id) if m.parent_id else None,
-            "category": m.category,
-            "key": m.key,
-            "content": m.content,
-            "confidence": m.confidence,
-            "source": m.source,
-            "tree_path": m.tree_path or f"/{m.category}/{m.key}",
-            "is_folder": m.is_folder,
-            "created_at": m.created_at.isoformat() if m.created_at else None,
-            "updated_at": m.updated_at.isoformat() if m.updated_at else None,
-            "children": [],
-        }
+    folder_nodes: dict[str, dict] = {}
+    root_nodes: dict[str, dict] = {}
 
-    roots: list[dict] = []
-    for m in memories:
-        node = nodes_map[str(m.id)]
-        if m.parent_id and str(m.parent_id) in nodes_map:
-            nodes_map[str(m.parent_id)]["children"].append(node)
+    category_labels = {
+        "project": "项目与业务系统",
+        "architecture": "架构设计与技术栈",
+        "rule": "开发铁律与避坑经验",
+        "rules": "开发铁律与避坑经验",
+        "tools": "工具链与AI助手生态",
+        "preference": "个人偏好与工作习惯",
+        "general": "通用常识与约定",
+    }
+
+    sorted_memories = sorted(
+        memories,
+        key=lambda x: (not x.is_folder, len([p for p in (x.tree_path or "").split("/") if p]))
+    )
+
+    for m in sorted_memories:
+        path = (m.tree_path or f"/{m.category}/{m.key}").strip()
+        if not path.startswith("/"):
+            path = "/" + path
+        parts = [p for p in path.split("/") if p]
+        if not parts:
+            parts = [m.category, m.key]
+
+        if m.is_folder:
+            dir_parts = parts
+            leaf_name = None
         else:
-            roots.append(node)
+            dir_parts = parts[:-1]
+            leaf_name = parts[-1]
+
+        curr_dir_path = ""
+        parent_children: list[dict] | None = None
+
+        for idx, part in enumerate(dir_parts):
+            curr_dir_path += f"/{part}"
+            if curr_dir_path not in folder_nodes:
+                display_label = category_labels.get(part, part) if idx == 0 else part
+                is_explicit_this = (m.is_folder and idx == len(dir_parts) - 1)
+                folder_node = {
+                    "id": str(m.id) if is_explicit_this else f"dir:{curr_dir_path}",
+                    "name": part,
+                    "title": display_label,
+                    "category": m.category,
+                    "tree_path": curr_dir_path,
+                    "is_folder": True,
+                    "children": [],
+                }
+                folder_nodes[curr_dir_path] = folder_node
+                if parent_children is not None:
+                    parent_children.append(folder_node)
+                else:
+                    root_nodes[curr_dir_path] = folder_node
+            else:
+                if m.is_folder and idx == len(dir_parts) - 1:
+                    folder_nodes[curr_dir_path]["id"] = str(m.id)
+
+            parent_children = folder_nodes[curr_dir_path]["children"]
+
+        if not m.is_folder and leaf_name:
+            leaf_node = {
+                "id": str(m.id),
+                "name": leaf_name,
+                "title": m.key,
+                "parent_id": str(m.parent_id) if m.parent_id else None,
+                "category": m.category,
+                "key": m.key,
+                "content": m.content,
+                "confidence": m.confidence,
+                "source": m.source,
+                "tree_path": path,
+                "is_folder": False,
+                "created_at": m.created_at.isoformat() if m.created_at else None,
+                "updated_at": m.updated_at.isoformat() if m.updated_at else None,
+                "children": [],
+            }
+
+            if parent_children is not None:
+                parent_children.append(leaf_node)
+            else:
+                root_nodes[f"leaf:{m.id}"] = leaf_node
 
     return {
-        "tree": roots,
+        "tree": list(root_nodes.values()),
         "total_count": len(memories),
     }
 

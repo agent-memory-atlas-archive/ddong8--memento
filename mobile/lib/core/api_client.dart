@@ -155,8 +155,13 @@ class ApiClient {
     return [];
   }
 
-  Future<Map<String, dynamic>> getCoreMemoryTree() async {
-    final response = await _dio.get('/api/memory/core/tree');
+  Future<Map<String, dynamic>> getCoreMemoryTree({String? category}) async {
+    final response = await _dio.get(
+      '/api/memory/core/tree',
+      queryParameters: {
+        if (category != null) 'category': category,
+      },
+    );
     return response.data as Map<String, dynamic>;
   }
 

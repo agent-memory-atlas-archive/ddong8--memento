@@ -8,7 +8,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import '../storage.dart';
 
 /// Compile-time or environment-defined application version fallback
-const String kAppDefaultVersion = String.fromEnvironment('APP_VERSION', defaultValue: '1.0.39');
+const String kAppDefaultVersion = String.fromEnvironment('APP_VERSION', defaultValue: '1.0.40');
 String _currentAppVersion = kAppDefaultVersion;
 
 /// Dynamically resolved current application version
@@ -1005,12 +1005,12 @@ WshShell.Run cmd, 0, False
         } catch (_) {}
         srcAppPath ??= sourceDir;
 
-        if (srcAppPath != null && Directory(srcAppPath).existsSync()) {
+        if (Directory(srcAppPath).existsSync()) {
           try {
             final plistFile = File(p.join(srcAppPath, 'Contents', 'Info.plist'));
             if (plistFile.existsSync()) {
               final content = plistFile.readAsStringSync();
-              final verMatch = RegExp(r'<key>CFBundleShortVersionString<\/key>\s*<string>([^<]+)<\/string>').firstMatch(content);
+              final verMatch = RegExp(r'<key>CFBundleShortVersionString</key>\s*<string>([^<]+)</string>').firstMatch(content);
               if (verMatch != null) {
                 final extractedVer = verMatch.group(1)?.trim();
                 if (extractedVer != null && !isNewerVersion(extractedVer, kAppCurrentVersion)) {

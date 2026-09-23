@@ -60,14 +60,27 @@ class TestMemoryTree(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(resp["total_count"], 3)
         roots = resp["tree"]
-        # There should be 2 root items: folder_node and arch_node
+        # Root nodes are the top-level categories: /rules and /architecture
         self.assertEqual(len(roots), 2)
 
-        folder_in_roots = next(r for r in roots if r["id"] == str(folder_id))
-        self.assertTrue(folder_in_roots["is_folder"])
-        self.assertEqual(len(folder_in_roots["children"]), 1)
-        self.assertEqual(folder_in_roots["children"][0]["id"], str(child_id))
-        self.assertEqual(folder_in_roots["children"][0]["key"], "windows_update_policy")
+        rules_root = next(r for r in roots if r["tree_path"] == "/rules")
+        self.assertTrue(rules_root["is_folder"])
+        self.assertEqual(rules_root["title"], "开发铁律与避坑经验")
+        # Under /rules, there is desktop folder
+        desktop_folder = next(c for c in rules_root["children"] if c["tree_path"] == "/rules/desktop")
+        self.assertTrue(desktop_folder["is_folder"])
+        # Under /rules/desktop, there is windows_update_policy leaf
+        self.assertEqual(len(desktop_folder["children"]), 1)
+        leaf = desktop_folder["children"][0]
+        self.assertEqual(leaf["id"], str(child_id))
+        self.assertEqual(leaf["key"], "windows_update_policy")
+
+        arch_root = next(r for r in roots if r["tree_path"] == "/architecture")
+        self.assertTrue(arch_root["is_folder"])
+        self.assertEqual(arch_root["title"], "架构设计与技术栈")
+        self.assertEqual(len(arch_root["children"]), 1)
+        self.assertEqual(arch_root["children"][0]["key"], "three_tier")
+
 
 
 if __name__ == "__main__":

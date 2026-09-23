@@ -735,8 +735,30 @@ async def run_dreaming_backfill(
 # ---------------------------------------------------------------------------
 # Cold-start Knowledge Bootstrapping Engine
 # ---------------------------------------------------------------------------
-_BOOTSTRAP_PROMPT = """你是一个高阶系统架构师与个人认知记忆中枢。
-你的任务是基于用户在数据库中长期积累的技术项目、工具栈和知识图谱观察事实，直接【全量自举沉淀】出一套高精度的长期核心记忆树 (L3 Core Memory / MEMORY.md)。
+_BOOTSTRAP_PROMPT = """你是一个高阶个人认知知识图谱与大脑记忆架构师。
+请根据用户在数据库中的历史核心项目、技术实体与观察事实，从【五大维度】进行全量多维度归纳总结，输出一套具有明确层级树状路径（3级路径 /维度/子目录/标识）的核心记忆树。
+
+五大维度划分：
+1. /project/<项目名>/<子模块>：核心业务项目（如 quant_future, 易采购, favorite_chat, easywork-copilot, memento, ray_train 等）
+2. /architecture/<领域>/<技术条目>：架构设计与技术选型（领域划分：backend, frontend, infra, client）
+3. /rules/<领域>/<规范条目>：开发铁律、避坑指南与工程规范（领域划分：pitfalls, engineering, security）
+4. /tools/<分类>/<工具名>：工具链与AI助手生态（分类划分：ai_assistants, dev_tools, asr）
+5. /preference/<分类>/<偏好名>：个人偏好与开发习惯（分类划分：workflow, coding_style）
+
+请输出严格合法的 JSON 格式（不要额外解释）：
+{{
+  "summary": "从五大维度全面梳理的认知记忆全景概览",
+  "memories": [
+    {{
+      "category": "project | architecture | rule | tools | preference",
+      "tree_path": "/维度/子目录/标识",
+      "key": "unique_key",
+      "title": "简短标题",
+      "content": "高度凝练、具有长期指导意义的核心经验描述（60~150字）",
+      "confidence": 0.95
+    }}
+  ]
+}}
 
 ### 用户历史核心项目
 {projects_text}
@@ -746,33 +768,6 @@ _BOOTSTRAP_PROMPT = """你是一个高阶系统架构师与个人认知记忆中
 
 ### 知识图谱关键观察事实与开发经验
 {observations_text}
-
----
-
-### 沉淀要求：
-1. **分类规范 (category)**：
-   - `project`: 用户的核心业务项目与系统定位。
-   - `architecture`: 核心架构约定与系统级设计（如容器化规范、高性能优化方案、集群管理等）。
-   - `rule`: 开发铁律、配置规范、环境约束（如模块导入规范、配置文件存储位置、禁止踩坑点）。
-   - `preference`: 个人技术栈习惯与偏好（如工具使用偏好、框架选型倾向）。
-2. **Key 规范**：使用小写英文+下划线，简洁独特（如 `quant_future_system`, `rke2_cluster_architecture`, `sys_path_injection_rule`）。
-3. **Tree Path 规范**：例如 `/project/quant_future`, `/architecture/k8s/rke2`, `/rules/python/sys_path`, `/preference/frontend/nextjs`。
-4. **Content 规范**：提炼为极具指导意义、信息密度极高的一段话（80~200字）。
-5. **Confidence**：赋予 0.85 ~ 0.98 的初始置信度。
-
-请严格输出合法的 JSON 格式（不要输出任何前后注释或 markdown 外部包裹）：
-{{
-  "summary": "本次全量自举沉淀的概括总结",
-  "memories": [
-    {{
-      "category": "project | architecture | rule | preference",
-      "tree_path": "/category/subcategory/key",
-      "key": "unique_key",
-      "content": "核心记忆描述",
-      "confidence": 0.95
-    }}
-  ]
-}}
 """
 
 
@@ -836,21 +831,21 @@ async def bootstrap_memories_from_knowledge_graph(
                 messages=[
                     {
                         "role": "system",
-                        "content": "You are the Memento Knowledge Bootstrapper. Output valid JSON only.",
+                        "content": "You are the Memento Multi-Dimensional Memory Kernel. Output valid JSON only.",
                     },
                     {"role": "user", "content": prompt},
                 ],
-                max_tokens=2500,
+                max_tokens=3500,
             )
             if raw_response:
                 llm_output = _safe_json_loads(raw_response)
         except Exception as e:
             logger.warning("Bootstrap LLM call failed, falling back to heuristic: %s", e)
 
-    # Fallback to heuristic distillation if LLM output is empty
+    # Fallback to heuristic multi-dimensional distillation if LLM output is empty
     memories_to_persist: list[dict[str, Any]] = []
     if llm_output and llm_output.get("memories"):
-        summary_text = str(llm_output.get("summary") or "基于全量知识图谱实体与核心观察事实完成长期认知记忆树自举。")
+        summary_text = str(llm_output.get("summary") or "从五大维度全面梳理的认知记忆全景概览。")
         for item in llm_output["memories"]:
             cat = str(item.get("category", "general")).strip().lower()
             key = str(item.get("key", "note")).strip().lower().replace(" ", "_")
@@ -866,27 +861,51 @@ async def bootstrap_memories_from_knowledge_graph(
                     "tree_path": tree_path,
                 })
     else:
-        summary_text = "启发式规则自举：根据历史核心技术栈、开发项目与高频观察事实直接梳理长期记忆树。"
+        summary_text = "启发式多维度规则自举：按项目、架构设计、开发规范、工具生态与个人习惯分层梳理记忆树。"
         for p in projs:
             clean_k = re.sub(r"[^a-zA-Z0-9_]+", "_", p[0].lower()).strip("_")
             if clean_k and p[1]:
                 memories_to_persist.append({
                     "category": "project",
-                    "key": clean_k,
+                    "key": f"{clean_k}_overview",
                     "content": p[1].strip(),
                     "confidence": 0.90,
-                    "tree_path": f"/project/{clean_k}",
+                    "tree_path": f"/project/{clean_k}/overview",
                 })
         for t in techs:
             clean_k = re.sub(r"[^a-zA-Z0-9_]+", "_", t[0].lower()).strip("_")
-            if clean_k and t[2]:
-                memories_to_persist.append({
-                    "category": "architecture" if t[1] == "technology" else "preference",
-                    "key": clean_k,
-                    "content": t[2].strip(),
-                    "confidence": 0.88,
-                    "tree_path": f"/{'architecture' if t[1] == 'technology' else 'preference'}/{clean_k}",
-                })
+            if not clean_k or not t[2]:
+                continue
+            lower_name = t[0].lower()
+            if lower_name in ("postgresql", "fastapi", "influxdb", "python", "ray", "celery", "parquet"):
+                sub = "backend"
+                cat = "architecture"
+            elif lower_name in ("nextjs", "vue", "tailwind", "react", "sse"):
+                sub = "frontend"
+                cat = "architecture"
+            elif lower_name in ("flutter", "tauri"):
+                sub = "client"
+                cat = "architecture"
+            elif lower_name in ("claude_code", "openclaw", "codex", "antigravity", "windsurf"):
+                sub = "ai_assistants"
+                cat = "tools"
+            elif "asr" in lower_name or "voice" in lower_name:
+                sub = "asr"
+                cat = "tools"
+            elif t[1] == "tool":
+                sub = "workflow"
+                cat = "preference"
+            else:
+                sub = "infra"
+                cat = "architecture"
+
+            memories_to_persist.append({
+                "category": cat,
+                "key": clean_k,
+                "content": t[2].strip(),
+                "confidence": 0.88,
+                "tree_path": f"/{cat}/{sub}/{clean_k}",
+            })
 
     # Persist into UserMemory
     promoted_count = 0
@@ -927,6 +946,7 @@ async def bootstrap_memories_from_knowledge_graph(
             ))
             promoted_details.append(f"- 🌟 新增【{tree_path}】: {content}")
         promoted_count += 1
+
 
     # Record DreamJournal entry for bootstrap
     journal_report = f"""# 🌌 全量知识图谱冷启动自举报告 (Knowledge Bootstrap)
