@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 import uuid
 from datetime import datetime, timezone
@@ -220,7 +221,6 @@ async def list_projects(
     elif mids is not None:
         join_cond = join_cond & Document.machine_id.in_(mids)
 
-    from ..services.ingest_service import _IGNORE_PROJECT_NAMES
     query = (
         select(Project, doc_count_col, local_path_col)
         .outerjoin(Document, join_cond)
