@@ -49,12 +49,16 @@ public class BackgroundTaskPlugin: NSObject, FlutterPlugin {
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
-    BackgroundTaskPlugin.register(with: self.registrar(forPlugin: "BackgroundTaskPlugin"))
+    if let registrar = self.registrar(forPlugin: "BackgroundTaskPlugin") {
+      BackgroundTaskPlugin.register(with: registrar)
+    }
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
-    BackgroundTaskPlugin.register(with: engineBridge.pluginRegistry.registrar(forPlugin: "BackgroundTaskPlugin"))
+    if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "BackgroundTaskPlugin") {
+      BackgroundTaskPlugin.register(with: registrar)
+    }
   }
 }
