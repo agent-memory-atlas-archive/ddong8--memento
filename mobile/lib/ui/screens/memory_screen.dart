@@ -561,6 +561,42 @@ class _MemoryScreenState extends State<MemoryScreen> with SingleTickerProviderSt
     }
   }
 
+  void _startBootstrap() async {
+    setState(() => _isDreamingRunning = true);
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('⚡ 正在从历史知识图谱与核心会话中自举提炼认知记忆树...'),
+        backgroundColor: AuroraColors.accent,
+      ),
+    );
+    try {
+      final res = await ApiClient().bootstrapMemories();
+      final promoted = res['promoted_count'] ?? 0;
+      await Future.wait([
+        _loadCoreMemories(),
+        _loadDreamData(),
+      ]);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('🎉 成功自举沉淀 $promoted 条长期核心记忆！'),
+            backgroundColor: AuroraColors.accent,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('自举提炼失败: $e'), backgroundColor: AuroraColors.danger),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isDreamingRunning = false);
+      }
+    }
+  }
+
   void _showDreamScopeDialog() {
     showModalBottomSheet(
       context: context,
@@ -585,6 +621,15 @@ class _MemoryScreenState extends State<MemoryScreen> with SingleTickerProviderSt
                 style: TextStyle(fontSize: 12, color: AuroraColors.fg3),
               ),
               const SizedBox(height: 14),
+              ListTile(
+                leading: const Icon(Icons.bolt, color: Colors.amber),
+                title: const Text('全量知识图谱冷启动自举 (Knowledge Bootstrap)', style: TextStyle(color: AuroraColors.fg1, fontSize: 13.5, fontWeight: FontWeight.bold)),
+                subtitle: const Text('从全量历史 2,900+ 技术实体、项目与观察中秒级抽取初始认知树', style: TextStyle(color: AuroraColors.fg3, fontSize: 11)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _startBootstrap();
+                },
+              ),
               ListTile(
                 leading: const Icon(Icons.nightlight_round, color: AuroraColors.accent),
                 title: const Text('沉淀最近 24 小时 (近 1 天)', style: TextStyle(color: AuroraColors.fg1, fontSize: 13.5)),

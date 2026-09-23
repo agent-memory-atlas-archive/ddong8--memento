@@ -259,6 +259,11 @@ class ApiClient {
     return response.data as Map<String, dynamic>;
   }
 
+  Future<Map<String, dynamic>> bootstrapMemories() async {
+    final response = await _dio.post('/api/memory/bootstrap');
+    return response.data as Map<String, dynamic>;
+  }
+
   Future<Map<String, dynamic>> getDocument(String id) async {
     final response = await _dio.get('/api/documents/$id');
     return response.data as Map<String, dynamic>;

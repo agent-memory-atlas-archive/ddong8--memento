@@ -971,3 +971,14 @@ async def get_dream_backfill_status(
     from ..tasks.dreaming_tasks import get_backfill_status
     return get_backfill_status(str(_user.id))
 
+
+@router.post("/bootstrap")
+async def bootstrap_memory_tree(
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(get_current_user),
+) -> dict:
+    """Bootstrap the initial L3 UserMemory tree directly from historical Knowledge Graph entities & observations."""
+    from ..services.dreaming_service import bootstrap_memories_from_knowledge_graph
+    return await bootstrap_memories_from_knowledge_graph(db, _user)
+
+

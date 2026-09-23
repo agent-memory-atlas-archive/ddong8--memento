@@ -54,6 +54,32 @@ def sanitize_transient_text(text: str) -> str:
     return cleaned.strip()
 
 
+def _safe_json_loads(text: str) -> dict[str, Any]:
+    """Robustly parse JSON output from LLM, stripping markdown, code blocks and trailing commas."""
+    if not text:
+        return {}
+    cleaned = text.strip()
+    if cleaned.startswith("```"):
+        cleaned = cleaned.split("\n", 1)[-1]
+        if cleaned.endswith("```"):
+            cleaned = cleaned[:-3]
+    cleaned = cleaned.strip()
+    start = cleaned.find("{")
+    end = cleaned.rfind("}") + 1
+    if start >= 0 and end > start:
+        snippet = cleaned[start:end]
+        try:
+            return json.loads(snippet)
+        except Exception:
+            # Fix common trailing commas before closing brackets or braces
+            fixed = re.sub(r",\s*([\]}])", r"\1", snippet)
+            try:
+                return json.loads(fixed)
+            except Exception:
+                pass
+    return {}
+
+
 _DREAM_PROMPT = """你是一个高阶智能大脑的认知记忆固化中枢（负责模拟人类睡眠时的记忆重组与知识固化机制）。
 你的目标是分析用户最近的交互记录、每日研发小结与历史核心记忆，提炼出真正值得沉淀为【长期核心记忆 (MEMORY.md)】的高价值知识，并生成一份充满洞察的《梦境日记 (DREAMS.md)》。
 
@@ -169,9 +195,41 @@ async def run_dreaming_pipeline(
     )
     recent_msgs = msg_res.all()
 
+    # 4. Gather Documents synced/created in this window (titles, categories & summaries)
+    doc_res = await db.execute(
+        select(Document.title, Document.category, Document.ai_summary)
+        .where(
+            Document.machine_id.in_(user_machines_subq),
+            Document.created_at >= since_dt,
+            Document.created_at <= until_dt,
+        )
+        .order_by(Document.created_at.desc())
+        .limit(30)
+    )
+    window_docs = doc_res.all()
+
+    # 5. Gather Knowledge Entities updated/created in this window
+    ent_res = await db.execute(
+        select(KnowledgeEntity.name, KnowledgeEntity.entity_type, KnowledgeEntity.summary)
+        .where(
+            KnowledgeEntity.user_id == user.id,
+            KnowledgeEntity.updated_at >= since_dt,
+            KnowledgeEntity.updated_at <= until_dt,
+        )
+        .order_by(KnowledgeEntity.updated_at.desc())
+        .limit(20)
+    )
+    window_ents = ent_res.all()
+
     # Compile raw activity notes
     activity_snippets: list[str] = []
-    scanned_count = len(daily_summaries) + len(ask_convs) + len(recent_msgs)
+    scanned_count = (
+        len(daily_summaries)
+        + len(ask_convs)
+        + len(recent_msgs)
+        + len(window_docs)
+        + len(window_ents)
+    )
 
     if daily_summaries:
         activity_snippets.append("### 【每日研发摘要】")
@@ -191,6 +249,30 @@ async def run_dreaming_pipeline(
                     turns_text.append(f"  [{role}]: {content}")
             if turns_text:
                 activity_snippets.append(f"- 对话《{c.title}》:\n" + "\n".join(turns_text))
+
+    if window_docs:
+        activity_snippets.append("\n### 【开发会话与文档主题】")
+        for d_title, d_cat, d_summary in window_docs:
+            if not d_title and not d_summary:
+                continue
+            cat_tag = d_cat.strip() if d_cat else "session"
+            title_text = (d_title or "未命名会话").strip()
+            if d_summary:
+                clean_sum = sanitize_transient_text(d_summary)[:180]
+                activity_snippets.append(f"- [{cat_tag}] {title_text}: {clean_sum}")
+            else:
+                activity_snippets.append(f"- [{cat_tag}] {title_text}")
+
+    if window_ents:
+        activity_snippets.append("\n### 【提炼技术实体与知识图谱】")
+        for e_name, e_type, e_summary in window_ents:
+            type_tag = e_type.strip() if e_type else "concept"
+            name_text = e_name.strip()
+            if e_summary:
+                clean_e_sum = e_summary.strip()[:150]
+                activity_snippets.append(f"- [{type_tag}] {name_text}: {clean_e_sum}")
+            else:
+                activity_snippets.append(f"- [{type_tag}] {name_text}")
 
     if recent_msgs:
         activity_snippets.append("\n### 【工具日志关键片段】")
@@ -240,16 +322,7 @@ async def run_dreaming_pipeline(
                 max_tokens=2500,
             )
             if raw_response:
-                text = raw_response.strip()
-                if text.startswith("```"):
-                    text = text.split("\n", 1)[-1]
-                    if text.endswith("```"):
-                        text = text[:-3]
-                text = text.strip()
-                start = text.find("{")
-                end = text.rfind("}") + 1
-                if start >= 0 and end > start:
-                    llm_output = json.loads(text[start:end])
+                llm_output = _safe_json_loads(raw_response)
         except Exception as e:
             logger.warning("Dreaming LLM call failed, proceeding with heuristic fallback: %s", e)
 
@@ -504,7 +577,14 @@ async def compute_activity_windows(
     ask_min_dt = (await db.execute(ask_min_q)).scalar()
     ask_min = ask_min_dt.date() if ask_min_dt else None
 
-    dates = [d for d in (daily_min, doc_min, ask_min) if d is not None]
+    # 4. Earliest KnowledgeEntity
+    ent_min_q = select(func.min(KnowledgeEntity.created_at)).where(
+        KnowledgeEntity.user_id == user.id
+    )
+    ent_min_dt = (await db.execute(ent_min_q)).scalar()
+    ent_min = ent_min_dt.date() if ent_min_dt else None
+
+    dates = [d for d in (daily_min, doc_min, ask_min, ent_min) if d is not None]
     if not dates:
         return []
 
@@ -584,7 +664,25 @@ async def run_dreaming_backfill(
             )
         )).scalar() or 0
 
-        if has_daily == 0 and has_ask == 0 and has_msg == 0:
+        # Check documents
+        has_doc = (await db.execute(
+            select(func.count()).select_from(Document).where(
+                Document.machine_id.in_(user_machines_subq),
+                Document.created_at >= w_start_dt,
+                Document.created_at <= w_end_dt,
+            )
+        )).scalar() or 0
+
+        # Check knowledge entities
+        has_ent = (await db.execute(
+            select(func.count()).select_from(KnowledgeEntity).where(
+                KnowledgeEntity.user_id == user.id,
+                KnowledgeEntity.updated_at >= w_start_dt,
+                KnowledgeEntity.updated_at <= w_end_dt,
+            )
+        )).scalar() or 0
+
+        if has_daily == 0 and has_ask == 0 and has_msg == 0 and has_doc == 0 and has_ent == 0:
             skipped_count += 1
             if progress_callback:
                 res = progress_callback({
@@ -631,5 +729,244 @@ async def run_dreaming_backfill(
         "skipped_windows": skipped_count,
         "total_promoted": total_promoted,
         "journal_ids": journal_ids,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Cold-start Knowledge Bootstrapping Engine
+# ---------------------------------------------------------------------------
+_BOOTSTRAP_PROMPT = """你是一个高阶系统架构师与个人认知记忆中枢。
+你的任务是基于用户在数据库中长期积累的技术项目、工具栈和知识图谱观察事实，直接【全量自举沉淀】出一套高精度的长期核心记忆树 (L3 Core Memory / MEMORY.md)。
+
+### 用户历史核心项目
+{projects_text}
+
+### 用户核心技术栈与工具
+{tech_text}
+
+### 知识图谱关键观察事实与开发经验
+{observations_text}
+
+---
+
+### 沉淀要求：
+1. **分类规范 (category)**：
+   - `project`: 用户的核心业务项目与系统定位。
+   - `architecture`: 核心架构约定与系统级设计（如容器化规范、高性能优化方案、集群管理等）。
+   - `rule`: 开发铁律、配置规范、环境约束（如模块导入规范、配置文件存储位置、禁止踩坑点）。
+   - `preference`: 个人技术栈习惯与偏好（如工具使用偏好、框架选型倾向）。
+2. **Key 规范**：使用小写英文+下划线，简洁独特（如 `quant_future_system`, `rke2_cluster_architecture`, `sys_path_injection_rule`）。
+3. **Tree Path 规范**：例如 `/project/quant_future`, `/architecture/k8s/rke2`, `/rules/python/sys_path`, `/preference/frontend/nextjs`。
+4. **Content 规范**：提炼为极具指导意义、信息密度极高的一段话（80~200字）。
+5. **Confidence**：赋予 0.85 ~ 0.98 的初始置信度。
+
+请严格输出合法的 JSON 格式（不要输出任何前后注释或 markdown 外部包裹）：
+{{
+  "summary": "本次全量自举沉淀的概括总结",
+  "memories": [
+    {{
+      "category": "project | architecture | rule | preference",
+      "tree_path": "/category/subcategory/key",
+      "key": "unique_key",
+      "content": "核心记忆描述",
+      "confidence": 0.95
+    }}
+  ]
+}}
+"""
+
+
+async def bootstrap_memories_from_knowledge_graph(
+    db: AsyncSession,
+    user: User,
+    max_entities: int = 80,
+) -> dict[str, Any]:
+    """Bootstrap the initial L3 UserMemory tree directly from historical KnowledgeEntities and Observations.
+
+    This provides instantaneous cold-start distillation for accounts that already contain thousands
+    of documents and knowledge entities in the database.
+    """
+    now = datetime.now(timezone.utc)
+    today = date.today()
+
+    # 1. Gather top projects
+    proj_res = await db.execute(
+        select(KnowledgeEntity.name, KnowledgeEntity.summary, func.count(KnowledgeObservation.id))
+        .outerjoin(KnowledgeObservation, KnowledgeObservation.entity_id == KnowledgeEntity.id)
+        .where(KnowledgeEntity.user_id == user.id, KnowledgeEntity.entity_type == "project")
+        .group_by(KnowledgeEntity.id)
+        .order_by(func.count(KnowledgeObservation.id).desc())
+        .limit(15)
+    )
+    projs = proj_res.all()
+    projs_text = "\n".join([f"- {p[0]}: {p[1][:140]}" for p in projs if p[1]]) or "(无显著项目记录)"
+
+    # 2. Gather top technologies and tools
+    tech_res = await db.execute(
+        select(KnowledgeEntity.name, KnowledgeEntity.entity_type, KnowledgeEntity.summary, func.count(KnowledgeObservation.id))
+        .outerjoin(KnowledgeObservation, KnowledgeObservation.entity_id == KnowledgeEntity.id)
+        .where(KnowledgeEntity.user_id == user.id, KnowledgeEntity.entity_type.in_(["technology", "tool"]))
+        .group_by(KnowledgeEntity.id)
+        .order_by(func.count(KnowledgeObservation.id).desc())
+        .limit(20)
+    )
+    techs = tech_res.all()
+    tech_text = "\n".join([f"- [{t[1]}] {t[0]}: {t[2][:140]}" for t in techs if t[2]]) or "(无显著技术栈记录)"
+
+    # 3. Gather rich observations
+    obs_res = await db.execute(
+        select(KnowledgeObservation.content)
+        .join(KnowledgeEntity, KnowledgeEntity.id == KnowledgeObservation.entity_id)
+        .where(KnowledgeEntity.user_id == user.id, func.length(KnowledgeObservation.content) >= 15)
+        .order_by(KnowledgeObservation.observed_at.desc())
+        .limit(40)
+    )
+    obs = [r[0] for r in obs_res.all()]
+    obs_text = "\n".join([f"- {r[:180]}" for r in obs]) or "(无显著观察事实)"
+
+    llm_output: dict[str, Any] = {}
+    if get_ai_providers() and (projs or techs or obs):
+        prompt = _BOOTSTRAP_PROMPT.format(
+            projects_text=projs_text,
+            tech_text=tech_text,
+            observations_text=obs_text,
+        )
+        try:
+            raw_response = await call_plain_chat(
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are the Memento Knowledge Bootstrapper. Output valid JSON only.",
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+                max_tokens=2500,
+            )
+            if raw_response:
+                llm_output = _safe_json_loads(raw_response)
+        except Exception as e:
+            logger.warning("Bootstrap LLM call failed, falling back to heuristic: %s", e)
+
+    # Fallback to heuristic distillation if LLM output is empty
+    memories_to_persist: list[dict[str, Any]] = []
+    if llm_output and llm_output.get("memories"):
+        summary_text = str(llm_output.get("summary") or "基于全量知识图谱实体与核心观察事实完成长期认知记忆树自举。")
+        for item in llm_output["memories"]:
+            cat = str(item.get("category", "general")).strip().lower()
+            key = str(item.get("key", "note")).strip().lower().replace(" ", "_")
+            content = str(item.get("content", "")).strip()
+            confidence = float(item.get("confidence", 0.92))
+            tree_path = str(item.get("tree_path") or f"/{cat}/{key}").strip()
+            if content and confidence >= 0.70:
+                memories_to_persist.append({
+                    "category": cat,
+                    "key": key,
+                    "content": content,
+                    "confidence": confidence,
+                    "tree_path": tree_path,
+                })
+    else:
+        summary_text = "启发式规则自举：根据历史核心技术栈、开发项目与高频观察事实直接梳理长期记忆树。"
+        for p in projs:
+            clean_k = re.sub(r"[^a-zA-Z0-9_]+", "_", p[0].lower()).strip("_")
+            if clean_k and p[1]:
+                memories_to_persist.append({
+                    "category": "project",
+                    "key": clean_k,
+                    "content": p[1].strip(),
+                    "confidence": 0.90,
+                    "tree_path": f"/project/{clean_k}",
+                })
+        for t in techs:
+            clean_k = re.sub(r"[^a-zA-Z0-9_]+", "_", t[0].lower()).strip("_")
+            if clean_k and t[2]:
+                memories_to_persist.append({
+                    "category": "architecture" if t[1] == "technology" else "preference",
+                    "key": clean_k,
+                    "content": t[2].strip(),
+                    "confidence": 0.88,
+                    "tree_path": f"/{'architecture' if t[1] == 'technology' else 'preference'}/{clean_k}",
+                })
+
+    # Persist into UserMemory
+    promoted_count = 0
+    promoted_details: list[str] = []
+    for item in memories_to_persist:
+        cat = item["category"]
+        key = item["key"]
+        content = item["content"]
+        confidence = item["confidence"]
+        tree_path = item["tree_path"]
+
+        existing = (await db.execute(
+            select(UserMemory).where(
+                UserMemory.user_id == user.id,
+                UserMemory.category == cat,
+                UserMemory.key == key,
+            ).limit(1)
+        )).scalar_one_or_none()
+
+        if existing:
+            existing.content = content
+            existing.confidence = max(existing.confidence, confidence)
+            existing.source = "bootstrap"
+            existing.tree_path = tree_path
+            existing.updated_at = now
+            promoted_details.append(f"- 🔄 更新【{tree_path}】: {content}")
+        else:
+            db.add(UserMemory(
+                user_id=user.id,
+                category=cat,
+                key=key,
+                content=content,
+                confidence=confidence,
+                source="bootstrap",
+                tree_path=tree_path,
+                created_at=now,
+                updated_at=now,
+            ))
+            promoted_details.append(f"- 🌟 新增【{tree_path}】: {content}")
+        promoted_count += 1
+
+    # Record DreamJournal entry for bootstrap
+    journal_report = f"""# 🌌 全量知识图谱冷启动自举报告 (Knowledge Bootstrap)
+
+**自举时间**: {now.strftime('%Y-%m-%d %H:%M:%S UTC')}
+**模式**: 全量历史知识图谱与开发会话自举沉淀
+**晋升记忆数量**: {promoted_count} 条核心节点
+
+---
+
+## 📋 自举总结
+{summary_text}
+
+## 🌟 沉淀的长期核心记忆
+""" + "\n".join(promoted_details)
+
+    journal = DreamJournal(
+        user_id=user.id,
+        dream_date=today,
+        stage_metrics={
+            "tag": "bootstrap",
+            "projects_scanned": len(projs),
+            "tech_scanned": len(techs),
+            "observations_scanned": len(obs),
+            "promoted_count": promoted_count,
+        },
+        light_sleep_notes=f"扫描历史库中 {len(projs)} 个核心项目、{len(techs)} 个技术工具实体及 {len(obs)} 条深度观察事实。",
+        rem_reflections=summary_text,
+        deep_consolidations=f"完成全局认知记忆自举，确立 {promoted_count} 条高置信度长时核心记忆。",
+        report_markdown=journal_report,
+        created_at=now,
+    )
+    db.add(journal)
+    await db.commit()
+
+    return {
+        "status": "success",
+        "summary": summary_text,
+        "promoted_count": promoted_count,
+        "journal_id": str(journal.id),
+        "memories": memories_to_persist,
     }
 
