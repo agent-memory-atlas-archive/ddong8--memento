@@ -9,7 +9,13 @@ import 'ui/screens/shell_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await UpdateService.initVersion();
+
+  // Initialize app version with timeout so it never blocks runApp
+  try {
+    await UpdateService.initVersion().timeout(const Duration(milliseconds: 800));
+  } catch (e) {
+    debugPrint('[Main] initVersion skipped or timed out: $e');
+  }
 
   // Safeguard MediaKit initialization to prevent unhandled native framework errors from blocking app launch
   try {

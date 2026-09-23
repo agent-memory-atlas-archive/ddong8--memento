@@ -49,9 +49,6 @@ public class BackgroundTaskPlugin: NSObject, FlutterPlugin {
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
-    if let registrar = self.registrar(forPlugin: "BackgroundTaskPlugin") {
-      BackgroundTaskPlugin.register(with: registrar)
-    }
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 
