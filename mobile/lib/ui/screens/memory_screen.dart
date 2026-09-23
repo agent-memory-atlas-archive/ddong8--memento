@@ -906,7 +906,7 @@ class _MemoryScreenState extends State<MemoryScreen> with SingleTickerProviderSt
                                         color: AuroraColors.surfaceSolid,
                                         onSelected: (action) {
                                           if (action == 'edit') {
-                                            _showAddOrEditMemoryDialog(mem);
+                                            _showAddOrEditMemoryDialog(existing: mem as Map<String, dynamic>);
                                           } else if (action == 'delete') {
                                             _deleteMemory(mem['id'].toString());
                                           }
