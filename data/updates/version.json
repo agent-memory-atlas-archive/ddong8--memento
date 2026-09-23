@@ -1,7 +1,7 @@
 {
-  "version": "1.0.37",
-  "title": "Memento v1.0.37",
-  "release_notes": "1. 仿生做梦记忆固化管道：引入 Light Sleep -> REM Sleep -> Deep Sleep 睡眠重组，自动提炼长期核心记忆 (MEMORY.md) 与梦境日记 (DREAMS.md)\n2. 三层认知记忆模型与记忆树：支持 L1工作记忆 / L2情景记忆 / L3核心记忆，支持树状路径组织与按需召回\n3. 全生态支持：MCP 服务端、Web 控制台与 Flutter 移动端全面支持核心记忆读取、树状浏览与一键做梦",
+  "version": "1.0.38",
+  "title": "Memento v1.0.38",
+  "release_notes": "1. 历史记忆渐进式回溯回填：支持自动探测最早历史活动并按 3 天滑动窗口平滑分批回溯做梦，彻底解决历史老账无法沉淀的问题\n2. 智能空窗跳过与渐进式置信度自增强：空窗期零消耗大模型 Token，跨周期重复验证规则自动提升置信度\n3. 移动端做梦范围自由选择：支持近 24 小时、近 7 天、近 30 天与全量历史回填四大反思模式，带实时后台进度跟踪",
   "platforms": {
     "windows": {
       "asset_name": "Memento-windows-x64.zip",

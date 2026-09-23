@@ -475,14 +475,14 @@ class _MemoryScreenState extends State<MemoryScreen> with SingleTickerProviderSt
     }
   }
 
-  void _triggerDreamingNow() async {
+  void _triggerDreamingNow({int daysBack = 1}) async {
     setState(() => _isDreamingRunning = true);
     try {
-      final res = await ApiClient().triggerDream(daysBack: 1);
+      final res = await ApiClient().triggerDream(daysBack: daysBack);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('🌙 做梦反思与记忆固化已完成！'),
+        SnackBar(
+          content: Text('🌙 做梦反思与记忆固化已完成 (涵盖近 $daysBack 天)！'),
           backgroundColor: AuroraColors.accent,
         ),
       );
@@ -501,6 +501,131 @@ class _MemoryScreenState extends State<MemoryScreen> with SingleTickerProviderSt
         setState(() => _isDreamingRunning = false);
       }
     }
+  }
+
+  void _startBackfill() async {
+    setState(() => _isDreamingRunning = true);
+    try {
+      final res = await ApiClient().triggerDreamBackfill(chunkDays: 3, maxChunks: 30, runAsync: true);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(res['message']?.toString() ?? '历史记忆渐进回填已启动，系统正在后台分批推演...'),
+          backgroundColor: AuroraColors.accent,
+        ),
+      );
+      _pollBackfillProgress();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('启动历史回填失败: $e'), backgroundColor: AuroraColors.danger),
+      );
+      setState(() => _isDreamingRunning = false);
+    }
+  }
+
+  void _pollBackfillProgress() async {
+    for (int i = 0; i < 60; i++) {
+      await Future.delayed(const Duration(seconds: 3));
+      if (!mounted) return;
+      try {
+        final status = await ApiClient().getDreamBackfillStatus();
+        final state = status['status']?.toString();
+        if (state == 'completed') {
+          if (!mounted) return;
+          setState(() => _isDreamingRunning = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('🎉 历史记忆全量回溯做梦已全部完成！'),
+              backgroundColor: AuroraColors.accent,
+            ),
+          );
+          _loadDreamData();
+          _loadCoreMemories();
+          break;
+        } else if (state == 'error') {
+          if (!mounted) return;
+          setState(() => _isDreamingRunning = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('历史回填发生异常: ${status['error']}'),
+              backgroundColor: AuroraColors.danger,
+            ),
+          );
+          break;
+        }
+      } catch (_) {}
+    }
+    if (mounted) {
+      setState(() => _isDreamingRunning = false);
+    }
+  }
+
+  void _showDreamScopeDialog() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AuroraColors.surfaceSolid,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 18),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                '选择做梦反思范围 (Consolidation Scope)',
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AuroraColors.fg1),
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                '系统将分析选定时间段内的所有对话、工具流与研发小结，提炼核心记忆。',
+                style: TextStyle(fontSize: 12, color: AuroraColors.fg3),
+              ),
+              const SizedBox(height: 14),
+              ListTile(
+                leading: const Icon(Icons.nightlight_round, color: AuroraColors.accent),
+                title: const Text('沉淀最近 24 小时 (近 1 天)', style: TextStyle(color: AuroraColors.fg1, fontSize: 13.5)),
+                subtitle: const Text('常规夜间增量做梦，提炼昨天的最新开发共识', style: TextStyle(color: AuroraColors.fg3, fontSize: 11)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _triggerDreamingNow(daysBack: 1);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.date_range, color: AuroraColors.accent),
+                title: const Text('沉淀最近 7 天', style: TextStyle(color: AuroraColors.fg1, fontSize: 13.5)),
+                subtitle: const Text('周期性回顾，提炼本周的整体技术演进与架构决策', style: TextStyle(color: AuroraColors.fg3, fontSize: 11)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _triggerDreamingNow(daysBack: 7);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.calendar_month, color: AuroraColors.accent),
+                title: const Text('沉淀最近 30 天', style: TextStyle(color: AuroraColors.fg1, fontSize: 13.5)),
+                subtitle: const Text('月度反思，全面提炼近一个月内的深层研发偏好与规范', style: TextStyle(color: AuroraColors.fg3, fontSize: 11)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _triggerDreamingNow(daysBack: 30);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.history_edu, color: AuroraColors.danger),
+                title: const Text('全量历史记忆渐进回填 (Backfill Replay)', style: TextStyle(color: AuroraColors.fg1, fontSize: 13.5, fontWeight: FontWeight.bold)),
+                subtitle: const Text('从最早的历史记录按时间切片（每3天）逐步递推演化至今天', style: TextStyle(color: AuroraColors.fg3, fontSize: 11)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _startBackfill();
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   void _showDreamReportModal(String markdown) {
@@ -1009,7 +1134,7 @@ class _MemoryScreenState extends State<MemoryScreen> with SingleTickerProviderSt
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton.icon(
-                    onPressed: _isDreamingRunning ? null : _triggerDreamingNow,
+                    onPressed: _isDreamingRunning ? null : _showDreamScopeDialog,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AuroraColors.accent,
                       foregroundColor: Colors.black,
@@ -1022,7 +1147,7 @@ class _MemoryScreenState extends State<MemoryScreen> with SingleTickerProviderSt
                             child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black),
                           )
                         : const Icon(Icons.bedtime_outlined, size: 18),
-                    label: Text(_isDreamingRunning ? '正在做梦反思与记忆重组...' : '立即唤醒做梦 (Trigger Dream)'),
+                    label: Text(_isDreamingRunning ? '正在做梦反思与记忆重组...' : '唤醒做梦与历史沉淀 (Trigger Dream)'),
                   ),
                 ),
               ],

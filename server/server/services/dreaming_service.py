@@ -15,12 +15,13 @@ this service simulates the human sleep memory consolidation cycle:
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
 import uuid
 from datetime import date, datetime, timedelta, timezone
-from typing import Any
+from typing import Any, Callable
 
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -106,12 +107,24 @@ async def run_dreaming_pipeline(
     db: AsyncSession,
     user: User,
     days_back: int = 2,
+    start_date: date | None = None,
+    end_date: date | None = None,
+    tag: str = "nightly",
 ) -> DreamJournal:
     """Execute the 3-stage Dreaming pipeline for a specific user."""
     today = date.today()
     now = datetime.now(timezone.utc)
-    since_dt = now - timedelta(days=days_back)
-    since_date = today - timedelta(days=days_back)
+
+    if start_date is not None and end_date is not None:
+        since_date = start_date
+        until_date = end_date
+        since_dt = datetime(start_date.year, start_date.month, start_date.day, tzinfo=timezone.utc)
+        until_dt = datetime(end_date.year, end_date.month, end_date.day, 23, 59, 59, tzinfo=timezone.utc)
+    else:
+        until_date = today
+        since_date = today - timedelta(days=days_back)
+        until_dt = now
+        since_dt = now - timedelta(days=days_back)
 
     # -----------------------------------------------------------------------
     # Phase 1: Light Sleep (Ingest & Filter)
@@ -122,6 +135,7 @@ async def run_dreaming_pipeline(
         .where(
             (DailySummary.user_id == user.id) | (DailySummary.user_id.is_(None)),
             DailySummary.summary_date >= since_date,
+            DailySummary.summary_date <= until_date,
         )
         .order_by(DailySummary.summary_date.asc())
     )
@@ -133,9 +147,10 @@ async def run_dreaming_pipeline(
         .where(
             AskConversation.user_id == user.id,
             AskConversation.updated_at >= since_dt,
+            AskConversation.updated_at <= until_dt,
         )
         .order_by(AskConversation.updated_at.asc())
-        .limit(20)
+        .limit(30)
     )
     ask_convs = ask_res.scalars().all()
 
@@ -147,9 +162,10 @@ async def run_dreaming_pipeline(
         .where(
             ConversationMessage.document_id.in_(user_docs_subq),
             ConversationMessage.timestamp >= since_dt,
+            ConversationMessage.timestamp <= until_dt,
         )
         .order_by(ConversationMessage.timestamp.asc())
-        .limit(40)
+        .limit(60)
     )
     recent_msgs = msg_res.all()
 
@@ -206,10 +222,11 @@ async def run_dreaming_pipeline(
     # -----------------------------------------------------------------------
     llm_output: dict[str, Any] = {}
     if get_ai_providers() and scanned_count > 0:
+        days_span = (until_date - since_date).days + 1
         prompt = _DREAM_PROMPT.format(
             existing_core_memories=existing_mem_str,
             recent_activities=recent_activities_str,
-            days_back=days_back,
+            days_back=days_span,
         )
         try:
             raw_response = await call_plain_chat(
@@ -343,8 +360,9 @@ async def run_dreaming_pipeline(
     # -----------------------------------------------------------------------
     # Generate Dream Journal Report (DREAMS.md)
     # -----------------------------------------------------------------------
+    date_label = f"{since_date.isoformat()} ~ {until_date.isoformat()}" if since_date != until_date else until_date.isoformat()
     report_lines = [
-        f"# 🌙 梦境反思日记 (Dream Journal) — {today.isoformat()}",
+        f"# 🌙 梦境反思日记 (Dream Journal) — {date_label}",
         "",
         f"> **做梦时间**：{now.strftime('%Y-%m-%d %H:%M:%S UTC')}  ",
         f"> **记忆扫描**：检索近期 {scanned_count} 条记录 | 固化新增/更新 {promoted_count} 条长期记忆",
@@ -372,12 +390,15 @@ async def run_dreaming_pipeline(
         "scanned_items": scanned_count,
         "promoted_count": promoted_count,
         "relations_found": len(relations),
-        "days_back": days_back,
+        "days_back": (until_date - since_date).days + 1,
+        "start_date": since_date.isoformat(),
+        "end_date": until_date.isoformat(),
+        "tag": tag,
     }
 
     journal = DreamJournal(
         user_id=user.id,
-        dream_date=today,
+        dream_date=until_date,
         stage_metrics=metrics,
         light_sleep_notes=light_notes,
         rem_reflections=rem_notes,
@@ -452,3 +473,163 @@ async def export_core_memory_markdown(db: AsyncSession, user: User) -> str:
             lines.append("")
 
     return "\n".join(lines).strip()
+
+
+async def compute_activity_windows(
+    db: AsyncSession,
+    user: User,
+    chunk_days: int = 3,
+) -> list[tuple[date, date]]:
+    """Compute non-empty chronological time windows from earliest activity to today."""
+    today = date.today()
+
+    # 1. Earliest DailySummary
+    daily_min_q = select(func.min(DailySummary.summary_date)).where(
+        (DailySummary.user_id == user.id) | (DailySummary.user_id.is_(None))
+    )
+    daily_min = (await db.execute(daily_min_q)).scalar()
+
+    # 2. Earliest Document
+    user_machines_subq = select(Machine.id).where(Machine.user_id == user.id)
+    doc_min_q = select(func.min(Document.created_at)).where(
+        Document.machine_id.in_(user_machines_subq)
+    )
+    doc_min_dt = (await db.execute(doc_min_q)).scalar()
+    doc_min = doc_min_dt.date() if doc_min_dt else None
+
+    # 3. Earliest AskConversation
+    ask_min_q = select(func.min(AskConversation.created_at)).where(
+        AskConversation.user_id == user.id
+    )
+    ask_min_dt = (await db.execute(ask_min_q)).scalar()
+    ask_min = ask_min_dt.date() if ask_min_dt else None
+
+    dates = [d for d in (daily_min, doc_min, ask_min) if d is not None]
+    if not dates:
+        return []
+
+    earliest = min(dates)
+    if earliest >= today:
+        return [(today - timedelta(days=1), today)]
+
+    # Slice into chunks of chunk_days
+    windows: list[tuple[date, date]] = []
+    curr = earliest
+    while curr <= today:
+        nxt = min(curr + timedelta(days=chunk_days - 1), today)
+        windows.append((curr, nxt))
+        curr = nxt + timedelta(days=1)
+
+    return windows
+
+
+async def run_dreaming_backfill(
+    db: AsyncSession,
+    user: User,
+    chunk_days: int = 3,
+    max_chunks: int = 30,
+    progress_callback: Callable[[dict[str, Any]], Any] | None = None,
+) -> dict[str, Any]:
+    """Execute progressive historical dreaming replay across chronological windows."""
+    all_windows = await compute_activity_windows(db, user, chunk_days=chunk_days)
+    if not all_windows:
+        return {
+            "status": "completed",
+            "total_windows": 0,
+            "processed_windows": 0,
+            "skipped_windows": 0,
+            "total_promoted": 0,
+            "message": "暂无历史活动记录需要回溯",
+        }
+
+    # Process up to max_chunks (chronologically forward)
+    windows_to_process = all_windows[:max_chunks]
+
+    total_promoted = 0
+    processed_count = 0
+    skipped_count = 0
+    journal_ids: list[str] = []
+
+    user_machines_subq = select(Machine.id).where(Machine.user_id == user.id)
+    user_docs_subq = select(Document.id).where(Document.machine_id.in_(user_machines_subq))
+
+    for idx, (w_start, w_end) in enumerate(windows_to_process):
+        w_start_dt = datetime(w_start.year, w_start.month, w_start.day, tzinfo=timezone.utc)
+        w_end_dt = datetime(w_end.year, w_end.month, w_end.day, 23, 59, 59, tzinfo=timezone.utc)
+
+        # Check daily summary count
+        has_daily = (await db.execute(
+            select(func.count()).select_from(DailySummary).where(
+                (DailySummary.user_id == user.id) | (DailySummary.user_id.is_(None)),
+                DailySummary.summary_date >= w_start,
+                DailySummary.summary_date <= w_end,
+            )
+        )).scalar() or 0
+
+        # Check ask conversations
+        has_ask = (await db.execute(
+            select(func.count()).select_from(AskConversation).where(
+                AskConversation.user_id == user.id,
+                AskConversation.updated_at >= w_start_dt,
+                AskConversation.updated_at <= w_end_dt,
+            )
+        )).scalar() or 0
+
+        # Check conversation messages
+        has_msg = (await db.execute(
+            select(func.count()).select_from(ConversationMessage).where(
+                ConversationMessage.document_id.in_(user_docs_subq),
+                ConversationMessage.timestamp >= w_start_dt,
+                ConversationMessage.timestamp <= w_end_dt,
+            )
+        )).scalar() or 0
+
+        if has_daily == 0 and has_ask == 0 and has_msg == 0:
+            skipped_count += 1
+            if progress_callback:
+                res = progress_callback({
+                    "current": idx + 1,
+                    "total": len(windows_to_process),
+                    "window": [w_start.isoformat(), w_end.isoformat()],
+                    "status": "skipped_empty",
+                    "promoted_total": total_promoted,
+                })
+                if asyncio.iscoroutine(res):
+                    await res
+            continue
+
+        # Execute dreaming for this window
+        journal = await run_dreaming_pipeline(
+            db,
+            user,
+            start_date=w_start,
+            end_date=w_end,
+            tag="backfill",
+        )
+
+        promoted_in_win = journal.stage_metrics.get("promoted_count", 0)
+        total_promoted += promoted_in_win
+        processed_count += 1
+        journal_ids.append(str(journal.id))
+
+        if progress_callback:
+            res = progress_callback({
+                "current": idx + 1,
+                "total": len(windows_to_process),
+                "window": [w_start.isoformat(), w_end.isoformat()],
+                "status": "processed",
+                "promoted_in_chunk": promoted_in_win,
+                "promoted_total": total_promoted,
+            })
+            if asyncio.iscoroutine(res):
+                await res
+
+    return {
+        "status": "completed",
+        "total_windows": len(all_windows),
+        "processed_windows": processed_count,
+        "skipped_windows": skipped_count,
+        "total_promoted": total_promoted,
+        "journal_ids": journal_ids,
+    }
+

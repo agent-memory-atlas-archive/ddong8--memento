@@ -231,11 +231,31 @@ class ApiClient {
     return response.data as Map<String, dynamic>;
   }
 
-  Future<Map<String, dynamic>> triggerDream({int daysBack = 1}) async {
+  Future<Map<String, dynamic>> triggerDream({int daysBack = 1, String? startDate, String? endDate}) async {
+    final data = <String, dynamic>{'days_back': daysBack};
+    if (startDate != null) data['start_date'] = startDate;
+    if (endDate != null) data['end_date'] = endDate;
     final response = await _dio.post(
       '/api/memory/dream',
-      data: {'days_back': daysBack},
+      data: data,
     );
+    return response.data as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> triggerDreamBackfill({int chunkDays = 3, int maxChunks = 30, bool runAsync = true}) async {
+    final response = await _dio.post(
+      '/api/memory/dream/backfill',
+      data: {
+        'chunk_days': chunkDays,
+        'max_chunks': maxChunks,
+        'run_async': runAsync,
+      },
+    );
+    return response.data as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> getDreamBackfillStatus() async {
+    final response = await _dio.get('/api/memory/dream/backfill/status');
     return response.data as Map<String, dynamic>;
   }
 
