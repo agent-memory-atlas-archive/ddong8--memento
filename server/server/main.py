@@ -188,6 +188,54 @@ def _run_migrations(conn) -> None:
                 "ON share_links (target_user_id)"
             ))
 
+    # User memories (L3 Core Memory / MEMORY.md)
+    if "user_memories" not in tables:
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS user_memories (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                category VARCHAR(50) NOT NULL DEFAULT 'general',
+                key VARCHAR(120) NOT NULL,
+                content TEXT NOT NULL,
+                confidence FLOAT DEFAULT 1.0,
+                source VARCHAR(50) DEFAULT 'dreaming',
+                parent_id UUID REFERENCES user_memories(id) ON DELETE CASCADE,
+                tree_path VARCHAR(255),
+                is_folder BOOLEAN DEFAULT FALSE,
+                last_recalled_at TIMESTAMP WITH TIME ZONE,
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                CONSTRAINT uq_user_memory_key UNIQUE (user_id, category, key)
+            )
+        """))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_user_memory_user ON user_memories (user_id, updated_at DESC)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_user_memory_category ON user_memories (user_id, category)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_user_memory_parent ON user_memories (user_id, parent_id)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_user_memory_tree_path ON user_memories (user_id, tree_path)"))
+    else:
+        conn.execute(text("ALTER TABLE user_memories ADD COLUMN IF NOT EXISTS parent_id UUID REFERENCES user_memories(id) ON DELETE CASCADE"))
+        conn.execute(text("ALTER TABLE user_memories ADD COLUMN IF NOT EXISTS tree_path VARCHAR(255)"))
+        conn.execute(text("ALTER TABLE user_memories ADD COLUMN IF NOT EXISTS is_folder BOOLEAN DEFAULT FALSE"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_user_memory_parent ON user_memories (user_id, parent_id)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_user_memory_tree_path ON user_memories (user_id, tree_path)"))
+
+    # Dream journals (DREAMS.md)
+    if "dream_journals" not in tables:
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS dream_journals (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                dream_date DATE NOT NULL,
+                stage_metrics JSONB DEFAULT '{}',
+                light_sleep_notes TEXT,
+                rem_reflections TEXT,
+                deep_consolidations TEXT,
+                report_markdown TEXT NOT NULL,
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+            )
+        """))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_dream_journal_user_date ON dream_journals (user_id, dream_date, created_at DESC)"))
+
     # Data migration: assign owner token + bind existing machines to owner
     result = conn.execute(text(
         "SELECT id, collector_token FROM users WHERE role = 'owner' AND status = 'active' LIMIT 1"

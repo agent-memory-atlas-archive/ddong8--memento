@@ -27,7 +27,7 @@ from pydantic import BaseModel
 from sqlalchemy import or_, select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..db.models import Document, Machine, User, AskConversation
+from ..db.models import Document, Machine, User, AskConversation, UserMemory
 from ..db.session import get_db, async_session_factory
 from ..middleware.auth import get_current_user
 from ..services.user_filter import user_machine_ids, apply_user_filter, find_machine_by_id_or_hash
@@ -330,13 +330,21 @@ def _build_messages(
     extracted_context: dict | None = None,
     images: list[str] | None = None,
     attachments: list[dict] | None = None,
+    core_memories: list[UserMemory] | None = None,
 ) -> list[dict]:
     context = "\n\n".join(
         f"[{i + 1}] {s['title']} ({s['tool_id']}, {s['relative_path']})\n{s['excerpt']}"
         for i, s in enumerate(sources)
     ) or "(没有检索到相关资料)"
 
-    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    system_prompt = SYSTEM_PROMPT
+    if core_memories:
+        core_snippets = "\n".join(
+            f"- [{m.category}/{m.key}]: {m.content}" for m in core_memories
+        )
+        system_prompt += f"\n\n【用户长期核心记忆与工程规范 (MEMORY.md)】\n{core_snippets}"
+
+    messages = [{"role": "system", "content": system_prompt}]
     for turn in (history or [])[-MAX_HISTORY_TURNS:]:
         role = turn.get("role")
         content = (turn.get("content") or "").strip()
@@ -985,6 +993,14 @@ async def ask(
                         break
         sources = await _retrieve(db, _user, retrieval_query, body.tool, body.days)
 
+    # Fetch top core memories (L3) for user
+    core_mems = (await db.execute(
+        select(UserMemory)
+        .where(UserMemory.user_id == _user.id)
+        .order_by(UserMemory.confidence.desc(), UserMemory.updated_at.desc())
+        .limit(10)
+    )).scalars().all()
+
     messages = _build_messages(
         question,
         sources,
@@ -994,6 +1010,7 @@ async def ask(
         extracted_context=extracted_context,
         images=body.images,
         attachments=body.attachments,
+        core_memories=core_mems,
     )
 
     is_agent = (body.agent_mode or (bool(device_id) and device_id != "ask_only")) and device_id != "ask_only"
@@ -1005,6 +1022,12 @@ async def ask(
         from ..services.orchestrator import ORCHESTRATOR_SYSTEM, run_agent_loop
 
         system_content = ORCHESTRATOR_SYSTEM
+        if core_mems:
+            core_snippets = "\n".join(
+                f"- [{m.category}/{m.key}]: {m.content}" for m in core_mems
+            )
+            system_content += f"\n\n【用户长期核心记忆与工程规范 (MEMORY.md)】\n{core_snippets}"
+
         if device_id and device_id not in ("auto", "ask_only"):
             mach = (await db.execute(
                 select(Machine).where(

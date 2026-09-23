@@ -544,3 +544,59 @@ class AskConversation(Base):
     __table_args__ = (
         Index("idx_ask_conv_user_updated", "user_id", "updated_at"),
     )
+
+
+# ---------------------------------------------------------------------------
+# Long-Term Core Memory (L3 Semantic Memory — maps to MEMORY.md)
+# ---------------------------------------------------------------------------
+class UserMemory(Base):
+    __tablename__ = "user_memories"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    category: Mapped[str] = mapped_column(String(50), nullable=False, default="general")  # rule | architecture | preference | project | general
+    key: Mapped[str] = mapped_column(String(120), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    confidence: Mapped[float] = mapped_column(Float, default=1.0)
+    source: Mapped[str] = mapped_column(String(50), default="dreaming")  # dreaming | manual | mcp
+    parent_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("user_memories.id", ondelete="CASCADE"), nullable=True, index=True)
+    tree_path: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    is_folder: Mapped[bool] = mapped_column(Boolean, default=False)
+    last_recalled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    user: Mapped["User"] = relationship()
+    parent: Mapped["UserMemory | None"] = relationship("UserMemory", remote_side=[id], backref="children")
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "category", "key", name="uq_user_memory_key"),
+        Index("idx_user_memory_user", "user_id", updated_at.desc()),
+        Index("idx_user_memory_category", "user_id", "category"),
+        Index("idx_user_memory_parent", "user_id", "parent_id"),
+        Index("idx_user_memory_tree_path", "user_id", "tree_path"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Dream Journals (Audit trail of nightly & on-demand dreaming sweeps — DREAMS.md)
+# ---------------------------------------------------------------------------
+class DreamJournal(Base):
+    __tablename__ = "dream_journals"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    dream_date: Mapped[date] = mapped_column(Date, nullable=False)
+    stage_metrics: Mapped[dict] = mapped_column(JSONB, default=dict)
+    light_sleep_notes: Mapped[str | None] = mapped_column(Text)
+    rem_reflections: Mapped[str | None] = mapped_column(Text)
+    deep_consolidations: Mapped[str | None] = mapped_column(Text)
+    report_markdown: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    user: Mapped["User"] = relationship()
+
+    __table_args__ = (
+        Index("idx_dream_journal_user_date", "user_id", "dream_date", created_at.desc()),
+    )
+

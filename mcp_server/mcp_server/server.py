@@ -772,3 +772,34 @@ async def get_identity(tool: str) -> str:
 async def get_daily(date_str: str) -> str:
     """Get daily report for a specific date."""
     return await daily_summary(date_str)
+
+
+@mcp.tool()
+async def memory_core(category: str | None = None) -> str:
+    """Get the user's permanent core memory (MEMORY.md) consolidated by dreaming.
+
+    Contains distilled engineering rules, architecture decisions, project knowledge,
+    and personal preferences. This is the L3 long-term curated tier.
+
+    Args:
+        category: Optional filter ('rule', 'architecture', 'preference', 'project', 'general')
+    """
+    if _remote:
+        if not category:
+            data = await _remote.get_core_memory_markdown()
+            return data.get("markdown", "")
+        memories = await _remote.get_core_memories(category=category)
+        if not memories:
+            return f"No core memories found for category '{category}'."
+        lines = [f"# Core Memories ({category})"]
+        for m in memories:
+            lines.append(f"- **[{m.get('key')}]** ({m.get('confidence', 1.0)}): {m.get('content')}")
+        return "\n".join(lines)
+    return "Core memory retrieval is supported in remote mode."
+
+
+@mcp.resource("memory://core")
+async def get_core_memory_resource() -> str:
+    """Get the user's consolidated MEMORY.md."""
+    return await memory_core()
+

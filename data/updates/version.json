@@ -1,7 +1,7 @@
 {
   "version": "1.0.36",
   "title": "Memento v1.0.36",
-  "release_notes": "1. 升级体验全面升级：Windows 统一由 setup.exe 执行安装引导提升 UAC 权限，macOS 引入 osascript 管理员提权覆盖安装\n2. 严格校验本地缓存升级包大小与完整性，服务端下载重定向精准锁定版本参数\n3. 彻底修复客户端热升级循环重启提示，CI 构建流水线自动注入 APP_VERSION",
+  "release_notes": "1. 仿生做梦记忆固化管道：引入 Light Sleep -> REM Sleep -> Deep Sleep 睡眠重组，自动提炼长期核心记忆 (MEMORY.md) 与梦境日记 (DREAMS.md)\n2. 三层认知记忆模型与记忆树：支持 L1工作记忆 / L2情景记忆 / L3核心记忆，支持树状路径组织与按需召回\n3. 全生态支持：MCP 服务端、Web 控制台与 Flutter 移动端全面支持核心记忆读取、树状浏览与一键做梦",
   "platforms": {
     "windows": {
       "asset_name": "Memento-windows-x64.zip",

@@ -197,3 +197,17 @@ class RemoteClient:
         if category:
             params["category"] = category
         return await self._get(f"/api/tools/{tool_id}/files", params)
+
+    # --- Core Memory & Dreams (L3 & Dreaming) ---
+    async def get_core_memory_markdown(self) -> dict:
+        return await self._get("/api/memory/core/markdown")
+
+    async def get_core_memories(self, category: str | None = None) -> list[dict]:
+        params = {}
+        if category:
+            params["category"] = category
+        return await self._get("/api/memory/core", params)
+
+    async def get_dream_journals(self, limit: int = 5) -> dict:
+        return await self._get("/api/memory/dreams", {"limit": limit})
+

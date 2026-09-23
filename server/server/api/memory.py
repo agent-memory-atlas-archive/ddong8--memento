@@ -10,8 +10,9 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db.models import (
-    Document, DocumentEmbedding, KnowledgeEntity, KnowledgeObservation,
-    KnowledgeRelation, Machine, User,
+    AskConversation, ConversationMessage, DailySummary, Document,
+    DocumentEmbedding, DreamJournal, KnowledgeEntity, KnowledgeObservation,
+    KnowledgeRelation, Machine, User, UserMemory,
 )
 from ..db.session import get_db
 from ..middleware.auth import get_current_user
@@ -511,3 +512,389 @@ async def vacuum_memory(
         "entities_deleted": ents_deleted,
         "relations_deleted": rels_deleted,
     }
+
+
+# ---------------------------------------------------------------------------
+# 3-Tier Memory Architecture Overview
+# ---------------------------------------------------------------------------
+@router.get("/tiers")
+async def get_memory_tiers(
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(get_current_user),
+) -> dict:
+    """Return an overview of the 3 memory tiers for the current user:
+    - L1 Working Memory: recent interactive turns in AskConversation
+    - L2 Episodic Memory: daily digests & parsed conversation messages
+    - L3 Core/Semantic Memory: curated UserMemory items & knowledge entities
+    """
+    admin = _is_admin(_user)
+
+    # L1: Ask conversations count
+    l1_q = select(func.count()).select_from(AskConversation)
+    if not admin:
+        l1_q = l1_q.where(AskConversation.user_id == _user.id)
+    l1_count = (await db.execute(l1_q)).scalar() or 0
+
+    # L2: Daily summaries count & conversation messages count
+    l2_ds_q = select(func.count()).select_from(DailySummary)
+    if not admin:
+        l2_ds_q = l2_ds_q.where((DailySummary.user_id == _user.id) | (DailySummary.user_id.is_(None)))
+    daily_count = (await db.execute(l2_ds_q)).scalar() or 0
+
+    msg_q = select(func.count()).select_from(ConversationMessage)
+    if not admin:
+        msg_q = msg_q.where(ConversationMessage.document_id.in_(_user_doc_ids_subq(_user)))
+    msg_count = (await db.execute(msg_q)).scalar() or 0
+
+    # L3: Core memories count & knowledge entities count
+    core_q = select(func.count()).select_from(UserMemory)
+    if not admin:
+        core_q = core_q.where(UserMemory.user_id == _user.id)
+    core_count = (await db.execute(core_q)).scalar() or 0
+
+    ent_q = select(func.count()).select_from(KnowledgeEntity)
+    if not admin:
+        ent_q = ent_q.where(KnowledgeEntity.user_id == _user.id)
+    ent_count = (await db.execute(ent_q)).scalar() or 0
+
+    # Dreams count
+    dream_q = select(func.count()).select_from(DreamJournal)
+    if not admin:
+        dream_q = dream_q.where(DreamJournal.user_id == _user.id)
+    dream_count = (await db.execute(dream_q)).scalar() or 0
+
+    return {
+        "l1_working": {
+            "tier_name": "L1 短期工作记忆 (Working Memory)",
+            "conversations": l1_count,
+            "description": "即时上下文与最近交互轮次",
+        },
+        "l2_episodic": {
+            "tier_name": "L2 中期情景记忆 (Episodic Memory)",
+            "daily_summaries": daily_count,
+            "conversation_messages": msg_count,
+            "description": "每日研发日报与历史活动事件流",
+        },
+        "l3_core": {
+            "tier_name": "L3 长期核心记忆 (Core / Semantic Memory)",
+            "core_memories": core_count,
+            "knowledge_entities": ent_count,
+            "dream_journals": dream_count,
+            "description": "自动做梦萃取与用户维护的核心开发铁律 (MEMORY.md)",
+        },
+    }
+
+
+# ---------------------------------------------------------------------------
+# L3 Core Memory (MEMORY.md) Endpoints
+# ---------------------------------------------------------------------------
+class CoreMemoryCreate(BaseModel):
+    category: str = "general"
+    key: str
+    content: str
+    confidence: float = 1.0
+    parent_id: uuid.UUID | None = None
+    tree_path: str | None = None
+    is_folder: bool = False
+
+
+class CoreMemoryUpdate(BaseModel):
+    category: str | None = None
+    key: str | None = None
+    content: str | None = None
+    confidence: float | None = None
+    parent_id: uuid.UUID | None = None
+    tree_path: str | None = None
+    is_folder: bool | None = None
+
+
+@router.get("/core")
+async def get_core_memories(
+    category: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(get_current_user),
+) -> list[dict]:
+    """List current user's core memories (L3)."""
+    stmt = (
+        select(UserMemory)
+        .where(UserMemory.user_id == _user.id)
+        .order_by(UserMemory.is_folder.desc(), UserMemory.category, UserMemory.updated_at.desc())
+    )
+    if category:
+        stmt = stmt.where(UserMemory.category == category)
+
+    res = await db.execute(stmt)
+    memories = res.scalars().all()
+    return [
+        {
+            "id": str(m.id),
+            "parent_id": str(m.parent_id) if m.parent_id else None,
+            "category": m.category,
+            "key": m.key,
+            "content": m.content,
+            "confidence": m.confidence,
+            "source": m.source,
+            "tree_path": m.tree_path or f"/{m.category}/{m.key}",
+            "is_folder": m.is_folder,
+            "created_at": m.created_at.isoformat() if m.created_at else None,
+            "updated_at": m.updated_at.isoformat() if m.updated_at else None,
+        }
+        for m in memories
+    ]
+
+
+@router.get("/core/tree")
+async def get_core_memory_tree(
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(get_current_user),
+) -> dict:
+    """Retrieve user's core memories organized as a hierarchical tree."""
+    stmt = (
+        select(UserMemory)
+        .where(UserMemory.user_id == _user.id)
+        .order_by(UserMemory.is_folder.desc(), UserMemory.category, UserMemory.key)
+    )
+    res = await db.execute(stmt)
+    memories = res.scalars().all()
+
+    nodes_map: dict[str, dict] = {}
+    for m in memories:
+        nodes_map[str(m.id)] = {
+            "id": str(m.id),
+            "parent_id": str(m.parent_id) if m.parent_id else None,
+            "category": m.category,
+            "key": m.key,
+            "content": m.content,
+            "confidence": m.confidence,
+            "source": m.source,
+            "tree_path": m.tree_path or f"/{m.category}/{m.key}",
+            "is_folder": m.is_folder,
+            "created_at": m.created_at.isoformat() if m.created_at else None,
+            "updated_at": m.updated_at.isoformat() if m.updated_at else None,
+            "children": [],
+        }
+
+    roots: list[dict] = []
+    for m in memories:
+        node = nodes_map[str(m.id)]
+        if m.parent_id and str(m.parent_id) in nodes_map:
+            nodes_map[str(m.parent_id)]["children"].append(node)
+        else:
+            roots.append(node)
+
+    return {
+        "tree": roots,
+        "total_count": len(memories),
+    }
+
+
+@router.get("/core/markdown")
+async def get_core_memory_markdown(
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(get_current_user),
+) -> dict:
+    """Export current user's core memories as formatted MEMORY.md."""
+    from ..services.dreaming_service import export_core_memory_markdown
+    md = await export_core_memory_markdown(db, _user)
+    return {"markdown": md}
+
+
+@router.post("/core")
+async def create_core_memory(
+    body: CoreMemoryCreate,
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(get_current_user),
+) -> dict:
+    """Manually add or update a core memory entry."""
+    cat = (body.category or "general").strip().lower()
+    key = body.key.strip().lower().replace(" ", "_")
+    content = body.content.strip()
+
+    if not key or not content:
+        return {"error": "key and content are required"}
+
+    # Compute path
+    tree_path = body.tree_path
+    if not tree_path:
+        if body.parent_id:
+            parent = (await db.execute(
+                select(UserMemory).where(UserMemory.id == body.parent_id, UserMemory.user_id == _user.id)
+            )).scalar_one_or_none()
+            if parent:
+                parent_p = parent.tree_path or f"/{parent.category}/{parent.key}"
+                tree_path = f"{parent_p.rstrip('/')}/{key}"
+        if not tree_path:
+            tree_path = f"/{cat}/{key}"
+
+    existing = (await db.execute(
+        select(UserMemory).where(
+            UserMemory.user_id == _user.id,
+            UserMemory.category == cat,
+            UserMemory.key == key,
+        ).limit(1)
+    )).scalar_one_or_none()
+
+    if existing:
+        existing.content = content
+        existing.confidence = body.confidence
+        existing.source = "manual"
+        existing.parent_id = body.parent_id
+        existing.tree_path = tree_path
+        existing.is_folder = body.is_folder
+        existing.updated_at = datetime.now(timezone.utc)
+        await db.commit()
+        return {"status": "updated", "id": str(existing.id)}
+
+    new_mem = UserMemory(
+        user_id=_user.id,
+        category=cat,
+        key=key,
+        content=content,
+        confidence=body.confidence,
+        source="manual",
+        parent_id=body.parent_id,
+        tree_path=tree_path,
+        is_folder=body.is_folder,
+    )
+    db.add(new_mem)
+    await db.commit()
+    await db.refresh(new_mem)
+    return {"status": "created", "id": str(new_mem.id)}
+
+
+@router.put("/core/{memory_id}")
+async def update_core_memory(
+    memory_id: uuid.UUID,
+    body: CoreMemoryUpdate,
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(get_current_user),
+) -> dict:
+    """Update an existing core memory entry."""
+    mem = (await db.execute(
+        select(UserMemory).where(UserMemory.id == memory_id, UserMemory.user_id == _user.id)
+    )).scalar_one_or_none()
+    if not mem:
+        return {"error": "not found"}
+
+    if body.category is not None:
+        mem.category = body.category.strip().lower()
+    if body.key is not None:
+        mem.key = body.key.strip().lower().replace(" ", "_")
+    if body.content is not None:
+        mem.content = body.content.strip()
+    if body.confidence is not None:
+        mem.confidence = body.confidence
+    if body.parent_id is not None:
+        mem.parent_id = body.parent_id
+    if body.tree_path is not None:
+        mem.tree_path = body.tree_path.strip()
+    if body.is_folder is not None:
+        mem.is_folder = body.is_folder
+    mem.updated_at = datetime.now(timezone.utc)
+
+    await db.commit()
+    return {"status": "updated", "id": str(mem.id)}
+
+
+@router.delete("/core/{memory_id}")
+async def delete_core_memory(
+    memory_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(get_current_user),
+) -> dict:
+    """Delete a core memory entry (pruning/forgetting)."""
+    mem = (await db.execute(
+        select(UserMemory).where(UserMemory.id == memory_id, UserMemory.user_id == _user.id)
+    )).scalar_one_or_none()
+    if not mem:
+        return {"error": "not found"}
+
+    await db.delete(mem)
+    await db.commit()
+    return {"status": "deleted", "id": str(memory_id)}
+
+
+# ---------------------------------------------------------------------------
+# Dreaming & Dream Journals (DREAMS.md) Endpoints
+# ---------------------------------------------------------------------------
+@router.get("/dreams")
+async def list_dream_journals(
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(get_current_user),
+) -> dict:
+    """List historical dream journals for the current user."""
+    stmt = (
+        select(DreamJournal)
+        .where(DreamJournal.user_id == _user.id)
+        .order_by(DreamJournal.created_at.desc())
+        .offset(offset)
+        .limit(limit)
+    )
+    res = await db.execute(stmt)
+    journals = res.scalars().all()
+
+    return {
+        "journals": [
+            {
+                "id": str(j.id),
+                "dream_date": j.dream_date.isoformat(),
+                "stage_metrics": j.stage_metrics or {},
+                "created_at": j.created_at.isoformat() if j.created_at else None,
+                "summary_snippet": (j.rem_reflections or j.light_sleep_notes or "")[:200],
+            }
+            for j in journals
+        ]
+    }
+
+
+@router.get("/dreams/{dream_id}")
+async def get_dream_journal_detail(
+    dream_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(get_current_user),
+) -> dict:
+    """Get full details and markdown report of a single dream journal."""
+    journal = (await db.execute(
+        select(DreamJournal).where(DreamJournal.id == dream_id, DreamJournal.user_id == _user.id)
+    )).scalar_one_or_none()
+    if not journal:
+        return {"error": "not found"}
+
+    return {
+        "id": str(journal.id),
+        "dream_date": journal.dream_date.isoformat(),
+        "stage_metrics": journal.stage_metrics or {},
+        "light_sleep_notes": journal.light_sleep_notes,
+        "rem_reflections": journal.rem_reflections,
+        "deep_consolidations": journal.deep_consolidations,
+        "report_markdown": journal.report_markdown,
+        "created_at": journal.created_at.isoformat() if journal.created_at else None,
+    }
+
+
+class DreamTriggerRequest(BaseModel):
+    days_back: int = 1
+
+
+@router.post("/dream")
+async def trigger_on_demand_dream(
+    body: DreamTriggerRequest | None = None,
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(get_current_user),
+) -> dict:
+    """Trigger an on-demand Dreaming Consolidation cycle for the current user."""
+    from ..services.dreaming_service import run_dreaming_pipeline
+
+    days = body.days_back if body else 1
+    journal = await run_dreaming_pipeline(db, _user, days_back=days)
+
+    return {
+        "status": "completed",
+        "journal_id": str(journal.id),
+        "dream_date": journal.dream_date.isoformat(),
+        "stage_metrics": journal.stage_metrics,
+        "report_markdown": journal.report_markdown,
+    }
+

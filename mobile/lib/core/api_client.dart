@@ -135,6 +135,110 @@ class ApiClient {
     return response.data as Map<String, dynamic>;
   }
 
+  // --- 3-Tier Memory & Dreaming Consolidation ---
+
+  Future<Map<String, dynamic>> getMemoryTiers() async {
+    final response = await _dio.get('/api/memory/tiers');
+    return response.data as Map<String, dynamic>;
+  }
+
+  Future<List<dynamic>> getCoreMemories({String? category}) async {
+    final response = await _dio.get(
+      '/api/memory/core',
+      queryParameters: {
+        if (category != null) 'category': category,
+      },
+    );
+    if (response.data is List) {
+      return response.data as List<dynamic>;
+    }
+    return [];
+  }
+
+  Future<Map<String, dynamic>> getCoreMemoryTree() async {
+    final response = await _dio.get('/api/memory/core/tree');
+    return response.data as Map<String, dynamic>;
+  }
+
+  Future<String> getCoreMemoryMarkdown() async {
+    final response = await _dio.get('/api/memory/core/markdown');
+    return (response.data as Map<String, dynamic>)['markdown']?.toString() ?? '';
+  }
+
+  Future<Map<String, dynamic>> createCoreMemory(
+    String category,
+    String key,
+    String content, {
+    double confidence = 1.0,
+    String? parentId,
+    String? treePath,
+    bool isFolder = false,
+  }) async {
+    final response = await _dio.post(
+      '/api/memory/core',
+      data: {
+        'category': category,
+        'key': key,
+        'content': content,
+        'confidence': confidence,
+        if (parentId != null) 'parent_id': parentId,
+        if (treePath != null) 'tree_path': treePath,
+        'is_folder': isFolder,
+      },
+    );
+    return response.data as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> updateCoreMemory(
+    String id, {
+    String? category,
+    String? key,
+    String? content,
+    double? confidence,
+    String? parentId,
+    String? treePath,
+    bool? isFolder,
+  }) async {
+    final response = await _dio.put(
+      '/api/memory/core/$id',
+      data: {
+        if (category != null) 'category': category,
+        if (key != null) 'key': key,
+        if (content != null) 'content': content,
+        if (confidence != null) 'confidence': confidence,
+        if (parentId != null) 'parent_id': parentId,
+        if (treePath != null) 'tree_path': treePath,
+        if (isFolder != null) 'is_folder': isFolder,
+      },
+    );
+    return response.data as Map<String, dynamic>;
+  }
+
+  Future<void> deleteCoreMemory(String id) async {
+    await _dio.delete('/api/memory/core/$id');
+  }
+
+  Future<Map<String, dynamic>> getDreamJournals({int limit = 20, int offset = 0}) async {
+    final response = await _dio.get(
+      '/api/memory/dreams',
+      queryParameters: {'limit': limit, 'offset': offset},
+    );
+    return response.data as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> getDreamJournalDetail(String id) async {
+    final response = await _dio.get('/api/memory/dreams/$id');
+    return response.data as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> triggerDream({int daysBack = 1}) async {
+    final response = await _dio.post(
+      '/api/memory/dream',
+      data: {'days_back': daysBack},
+    );
+    return response.data as Map<String, dynamic>;
+  }
+
   Future<Map<String, dynamic>> getDocument(String id) async {
     final response = await _dio.get('/api/documents/$id');
     return response.data as Map<String, dynamic>;

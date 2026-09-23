@@ -55,6 +55,7 @@ celery_app = Celery(
         "server.tasks.tsvector_backfill",
         "server.tasks.title_backfill",
         "server.tasks.db_backup",
+        "server.tasks.dreaming_tasks",
     ],
 )
 
@@ -90,6 +91,12 @@ celery_app.conf.beat_schedule = {
         # offset_days=-1 → "yesterday" relative to wallclock at 03:30,
         # i.e. re-bake the day that just ended.
         "kwargs": {"offset_days": -1},
+    },
+    # Daily 03:00 — Nightly dreaming memory consolidation (Light -> REM -> Deep -> MEMORY.md)
+    "nightly-dreaming": {
+        "task": "server.tasks.dreaming_tasks.run_nightly_dreaming",
+        "schedule": crontab(hour=3, minute=0),
+        "kwargs": {"days_back": 1},
     },
     # Every 15 min: reattempt documents whose embedding pipeline errored
     # (e.g. the host-side BGE-M3 server was briefly unreachable).
