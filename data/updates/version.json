@@ -1,6 +1,6 @@
 {
-  "version": "1.0.44",
-  "title": "Memento v1.0.44",
+  "version": "1.0.45",
+  "title": "Memento v1.0.45",
   "release_notes": "1. 视觉与交互全面升级：采用 Aurora 极光暗色玻璃拟态 2.0，换装一体化圆角胶囊分段导航栏\n2. 核心工程体系化呈现：五大根维度配备发光 HUD 概览卡与专属领域色彩图标，并引入 IDE 级树状缩进导轨\n3. 毫秒级即时过滤：新增记忆树实时搜索框，支持一键清空与智能展开定位\n4. Web 记忆工作台同步升维：支持 39 个核心工程树状展开与 MEMORY.md 全文 Markdown 弹窗预览",
   "platforms": {
     "windows": {
