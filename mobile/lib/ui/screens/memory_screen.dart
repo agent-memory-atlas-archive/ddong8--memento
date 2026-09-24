@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../core/api_client.dart';
 import '../../core/theme/aurora_theme.dart';
 import '../../models/search_hit.dart';
@@ -30,6 +31,8 @@ class _MemoryScreenState extends State<MemoryScreen> with SingleTickerProviderSt
   final Set<String> _expandedTreePaths = {};
   String? _coreError;
   String? _selectedCategory;
+  final _treeFilterController = TextEditingController();
+  String _treeFilterQuery = '';
 
   // --- Tab 3: Dreaming State ---
   bool _isDreamLoading = false;
@@ -56,6 +59,7 @@ class _MemoryScreenState extends State<MemoryScreen> with SingleTickerProviderSt
   void dispose() {
     _tabController.dispose();
     _searchController.dispose();
+    _treeFilterController.dispose();
     super.dispose();
   }
 
@@ -786,32 +790,140 @@ class _MemoryScreenState extends State<MemoryScreen> with SingleTickerProviderSt
       appBar: AppBar(
         backgroundColor: AuroraColors.bg,
         elevation: 0,
-        title: const Row(
+        titleSpacing: 20,
+        title: Row(
           children: [
-            Icon(Icons.psychology_outlined, color: AuroraColors.accent, size: 22),
-            SizedBox(width: 8),
-            Text(
-              '外脑记忆库',
-              style: TextStyle(
-                color: AuroraColors.fg1,
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
+            Container(
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                gradient: AuroraColors.brandGradient,
+                borderRadius: BorderRadius.circular(9),
+                boxShadow: [
+                  BoxShadow(
+                    color: AuroraColors.accent.withValues(alpha: 0.3),
+                    blurRadius: 10,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
               ),
+              child: const Icon(Icons.psychology, size: 20, color: Colors.white),
+            ),
+            const SizedBox(width: 10),
+            const Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '外脑认知记忆库',
+                  style: TextStyle(
+                    color: AuroraColors.fg1,
+                    fontSize: 16.5,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: -0.5,
+                  ),
+                ),
+                Text(
+                  '三层认知架构 · 39 个核心工程 · 长期核心准则',
+                  style: TextStyle(fontSize: 10.5, color: AuroraColors.fg3),
+                ),
+              ],
             ),
           ],
         ),
-        bottom: TabBar(
-          controller: _tabController,
-          indicatorColor: AuroraColors.accent,
-          indicatorWeight: 2.5,
-          labelColor: AuroraColors.accent,
-          unselectedLabelColor: AuroraColors.fg3,
-          labelStyle: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold),
-          tabs: const [
-            Tab(text: '检索与图谱'),
-            Tab(text: '长期核心记忆'),
-            Tab(text: '做梦与分层'),
-          ],
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(48),
+          child: Container(
+            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            padding: const EdgeInsets.all(3),
+            decoration: BoxDecoration(
+              color: AuroraColors.surface,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AuroraColors.border, width: 0.8),
+            ),
+            child: TabBar(
+              controller: _tabController,
+              indicator: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0x3338BDF8), Color(0x226366F1)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(9),
+                border: Border.all(color: AuroraColors.accent.withValues(alpha: 0.6), width: 1),
+              ),
+              indicatorSize: TabBarIndicatorSize.tab,
+              dividerColor: Colors.transparent,
+              labelColor: AuroraColors.fg1,
+              unselectedLabelColor: AuroraColors.fg3,
+              labelStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+              unselectedLabelStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.normal),
+              tabs: [
+                Tab(
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.search_rounded, size: 16),
+                      const SizedBox(width: 6),
+                      const Text('检索与图谱'),
+                      if (_hits.isNotEmpty) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: AuroraColors.accent.withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text('${_hits.length}', style: const TextStyle(fontSize: 10, color: AuroraColors.accent)),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                Tab(
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.account_tree_rounded, size: 16),
+                      const SizedBox(width: 6),
+                      const Text('长期核心准则'),
+                      if (_coreMemories.isNotEmpty) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF10B981).withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text('${_coreMemories.length}', style: const TextStyle(fontSize: 10, color: Color(0xFF10B981))),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                Tab(
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.auto_awesome_rounded, size: 16),
+                      const SizedBox(width: 6),
+                      const Text('做梦与认知分层'),
+                      if (_dreamJournals.isNotEmpty) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFA855F7).withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text('${_dreamJournals.length}', style: const TextStyle(fontSize: 10, color: Color(0xFFA855F7))),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
       body: TabBarView(
@@ -997,68 +1109,264 @@ class _MemoryScreenState extends State<MemoryScreen> with SingleTickerProviderSt
   }
 
   // --- View: Tab 2 (Core Memory / MEMORY.md) ---
+  List<dynamic> _filterTreeNodes(List<dynamic> nodes, String query) {
+    if (query.isEmpty) return nodes;
+    final q = query.toLowerCase().trim();
+    final List<dynamic> filtered = [];
+
+    for (final node in nodes) {
+      if (node is! Map<String, dynamic>) continue;
+      final isFolder = node['is_folder'] == true;
+      final name = (node['name']?.toString() ?? '').toLowerCase();
+      final title = (node['title']?.toString() ?? '').toLowerCase();
+      final key = (node['key']?.toString() ?? '').toLowerCase();
+      final content = (node['content']?.toString() ?? '').toLowerCase();
+      final treePath = (node['tree_path']?.toString() ?? '').toLowerCase();
+
+      final selfMatches = name.contains(q) ||
+          title.contains(q) ||
+          key.contains(q) ||
+          content.contains(q) ||
+          treePath.contains(q);
+
+      if (isFolder) {
+        final children = node['children'] as List<dynamic>? ?? [];
+        final filteredChildren = _filterTreeNodes(children, query);
+        if (selfMatches || filteredChildren.isNotEmpty) {
+          final copy = Map<String, dynamic>.from(node);
+          copy['children'] = filteredChildren.isNotEmpty ? filteredChildren : children;
+          filtered.add(copy);
+          final tp = node['tree_path']?.toString();
+          if (tp != null) _expandedTreePaths.add(tp);
+        }
+      } else {
+        if (selfMatches) {
+          filtered.add(node);
+        }
+      }
+    }
+    return filtered;
+  }
+
+  int _countCategoryLeaves(String? cat) {
+    if (cat == null) return _coreMemories.length;
+    return _coreMemories.where((m) {
+      final c = (m['category']?.toString() ?? '').toLowerCase();
+      if (cat == 'rules' || cat == 'rule') return c == 'rule' || c == 'rules';
+      if (cat == 'tools' || cat == 'tool') return c == 'tool' || c == 'tools';
+      return c == cat.toLowerCase();
+    }).length;
+  }
+
+  IconData _getProjectIcon(String slug) {
+    final s = slug.toLowerCase();
+    if (s.contains('quant') || s.contains('bot') || s.contains('backtest') || s.contains('maker')) {
+      return Icons.candlestick_chart_rounded;
+    }
+    if (s.contains('chem') || s.contains('pubchem') || s.contains('cas') || s.contains('reaction') || s.contains('scifinder') || s.contains('smiles') || s.contains('reaxys')) {
+      return Icons.science_rounded;
+    }
+    if (s.contains('desktop') || s.contains('kasm') || s.contains('webrtc') || s.contains('openclaw')) {
+      return Icons.desktop_windows_rounded;
+    }
+    if (s.contains('k8s') || s.contains('vps') || s.contains('infra') || s.contains('monitor') || s.contains('gateway')) {
+      return Icons.dns_rounded;
+    }
+    if (s.contains('chat') || s.contains('copilot') || s.contains('wechat') || s.contains('voice')) {
+      return Icons.forum_rounded;
+    }
+    if (s.contains('aicut') || s.contains('film')) {
+      return Icons.movie_filter_rounded;
+    }
+    if (s.contains('ray') || s.contains('ml') || s.contains('sglang') || s.contains('mem0')) {
+      return Icons.memory_rounded;
+    }
+    if (s.contains('sso') || s.contains('pay') || s.contains('zentao') || s.contains('yicaigou') || s.contains('daily')) {
+      return Icons.token_rounded;
+    }
+    return Icons.folder_rounded;
+  }
+
+  Color _getProjectBadgeColor(String slug) {
+    final s = slug.toLowerCase();
+    if (s.contains('quant') || s.contains('bot') || s.contains('maker')) return const Color(0xFF10B981);
+    if (s.contains('chem') || s.contains('pubchem') || s.contains('cas') || s.contains('scifinder')) return const Color(0xFF06B6D4);
+    if (s.contains('desktop') || s.contains('kasm') || s.contains('openclaw')) return const Color(0xFF8B5CF6);
+    if (s.contains('k8s') || s.contains('vps') || s.contains('infra')) return const Color(0xFF3B82F6);
+    if (s.contains('chat') || s.contains('copilot') || s.contains('daily')) return const Color(0xFFEC4899);
+    return const Color(0xFF6366F1);
+  }
+
+  Widget _buildModernCategoryPill(String? category, String label, IconData icon, Color color) {
+    final selected = _selectedCategory == category;
+    final count = _countCategoryLeaves(category);
+
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: InkWell(
+        onTap: () {
+          setState(() {
+            _selectedCategory = selected ? null : category;
+          });
+          _loadCoreMemories();
+        },
+        borderRadius: BorderRadius.circular(20),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 5.5),
+          decoration: BoxDecoration(
+            color: selected ? color.withValues(alpha: 0.18) : AuroraColors.surface,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: selected ? color.withValues(alpha: 0.8) : AuroraColors.border,
+              width: selected ? 1.2 : 0.8,
+            ),
+            boxShadow: selected
+                ? [
+                    BoxShadow(
+                      color: color.withValues(alpha: 0.25),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ]
+                : null,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 14, color: selected ? color : AuroraColors.fg3),
+              const SizedBox(width: 5),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: selected ? FontWeight.bold : FontWeight.w500,
+                  color: selected ? AuroraColors.fg1 : AuroraColors.fg2,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 5.5, vertical: 1),
+                decoration: BoxDecoration(
+                  color: selected ? color.withValues(alpha: 0.25) : AuroraColors.chip,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  '$count',
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.bold,
+                    color: selected ? color : AuroraColors.fg3,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildCoreMemoryTab() {
     return Column(
       children: [
+        // Top Dimension HUD & Metric Bar
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
           decoration: const BoxDecoration(
-            border: Border(bottom: BorderSide(color: AuroraColors.border, width: 0.5)),
+            color: AuroraColors.bg2,
+            border: Border(bottom: BorderSide(color: AuroraColors.border, width: 0.8)),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // Dimension Filter Pills (HUD)
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    _buildModernCategoryPill(null, '全部准则', Icons.grid_view_rounded, const Color(0xFF94A3B8)),
+                    _buildModernCategoryPill('project', '核心工程', Icons.rocket_launch_rounded, const Color(0xFF10B981)),
+                    _buildModernCategoryPill('architecture', '架构决策', Icons.account_tree_rounded, const Color(0xFF38BDF8)),
+                    _buildModernCategoryPill('rules', '工程铁律', Icons.shield_outlined, const Color(0xFFF59E0B)),
+                    _buildModernCategoryPill('tools', '工具中台', Icons.construction_rounded, const Color(0xFFFB923C)),
+                    _buildModernCategoryPill('preference', '开发偏好', Icons.psychology_outlined, const Color(0xFFA855F7)),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 10),
+
+              // Live Search & Control Action Bar
               Row(
                 children: [
+                  // Fast Filter Input
                   Expanded(
-                    child: SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: Row(
-                        children: [
-                          _buildCategoryChip(null, '全部'),
-                          _buildCategoryChip('architecture', '架构设计'),
-                          _buildCategoryChip('rules', '开发铁律'),
-                          _buildCategoryChip('preference', '个人偏好'),
-                          _buildCategoryChip('project', '项目知识'),
-                          _buildCategoryChip('tools', '工具生态'),
-                        ],
+                    child: Container(
+                      height: 36,
+                      decoration: BoxDecoration(
+                        color: AuroraColors.surface,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: _treeFilterQuery.isNotEmpty
+                              ? AuroraColors.accent.withValues(alpha: 0.6)
+                              : AuroraColors.border,
+                          width: 0.8,
+                        ),
+                      ),
+                      child: TextField(
+                        controller: _treeFilterController,
+                        onChanged: (val) {
+                          setState(() {
+                            _treeFilterQuery = val.trim();
+                          });
+                        },
+                        style: const TextStyle(color: AuroraColors.fg1, fontSize: 13),
+                        decoration: InputDecoration(
+                          hintText: '实时过滤 39 个工程、技术标识或规则关键词...',
+                          hintStyle: const TextStyle(color: AuroraColors.fg3, fontSize: 12),
+                          prefixIcon: const Icon(Icons.filter_list_rounded, color: AuroraColors.fg3, size: 17),
+                          suffixIcon: _treeFilterQuery.isNotEmpty
+                              ? IconButton(
+                                  icon: const Icon(Icons.clear, size: 15, color: AuroraColors.fg3),
+                                  onPressed: () {
+                                    _treeFilterController.clear();
+                                    setState(() {
+                                      _treeFilterQuery = '';
+                                    });
+                                  },
+                                )
+                              : null,
+                          isDense: true,
+                          contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                          border: InputBorder.none,
+                          enabledBorder: InputBorder.none,
+                          focusedBorder: InputBorder.none,
+                        ),
                       ),
                     ),
                   ),
-                  IconButton(
-                    tooltip: '预览 MEMORY.md 全文',
-                    icon: const Icon(Icons.menu_book, color: AuroraColors.accent, size: 20),
-                    onPressed: _showFullMemoryMarkdown,
-                  ),
-                  IconButton(
-                    tooltip: '手动添加记忆条目',
-                    icon: const Icon(Icons.add_circle_outline, color: AuroraColors.accent, size: 20),
-                    onPressed: () => _showAddOrEditMemoryDialog(),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 6),
-              Row(
-                children: [
+                  const SizedBox(width: 10),
+
+                  // View Toggle (Tree vs Flat)
                   Container(
-                    height: 30,
-                    padding: const EdgeInsets.all(2),
+                    height: 36,
+                    padding: const EdgeInsets.all(2.5),
                     decoration: BoxDecoration(
                       color: AuroraColors.surface,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: AuroraColors.border, width: 0.5),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: AuroraColors.border, width: 0.8),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         InkWell(
                           onTap: () => setState(() => _isTreeView = true),
-                          borderRadius: BorderRadius.circular(6),
+                          borderRadius: BorderRadius.circular(7),
                           child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                             decoration: BoxDecoration(
-                              color: _isTreeView ? AuroraColors.accent.withValues(alpha: 0.2) : Colors.transparent,
-                              borderRadius: BorderRadius.circular(6),
+                              color: _isTreeView ? AuroraColors.accent.withValues(alpha: 0.22) : Colors.transparent,
+                              borderRadius: BorderRadius.circular(7),
                             ),
                             child: Row(
                               children: [
@@ -1071,7 +1379,7 @@ class _MemoryScreenState extends State<MemoryScreen> with SingleTickerProviderSt
                                 Text(
                                   '树状目录',
                                   style: TextStyle(
-                                    fontSize: 11.5,
+                                    fontSize: 12,
                                     fontWeight: _isTreeView ? FontWeight.bold : FontWeight.normal,
                                     color: _isTreeView ? AuroraColors.accent : AuroraColors.fg3,
                                   ),
@@ -1082,12 +1390,12 @@ class _MemoryScreenState extends State<MemoryScreen> with SingleTickerProviderSt
                         ),
                         InkWell(
                           onTap: () => setState(() => _isTreeView = false),
-                          borderRadius: BorderRadius.circular(6),
+                          borderRadius: BorderRadius.circular(7),
                           child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                             decoration: BoxDecoration(
-                              color: !_isTreeView ? AuroraColors.accent.withValues(alpha: 0.2) : Colors.transparent,
-                              borderRadius: BorderRadius.circular(6),
+                              color: !_isTreeView ? AuroraColors.accent.withValues(alpha: 0.22) : Colors.transparent,
+                              borderRadius: BorderRadius.circular(7),
                             ),
                             child: Row(
                               children: [
@@ -1100,7 +1408,7 @@ class _MemoryScreenState extends State<MemoryScreen> with SingleTickerProviderSt
                                 Text(
                                   '平铺列表',
                                   style: TextStyle(
-                                    fontSize: 11.5,
+                                    fontSize: 12,
                                     fontWeight: !_isTreeView ? FontWeight.bold : FontWeight.normal,
                                     color: !_isTreeView ? AuroraColors.accent : AuroraColors.fg3,
                                   ),
@@ -1112,48 +1420,87 @@ class _MemoryScreenState extends State<MemoryScreen> with SingleTickerProviderSt
                       ],
                     ),
                   ),
+
                   if (_isTreeView) ...[
                     const SizedBox(width: 8),
                     InkWell(
                       onTap: _toggleExpandAll,
-                      borderRadius: BorderRadius.circular(6),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                      borderRadius: BorderRadius.circular(8),
+                      child: Container(
+                        height: 36,
+                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                        decoration: BoxDecoration(
+                          color: AuroraColors.surface,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: AuroraColors.border, width: 0.8),
+                        ),
                         child: Row(
-                          mainAxisSize: MainAxisSize.min,
                           children: [
                             Icon(
-                              _expandedTreePaths.isNotEmpty ? Icons.unfold_less : Icons.unfold_more,
-                              size: 15,
+                              _expandedTreePaths.isNotEmpty ? Icons.unfold_less_rounded : Icons.unfold_more_rounded,
+                              size: 16,
                               color: AuroraColors.fg2,
                             ),
                             const SizedBox(width: 4),
                             Text(
-                              _expandedTreePaths.isNotEmpty ? '折叠全部' : '展开全部',
-                              style: const TextStyle(fontSize: 11, color: AuroraColors.fg2),
+                              _expandedTreePaths.isNotEmpty ? '折叠' : '展开',
+                              style: const TextStyle(fontSize: 11.5, color: AuroraColors.fg2),
                             ),
                           ],
                         ),
                       ),
                     ),
                   ],
-                  const Spacer(),
-                  Text(
-                    _isTreeView
-                        ? '${_coreMemoryTree.length} 个根维度'
-                        : '${_coreMemories.length} 条记忆',
-                    style: const TextStyle(fontSize: 11, color: AuroraColors.fg3),
+
+                  const SizedBox(width: 8),
+                  // MEMORY.md Full Markdown preview button
+                  InkWell(
+                    onTap: _showFullMemoryMarkdown,
+                    borderRadius: BorderRadius.circular(8),
+                    child: Container(
+                      height: 36,
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      decoration: BoxDecoration(
+                        color: AuroraColors.surface,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: AuroraColors.accent.withValues(alpha: 0.4), width: 0.8),
+                      ),
+                      child: const Row(
+                        children: [
+                          Icon(Icons.menu_book_rounded, color: AuroraColors.accent, size: 16),
+                          SizedBox(width: 4),
+                          Text(
+                            'MEMORY.md',
+                            style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: AuroraColors.accent),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(width: 8),
+                  // Add Memory Button
+                  ElevatedButton.icon(
+                    icon: const Icon(Icons.add_rounded, size: 16),
+                    label: const Text('新增', style: TextStyle(fontSize: 12)),
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      minimumSize: const Size(0, 36),
+                    ),
+                    onPressed: () => _showAddOrEditMemoryDialog(),
                   ),
                 ],
               ),
             ],
           ),
         ),
+
         if (_coreError != null)
           Padding(
             padding: const EdgeInsets.all(16),
             child: Text(_coreError!, style: const TextStyle(color: AuroraColors.danger, fontSize: 13)),
           ),
+
         Expanded(
           child: _isCoreLoading
               ? const Center(child: CircularProgressIndicator(color: AuroraColors.accent))
@@ -1196,32 +1543,52 @@ class _MemoryScreenState extends State<MemoryScreen> with SingleTickerProviderSt
   }
 
   IconData _getDimensionIcon(String path) {
-    if (path.startsWith('/architecture')) return Icons.account_tree_outlined;
-    if (path.startsWith('/rules') || path.startsWith('/rule')) return Icons.security_outlined;
+    if (path.startsWith('/architecture')) return Icons.account_tree_rounded;
+    if (path.startsWith('/rules') || path.startsWith('/rule')) return Icons.shield_outlined;
     if (path.startsWith('/preference')) return Icons.psychology_outlined;
-    if (path.startsWith('/project')) return Icons.rocket_launch_outlined;
-    if (path.startsWith('/tools') || path.startsWith('/tool')) return Icons.construction_outlined;
-    return Icons.folder_outlined;
+    if (path.startsWith('/project')) return Icons.rocket_launch_rounded;
+    if (path.startsWith('/tools') || path.startsWith('/tool')) return Icons.construction_rounded;
+    return Icons.folder_rounded;
   }
 
   Widget _buildDirectoryTreeView() {
-    if (_coreMemoryTree.isEmpty) {
+    final effectiveTree = _filterTreeNodes(_coreMemoryTree, _treeFilterQuery);
+
+    if (effectiveTree.isEmpty) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.account_tree_outlined, size: 40, color: AuroraColors.fg3),
-            const SizedBox(height: 12),
-            const Text(
-              '当前分类下暂无树状记忆',
-              style: TextStyle(color: AuroraColors.fg3, fontSize: 14),
+            Icon(
+              _treeFilterQuery.isNotEmpty ? Icons.search_off_rounded : Icons.account_tree_outlined,
+              size: 44,
+              color: AuroraColors.fg3,
             ),
             const SizedBox(height: 12),
-            ElevatedButton.icon(
-              icon: const Icon(Icons.add, size: 16),
-              label: const Text('新增第一条长期记忆'),
-              onPressed: () => _showAddOrEditMemoryDialog(),
+            Text(
+              _treeFilterQuery.isNotEmpty
+                  ? '未找到匹配「$_treeFilterQuery」的工程或准则'
+                  : '当前分类下暂无树状记忆',
+              style: const TextStyle(color: AuroraColors.fg2, fontSize: 14),
             ),
+            if (_treeFilterQuery.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.clear, size: 14),
+                label: const Text('清空过滤条件'),
+                onPressed: () {
+                  _treeFilterController.clear();
+                  setState(() => _treeFilterQuery = '');
+                },
+              ),
+            ] else ...[
+              const SizedBox(height: 12),
+              ElevatedButton.icon(
+                icon: const Icon(Icons.add, size: 16),
+                label: const Text('新增第一条长期记忆'),
+                onPressed: () => _showAddOrEditMemoryDialog(),
+              ),
+            ],
           ],
         ),
       );
@@ -1231,10 +1598,10 @@ class _MemoryScreenState extends State<MemoryScreen> with SingleTickerProviderSt
       onRefresh: _loadCoreMemories,
       color: AuroraColors.accent,
       child: ListView.builder(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        itemCount: _coreMemoryTree.length,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        itemCount: effectiveTree.length,
         itemBuilder: (context, index) {
-          final node = _coreMemoryTree[index] as Map<String, dynamic>;
+          final node = effectiveTree[index] as Map<String, dynamic>;
           return _buildTreeNode(node, depth: 0);
         },
       ),
@@ -1247,201 +1614,424 @@ class _MemoryScreenState extends State<MemoryScreen> with SingleTickerProviderSt
 
     if (isFolder) {
       final title = node['title']?.toString() ?? path.split('/').last;
+      final slug = node['name']?.toString() ?? path.split('/').last;
       final children = (node['children'] as List<dynamic>? ?? []);
       final leafCount = _countLeaves(node);
       final isExpanded = _expandedTreePaths.contains(path);
       final isRoot = depth == 0;
-      final iconColor = isRoot
-          ? _getCategoryColor(node['category']?.toString() ?? path.replaceAll('/', ''))
-          : AuroraColors.accent;
-      final folderIcon = isRoot
-          ? _getDimensionIcon(path)
-          : (isExpanded ? Icons.folder_open_rounded : Icons.folder_rounded);
+      final cat = node['category']?.toString() ?? path.replaceAll('/', '');
+      final dimensionColor = _getCategoryColor(cat);
 
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            margin: EdgeInsets.only(
-              left: depth * 14.0,
-              top: isRoot ? 6 : 3,
-              bottom: 3,
+      if (isRoot) {
+        // --- Level 0: Dimension Hero Card ---
+        final rootIcon = _getDimensionIcon(path);
+        return Container(
+          margin: const EdgeInsets.only(top: 8, bottom: 4),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                dimensionColor.withValues(alpha: isExpanded ? 0.14 : 0.07),
+                AuroraColors.surfaceSolid.withValues(alpha: 0.95),
+              ],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
             ),
-            decoration: BoxDecoration(
-              color: isRoot
-                  ? AuroraColors.surface.withValues(alpha: 0.7)
-                  : Colors.transparent,
-              borderRadius: BorderRadius.circular(8),
-              border: isRoot
-                  ? Border.all(color: AuroraColors.border.withValues(alpha: 0.6), width: 0.8)
-                  : null,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: dimensionColor.withValues(alpha: isExpanded ? 0.45 : 0.2),
+              width: 1,
             ),
-            child: InkWell(
-              onTap: () {
-                setState(() {
-                  if (isExpanded) {
-                    _expandedTreePaths.remove(path);
-                  } else {
-                    _expandedTreePaths.add(path);
-                  }
-                });
-              },
-              borderRadius: BorderRadius.circular(8),
-              child: Padding(
-                padding: EdgeInsets.symmetric(horizontal: isRoot ? 12 : 8, vertical: isRoot ? 10 : 6),
-                child: Row(
-                  children: [
-                    Icon(folderIcon, size: isRoot ? 20 : 18, color: iconColor),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        title,
-                        style: TextStyle(
-                          fontSize: isRoot ? 14.5 : 13.5,
-                          fontWeight: isRoot ? FontWeight.bold : FontWeight.w600,
-                          color: isRoot ? AuroraColors.fg1 : AuroraColors.fg2,
+            boxShadow: isExpanded
+                ? [
+                    BoxShadow(
+                      color: dimensionColor.withValues(alpha: 0.12),
+                      blurRadius: 12,
+                      offset: const Offset(0, 3),
+                    ),
+                  ]
+                : null,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              InkWell(
+                onTap: () {
+                  setState(() {
+                    if (isExpanded) {
+                      _expandedTreePaths.remove(path);
+                    } else {
+                      _expandedTreePaths.add(path);
+                    }
+                  });
+                },
+                borderRadius: BorderRadius.circular(12),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 32,
+                        height: 32,
+                        decoration: BoxDecoration(
+                          color: dimensionColor.withValues(alpha: 0.2),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: dimensionColor.withValues(alpha: 0.4), width: 1),
+                        ),
+                        child: Icon(rootIcon, size: 18, color: dimensionColor),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              title,
+                              style: const TextStyle(
+                                fontSize: 14.5,
+                                fontWeight: FontWeight.bold,
+                                color: AuroraColors.fg1,
+                                letterSpacing: -0.2,
+                              ),
+                            ),
+                            Text(
+                              path,
+                              style: const TextStyle(fontSize: 10.5, color: AuroraColors.fg3, fontFamily: 'monospace'),
+                            ),
+                          ],
                         ),
                       ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: AuroraColors.surfaceSolid,
-                        borderRadius: BorderRadius.circular(10),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: dimensionColor.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: dimensionColor.withValues(alpha: 0.3), width: 0.8),
+                        ),
+                        child: Text(
+                          '$leafCount 条准则',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: dimensionColor,
+                          ),
+                        ),
                       ),
-                      child: Text(
-                        '$leafCount 条',
-                        style: const TextStyle(fontSize: 10, color: AuroraColors.fg3),
+                      const SizedBox(width: 8),
+                      Icon(
+                        isExpanded ? Icons.keyboard_arrow_down_rounded : Icons.keyboard_arrow_right_rounded,
+                        size: 20,
+                        color: AuroraColors.fg3,
                       ),
-                    ),
-                    const SizedBox(width: 4),
-                    Icon(
-                      isExpanded ? Icons.keyboard_arrow_down : Icons.keyboard_arrow_right,
-                      size: 18,
-                      color: AuroraColors.fg3,
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
+              ),
+              if (isExpanded) ...[
+                Padding(
+                  padding: const EdgeInsets.only(left: 14, right: 10, bottom: 8),
+                  child: Column(
+                    children: [
+                      for (final child in children)
+                        if (child is Map<String, dynamic>)
+                          _buildTreeNode(child, depth: depth + 1),
+                    ],
+                  ),
+                ),
+              ],
+            ],
+          ),
+        );
+      } else {
+        // --- Level 1+: Subfolder / Project Card ---
+        final isProjectFolder = path.startsWith('/project/');
+        final projectIcon = isProjectFolder ? _getProjectIcon(slug) : (isExpanded ? Icons.folder_open_rounded : Icons.folder_rounded);
+        final badgeColor = isProjectFolder ? _getProjectBadgeColor(slug) : AuroraColors.accent;
+
+        return Container(
+          margin: EdgeInsets.only(
+            left: depth == 1 ? 4.0 : 16.0,
+            top: 3,
+            bottom: 3,
+          ),
+          decoration: BoxDecoration(
+            border: Border(
+              left: BorderSide(
+                color: AuroraColors.borderStrong.withValues(alpha: 0.6),
+                width: 1.5,
               ),
             ),
           ),
-          if (isExpanded) ...[
-            for (final child in children)
-              if (child is Map<String, dynamic>)
-                _buildTreeNode(child, depth: depth + 1),
-          ],
-        ],
-      );
+          child: Padding(
+            padding: const EdgeInsets.only(left: 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  decoration: BoxDecoration(
+                    color: isExpanded ? AuroraColors.surface.withValues(alpha: 0.85) : Colors.transparent,
+                    borderRadius: BorderRadius.circular(8),
+                    border: isExpanded
+                        ? Border.all(color: badgeColor.withValues(alpha: 0.3), width: 0.8)
+                        : null,
+                  ),
+                  child: InkWell(
+                    onTap: () {
+                      setState(() {
+                        if (isExpanded) {
+                          _expandedTreePaths.remove(path);
+                        } else {
+                          _expandedTreePaths.add(path);
+                        }
+                      });
+                    },
+                    borderRadius: BorderRadius.circular(8),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                      child: Row(
+                        children: [
+                          Icon(projectIcon, size: 17, color: badgeColor),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Row(
+                              children: [
+                                Flexible(
+                                  child: Text(
+                                    title,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: isExpanded ? FontWeight.bold : FontWeight.w600,
+                                      color: isExpanded ? AuroraColors.fg1 : AuroraColors.fg2,
+                                    ),
+                                  ),
+                                ),
+                                if (slug != title && slug.isNotEmpty) ...[
+                                  const SizedBox(width: 6),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                    decoration: BoxDecoration(
+                                      color: AuroraColors.chip,
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Text(
+                                      slug,
+                                      style: const TextStyle(fontSize: 10, color: AuroraColors.fg3, fontFamily: 'monospace'),
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                            decoration: BoxDecoration(
+                              color: AuroraColors.surfaceSolid,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: AuroraColors.border, width: 0.6),
+                            ),
+                            child: Text(
+                              '$leafCount 条',
+                              style: const TextStyle(fontSize: 10, color: AuroraColors.fg3),
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          Icon(
+                            isExpanded ? Icons.keyboard_arrow_down_rounded : Icons.keyboard_arrow_right_rounded,
+                            size: 16,
+                            color: AuroraColors.fg3,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                if (isExpanded) ...[
+                  for (final child in children)
+                    if (child is Map<String, dynamic>)
+                      _buildTreeNode(child, depth: depth + 1),
+                ],
+              ],
+            ),
+          ),
+        );
+      }
     } else {
-      // Leaf node / Memory entry
+      // --- Leaf Node / Memory Entry Card ---
       final cat = node['category']?.toString() ?? 'general';
       final key = node['key']?.toString() ?? node['title']?.toString() ?? '';
       final content = node['content']?.toString() ?? '';
       final confidence = (node['confidence'] as num?)?.toDouble() ?? 1.0;
       final source = node['source']?.toString() ?? 'dreaming';
+      final accentColor = _getCategoryColor(cat);
 
       return Container(
         margin: EdgeInsets.only(
-          left: depth * 14.0 + 4.0,
+          left: depth == 1 ? 4.0 : 16.0,
           top: 3,
           bottom: 5,
         ),
-        child: InkWell(
-          onTap: () => _showMemoryDetailModal(node),
-          borderRadius: BorderRadius.circular(8),
-          child: GlassCard(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
+        decoration: BoxDecoration(
+          border: Border(
+            left: BorderSide(
+              color: AuroraColors.borderStrong.withValues(alpha: 0.6),
+              width: 1.5,
+            ),
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.only(left: 8),
+          child: Container(
+            decoration: BoxDecoration(
+              color: AuroraColors.surfaceSolid,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: AuroraColors.border, width: 0.8),
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: IntrinsicHeight(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Icon(Icons.article_outlined, size: 16, color: _getCategoryColor(cat)),
-                    const SizedBox(width: 6),
+                    // Left Accent Color Bar (3.5px)
+                    Container(width: 3.5, color: accentColor),
+
+                    // Main Memory Card Content
                     Expanded(
-                      child: Text(
-                        key,
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.bold,
-                          color: AuroraColors.fg1,
+                      child: InkWell(
+                        onTap: () => _showMemoryDetailModal(node),
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // Top Bar: Key + Category + Source + Confidence
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      key,
+                                      style: const TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.bold,
+                                        color: AuroraColors.fg1,
+                                      ),
+                                    ),
+                                  ),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                    decoration: BoxDecoration(
+                                      color: accentColor.withValues(alpha: 0.15),
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Text(
+                                      cat.toUpperCase(),
+                                      style: TextStyle(
+                                        fontSize: 9.5,
+                                        fontWeight: FontWeight.bold,
+                                        color: accentColor,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                    decoration: BoxDecoration(
+                                      color: AuroraColors.chip,
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Text(
+                                      source == 'dreaming'
+                                          ? '🌙 梦境'
+                                          : (source == 'bootstrap' ? '🌟 自举' : '✍️ 手动'),
+                                      style: const TextStyle(fontSize: 9.5, color: AuroraColors.fg3),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    '${(confidence * 100).toInt()}% 置信',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w600,
+                                      color: confidence >= 0.9 ? const Color(0xFF10B981) : AuroraColors.fg3,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 6),
+
+                              // Content Text
+                              Text(
+                                content,
+                                maxLines: 3,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 12.5,
+                                  color: AuroraColors.fg1,
+                                  height: 1.45,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+
+                              // Footer Row: Monospace Tree Path + Action Buttons
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      path,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontSize: 10,
+                                        color: AuroraColors.fg3,
+                                        fontFamily: 'monospace',
+                                      ),
+                                    ),
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(Icons.copy_rounded, size: 14, color: AuroraColors.fg3),
+                                    tooltip: '复制记忆路径',
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+                                    onPressed: () {
+                                      Clipboard.setData(ClipboardData(text: path));
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(
+                                          content: Text('已复制: $path'),
+                                          duration: const Duration(seconds: 1),
+                                          behavior: SnackBarBehavior.floating,
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                  const SizedBox(width: 4),
+                                  IconButton(
+                                    icon: const Icon(Icons.edit_outlined, size: 14, color: AuroraColors.fg3),
+                                    tooltip: '编辑',
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+                                    onPressed: () => _showAddOrEditMemoryDialog(existing: node),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  IconButton(
+                                    icon: const Icon(Icons.delete_outline_rounded, size: 14, color: AuroraColors.danger),
+                                    tooltip: '遗忘/删除',
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+                                    onPressed: () {
+                                      if (node['id'] != null) {
+                                        _deleteMemory(node['id'].toString());
+                                      }
+                                    },
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
-                      decoration: BoxDecoration(
-                        color: _getCategoryColor(cat).withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Text(
-                        cat.toUpperCase(),
-                        style: TextStyle(
-                          fontSize: 9.5,
-                          fontWeight: FontWeight.bold,
-                          color: _getCategoryColor(cat),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
-                      decoration: BoxDecoration(
-                        color: AuroraColors.chip,
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Text(
-                        source == 'dreaming' ? '🌙 梦境' : (source == 'bootstrap' ? '🌟 自举' : '✍️ 手动'),
-                        style: const TextStyle(fontSize: 9.5, color: AuroraColors.fg3),
-                      ),
-                    ),
-                    PopupMenuButton<String>(
-                      icon: const Icon(Icons.more_vert, size: 16, color: AuroraColors.fg3),
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(),
-                      color: AuroraColors.surfaceSolid,
-                      onSelected: (action) {
-                        if (action == 'edit') {
-                          _showAddOrEditMemoryDialog(existing: node);
-                        } else if (action == 'delete') {
-                          if (node['id'] != null) {
-                            _deleteMemory(node['id'].toString());
-                          }
-                        }
-                      },
-                      itemBuilder: (ctx) => const [
-                        PopupMenuItem(value: 'edit', child: Text('编辑')),
-                        PopupMenuItem(value: 'delete', child: Text('遗忘/删除', style: TextStyle(color: AuroraColors.danger))),
-                      ],
-                    ),
                   ],
                 ),
-                const SizedBox(height: 6),
-                Text(
-                  content,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 12.5,
-                    color: AuroraColors.fg2,
-                    height: 1.4,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Row(
-                  children: [
-                    Text(
-                      path,
-                      style: const TextStyle(fontSize: 10.5, color: AuroraColors.fg3, fontFamily: 'monospace'),
-                    ),
-                    const Spacer(),
-                    Text(
-                      '置信度: ${(confidence * 100).toInt()}%',
-                      style: const TextStyle(fontSize: 10.5, color: AuroraColors.fg3),
-                    ),
-                  ],
-                ),
-              ],
+              ),
             ),
           ),
         ),
@@ -1736,24 +2326,6 @@ class _MemoryScreenState extends State<MemoryScreen> with SingleTickerProviderSt
     );
   }
 
-  Widget _buildCategoryChip(String? category, String label) {
-    final selected = _selectedCategory == category;
-    return Padding(
-      padding: const EdgeInsets.only(right: 6),
-      child: ChoiceChip(
-        label: Text(label, style: TextStyle(fontSize: 12, color: selected ? Colors.black : AuroraColors.fg2)),
-        selected: selected,
-        selectedColor: AuroraColors.accent,
-        backgroundColor: AuroraColors.surface,
-        onSelected: (val) {
-          setState(() {
-            _selectedCategory = val ? category : null;
-          });
-          _loadCoreMemories();
-        },
-      ),
-    );
-  }
 
   // --- View: Tab 3 (Dreaming & Memory Tiers) ---
   Widget _buildDreamingTab() {
