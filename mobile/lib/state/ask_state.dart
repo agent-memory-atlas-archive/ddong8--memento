@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/api_client.dart';
 import '../core/sse_client.dart';
+import '../core/storage.dart';
 import '../models/ask_turn.dart';
 import '../models/chat_attachment.dart';
 
@@ -82,6 +83,7 @@ class AskNotifier extends StateNotifier<AskState> {
     _sseClient.abort();
     _flushPending();
     state = AskState();
+    AppStorage.setLastAskConversationId(null);
   }
 
   void clearChat() {
@@ -100,6 +102,7 @@ class AskNotifier extends StateNotifier<AskState> {
       activeConversationTitle: title,
       error: null,
     );
+    AppStorage.setLastAskConversationId(null);
   }
 
   Future<void> loadConversation(
@@ -128,6 +131,8 @@ class AskNotifier extends StateNotifier<AskState> {
         isStreaming: false,
         error: null,
       );
+
+      AppStorage.setLastAskConversationId(id);
 
       onMetaLoaded?.call(
         res['device_id']?.toString(),
@@ -296,6 +301,7 @@ class AskNotifier extends StateNotifier<AskState> {
           activeConversationId: id,
           activeConversationTitle: title ?? state.activeConversationTitle,
         );
+        AppStorage.setLastAskConversationId(id);
       },
       onSources: (sources) {
         _flushPending();

@@ -9,6 +9,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:pasteboard/pasteboard.dart';
 import '../../models/chat_attachment.dart';
 import '../../core/api_client.dart';
+import '../../core/storage.dart';
 import '../../core/theme/aurora_theme.dart';
 import '../../models/ask_conversation.dart';
 import '../../models/ask_turn.dart';
@@ -206,16 +207,23 @@ class _AskScreenState extends ConsumerState<AskScreen> {
       _sessions = [];
       _projects = [];
     });
+    AppStorage.setLastExecutionMode(id);
+    AppStorage.setLastProjectId(null);
+    AppStorage.setLastSessionId(null);
+    AppStorage.setLastModel(null);
+    AppStorage.setLastIsCustomModel(false);
+    AppStorage.setLastEffort(null);
     if (['codex', 'claude', 'antigravity'].contains(id)) {
       _loadProjectsForMode(id);
       _loadCapabilitiesForMode(id);
     }
   }
 
-  Future<void> _loadCapabilitiesForMode(String mode) async {
+  Future<void> _loadCapabilitiesForMode(String mode, {String? deviceId}) async {
     try {
       final dev = ref.read(deviceProvider);
-      final caps = await ApiClient().getAgentCapabilities(mode, deviceId: dev.selectedDeviceId);
+      final devId = deviceId ?? dev.selectedDeviceId;
+      final caps = await ApiClient().getAgentCapabilities(mode, deviceId: devId);
       if (mounted && _executionMode == mode) {
         setState(() {
           _agentCapabilities = caps;
@@ -224,23 +232,26 @@ class _AskScreenState extends ConsumerState<AskScreen> {
     } catch (_) {}
   }
 
-  Future<void> _loadProjectsForMode(String mode) async {
+  Future<List<Map<String, dynamic>>> _loadProjectsForMode(String mode, {String? deviceId}) async {
     try {
       final toolId = mode == 'antigravity'
           ? 'antigravity'
           : (mode == 'claude' ? 'claude_code' : (mode == 'codex' ? 'codex' : null));
       final dev = ref.read(deviceProvider);
+      final devId = deviceId ?? dev.selectedDeviceId;
       final projs = await ApiClient().getProjects(
         toolId: toolId,
-        deviceId: dev.selectedDeviceId,
+        deviceId: devId,
       );
       if (mounted && _executionMode == mode) {
         setState(() {
           _projects = projs;
         });
       }
+      return projs;
     } catch (e) {
       debugPrint('Failed to load projects: $e');
+      return [];
     }
   }
 
@@ -249,7 +260,7 @@ class _AskScreenState extends ConsumerState<AskScreen> {
     ref.read(deviceProvider.notifier).setSelectedDevice(newDevId);
 
     // 1. Reload agent capabilities for this new device
-    _loadCapabilitiesForMode(_executionMode);
+    _loadCapabilitiesForMode(_executionMode, deviceId: newDevId);
 
     // 2. Reload projects for this new device
     final toolId = _executionMode == 'antigravity'
@@ -284,9 +295,11 @@ class _AskScreenState extends ConsumerState<AskScreen> {
             }
             _cwdController.text = clean;
             _showCwd = true;
+            AppStorage.setLastCwd(clean);
           }
         } else {
           _cwdController.clear();
+          AppStorage.setLastCwd(null);
         }
         // Re-fetch sessions strictly for the newly selected device
         _handleProjectChange(_selectedProjectId);
@@ -296,15 +309,19 @@ class _AskScreenState extends ConsumerState<AskScreen> {
     }
   }
 
-  Future<void> _handleProjectChange(String? projId) async {
+  Future<void> _handleProjectChange(String? projId, {String? restoreSessionId}) async {
     setState(() {
       _selectedProjectId = projId;
       _selectedSessionId = null;
       _sessions = [];
       _loadingSessions = projId != null && projId.isNotEmpty;
     });
+    AppStorage.setLastProjectId(projId);
 
-    if (projId == null || projId.isEmpty) return;
+    if (projId == null || projId.isEmpty) {
+      AppStorage.setLastSessionId(null);
+      return;
+    }
 
     final proj = _projects.firstWhere(
       (p) => p['id']?.toString() == projId,
@@ -312,15 +329,18 @@ class _AskScreenState extends ConsumerState<AskScreen> {
     );
     final sourcePath = proj['source_path']?.toString();
     if (sourcePath != null && sourcePath.isNotEmpty) {
-      String clean = sourcePath.trim();
-      final match = RegExp(r'((?:[a-zA-Z]:[/\\]|/)[a-zA-Z0-9_\.-]+(?:[/\\][a-zA-Z0-9_\.-]+)*)').firstMatch(clean);
-      if (match != null) {
-        clean = match.group(1)!.replaceAll(RegExp(r'[/\\]+$'), '');
-      } else {
-        clean = clean.split(RegExp(r'[\r\n",]'))[0].trim().replaceAll(RegExp(r'[/\\]+$'), '');
+      if (_cwdController.text.trim().isEmpty) {
+        String clean = sourcePath.trim();
+        final match = RegExp(r'((?:[a-zA-Z]:[/\\]|/)[a-zA-Z0-9_\.-]+(?:[/\\][a-zA-Z0-9_\.-]+)*)').firstMatch(clean);
+        if (match != null) {
+          clean = match.group(1)!.replaceAll(RegExp(r'[/\\]+$'), '');
+        } else {
+          clean = clean.split(RegExp(r'[\r\n",]'))[0].trim().replaceAll(RegExp(r'[/\\]+$'), '');
+        }
+        _cwdController.text = clean;
+        _showCwd = true;
+        AppStorage.setLastCwd(clean);
       }
-      _cwdController.text = clean;
-      _showCwd = true;
     }
 
     try {
@@ -333,10 +353,15 @@ class _AskScreenState extends ConsumerState<AskScreen> {
       var rawList = res['sessions'] as List<dynamic>? ?? [];
 
       if (mounted && _selectedProjectId == projId) {
+        final sessionsList = rawList.cast<Map<String, dynamic>>();
         setState(() {
-          _sessions = rawList.cast<Map<String, dynamic>>();
+          _sessions = sessionsList;
           _loadingSessions = false;
         });
+
+        if (restoreSessionId != null && restoreSessionId.isNotEmpty) {
+          await _handleSelectSession(restoreSessionId);
+        }
       }
     } catch (e) {
       debugPrint('Failed to load project sessions: $e');
@@ -347,6 +372,7 @@ class _AskScreenState extends ConsumerState<AskScreen> {
   }
 
   Future<void> _handleSelectSession(String? sid) async {
+    AppStorage.setLastSessionId(sid);
     if (sid == null || sid.isEmpty) {
       setState(() {
         _selectedSessionId = null;
@@ -359,10 +385,6 @@ class _AskScreenState extends ConsumerState<AskScreen> {
       (s) => (s['session_id'] ?? s['conversation_id'])?.toString() == sid,
       orElse: () => <String, dynamic>{},
     );
-    if (targetSession.isEmpty) {
-      setState(() => _selectedSessionId = sid);
-      return;
-    }
 
     final count = (targetSession['message_count'] as num?)?.toInt() ?? 0;
     final bytes = (targetSession['file_size_bytes'] as num?)?.toInt() ?? 0;
@@ -375,8 +397,8 @@ class _AskScreenState extends ConsumerState<AskScreen> {
     });
 
     List<dynamic> rawMsgs = (targetSession['messages'] as List<dynamic>?) ?? [];
-    final docId = targetSession['conversation_id']?.toString();
-    if (docId != null && docId.isNotEmpty) {
+    final docId = targetSession['conversation_id']?.toString() ?? sid;
+    if (docId.isNotEmpty) {
       try {
         final full = await ApiClient().getConversationMessages(docId, limit: 100);
         final fullMsgs = full['messages'] as List<dynamic>?;
@@ -489,7 +511,7 @@ class _AskScreenState extends ConsumerState<AskScreen> {
     _inputFocusNode.onKeyEvent = _handleKeyEvent;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(deviceProvider.notifier).loadDevices();
-      _checkAutoRestoreLastConversation();
+      _restoreLastWorkspaceState();
       // Auto-raise keyboard when entering first screen (Desktop only)
       if (!Platform.isIOS && !Platform.isAndroid) {
         Future.delayed(const Duration(milliseconds: 300), () {
@@ -809,6 +831,94 @@ class _AskScreenState extends ConsumerState<AskScreen> {
     if (bytes < 1024) return '$bytes B';
     if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
     return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+  }
+
+  Future<void> _restoreLastWorkspaceState() async {
+    final askState = ref.read(askProvider);
+    if (askState.turns.isNotEmpty || askState.activeConversationId != null) return;
+
+    try {
+      final savedMode = await AppStorage.getLastExecutionMode();
+      final savedProjectId = await AppStorage.getLastProjectId();
+      final savedSessionId = await AppStorage.getLastSessionId();
+      final savedModel = await AppStorage.getLastModel();
+      final savedIsCustom = await AppStorage.getLastIsCustomModel() ?? false;
+      final savedEffort = await AppStorage.getLastEffort();
+      final savedTimeout = await AppStorage.getLastTimeoutSeconds();
+      final savedCwd = await AppStorage.getLastCwd();
+      final savedAskConvId = await AppStorage.getLastAskConversationId();
+      final savedDeviceId = await AppStorage.getLastDeviceId();
+
+      if (!mounted) return;
+
+      if (savedDeviceId != null && savedDeviceId.isNotEmpty) {
+        ref.read(deviceProvider.notifier).setSelectedDevice(savedDeviceId);
+      }
+
+      final mode = (savedMode != null && savedMode.isNotEmpty) ? savedMode : 'ai';
+
+      setState(() {
+        _executionMode = mode;
+        if (savedModel != null && savedModel.isNotEmpty) {
+          _selectedModel = savedModel;
+          _isCustomModel = savedIsCustom;
+          if (savedIsCustom) {
+            _customModelController.text = savedModel;
+          }
+        }
+        if (savedEffort != null && savedEffort.isNotEmpty) {
+          _selectedEffort = savedEffort;
+        }
+        if (savedTimeout != null && savedTimeout > 0) {
+          _selectedTimeoutSeconds = savedTimeout;
+        }
+        if (savedCwd != null && savedCwd.isNotEmpty) {
+          _cwdController.text = savedCwd;
+          _showCwd = true;
+        }
+      });
+
+      if (['codex', 'claude', 'antigravity'].contains(mode)) {
+        await _loadCapabilitiesForMode(mode);
+        final projs = await _loadProjectsForMode(mode);
+        if (!mounted) return;
+
+        if (savedProjectId != null && savedProjectId.isNotEmpty) {
+          final projExists = projs.any((p) => p['id']?.toString() == savedProjectId);
+          if (projExists) {
+            await _handleProjectChange(savedProjectId, restoreSessionId: savedSessionId);
+          }
+        }
+      } else {
+        // AI / Shell mode: restore last conversation
+        if (savedAskConvId != null && savedAskConvId.isNotEmpty) {
+          try {
+            await ref.read(askProvider.notifier).loadConversation(
+              savedAskConvId,
+              onMetaLoaded: (deviceId, cwd) {
+                if (deviceId != null && deviceId.isNotEmpty) {
+                  ref.read(deviceProvider.notifier).setSelectedDevice(deviceId);
+                }
+                if (cwd != null && cwd.isNotEmpty) {
+                  setState(() {
+                    _cwdController.text = cwd;
+                    _showCwd = true;
+                  });
+                }
+                _scrollToBottom(force: true, smooth: true);
+              },
+            );
+          } catch (_) {
+            _checkAutoRestoreLastConversation();
+          }
+        } else {
+          _checkAutoRestoreLastConversation();
+        }
+      }
+    } catch (e) {
+      debugPrint('Error restoring workspace state: $e');
+      _checkAutoRestoreLastConversation();
+    }
   }
 
   void _checkAutoRestoreLastConversation() async {
@@ -1651,7 +1761,9 @@ class _AskScreenState extends ConsumerState<AskScreen> {
               setState(() {
                 _isWorkspaceOpen = false;
                 _selectedWorkspaceArtifact = null;
+                _selectedSessionId = null;
               });
+              AppStorage.setLastSessionId(null);
               ref.read(askProvider.notifier).newChat();
             },
           ),
@@ -2439,6 +2551,10 @@ class _AskScreenState extends ConsumerState<AskScreen> {
                         fontFamily: 'monospace',
                         color: AuroraColors.fg1,
                       ),
+                      onChanged: (val) {
+                        final trimmed = val.trim();
+                        AppStorage.setLastCwd(trimmed.isEmpty ? null : trimmed);
+                      },
                       decoration: const InputDecoration(
                         isDense: true,
                         contentPadding: EdgeInsets.zero,
@@ -2451,7 +2567,10 @@ class _AskScreenState extends ConsumerState<AskScreen> {
                     ),
                   ),
                   InkWell(
-                    onTap: () => setState(() => _showCwd = false),
+                    onTap: () {
+                      setState(() => _showCwd = false);
+                      AppStorage.setLastCwd(null);
+                    },
                     child: const Icon(Icons.close, size: 13, color: AuroraColors.fg3),
                   ),
                 ],
@@ -2494,16 +2613,23 @@ class _AskScreenState extends ConsumerState<AskScreen> {
                                       hintStyle: TextStyle(fontSize: 11, color: AuroraColors.fg4),
                                     ),
                                     onChanged: (val) {
-                                      setState(() => _selectedModel = val.trim().isEmpty ? null : val.trim());
+                                      final trimmed = val.trim();
+                                      setState(() => _selectedModel = trimmed.isEmpty ? null : trimmed);
+                                      AppStorage.setLastModel(trimmed.isEmpty ? null : trimmed);
+                                      AppStorage.setLastIsCustomModel(true);
                                     },
                                   ),
                                 ),
                                 InkWell(
-                                  onTap: () => setState(() {
-                                    _isCustomModel = false;
-                                    _selectedModel = null;
-                                    _customModelController.clear();
-                                  }),
+                                  onTap: () {
+                                    setState(() {
+                                      _isCustomModel = false;
+                                      _selectedModel = null;
+                                      _customModelController.clear();
+                                    });
+                                    AppStorage.setLastModel(null);
+                                    AppStorage.setLastIsCustomModel(false);
+                                  },
                                   child: const Icon(Icons.close, size: 13, color: AuroraColors.fg3),
                                 ),
                               ],
@@ -2544,10 +2670,15 @@ class _AskScreenState extends ConsumerState<AskScreen> {
                                       _isCustomModel = true;
                                       _selectedModel = null;
                                     });
+                                    AppStorage.setLastModel(null);
+                                    AppStorage.setLastIsCustomModel(true);
                                   } else {
+                                    final chosen = (val == null || val.isEmpty) ? null : val;
                                     setState(() {
-                                      _selectedModel = (val == null || val.isEmpty) ? null : val;
+                                      _selectedModel = chosen;
                                     });
+                                    AppStorage.setLastModel(chosen);
+                                    AppStorage.setLastIsCustomModel(false);
                                   }
                                 },
                                 items: [
@@ -2662,9 +2793,11 @@ class _AskScreenState extends ConsumerState<AskScreen> {
                         child: InkWell(
                           borderRadius: BorderRadius.circular(6),
                           onTap: () {
+                            final chosen = opt['id']!.isEmpty ? null : opt['id'];
                             setState(() {
-                              _selectedEffort = opt['id']!.isEmpty ? null : opt['id'];
+                              _selectedEffort = chosen;
                             });
+                            AppStorage.setLastEffort(chosen);
                           },
                           child: Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -2718,10 +2851,12 @@ class _AskScreenState extends ConsumerState<AskScreen> {
                       child: InkWell(
                         borderRadius: BorderRadius.circular(6),
                         onTap: () {
+                          final val = opt['id'] as int;
+                          final chosen = val == 0 ? null : val;
                           setState(() {
-                            final val = opt['id'] as int;
-                            _selectedTimeoutSeconds = val == 0 ? null : val;
+                            _selectedTimeoutSeconds = chosen;
                           });
+                          AppStorage.setLastTimeoutSeconds(chosen);
                         },
                         child: Container(
                           padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3.5),

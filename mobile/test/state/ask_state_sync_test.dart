@@ -1,9 +1,14 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:memento_mobile/models/ask_turn.dart';
 import 'package:memento_mobile/state/ask_state.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+  });
 
   group('AskNotifier Foreground Resumed Sync Tests', () {
     test('syncOnForegroundResumed returns early if activeConversationId is null', () async {
