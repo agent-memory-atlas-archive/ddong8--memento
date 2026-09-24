@@ -708,6 +708,13 @@ class WsTaskClient {
     final env = Map<String, String>.from(Platform.environment);
     env['PYTHONUNBUFFERED'] = '1';
 
+    // Strip Antigravity subagent session metadata so dispatched tasks aren't mistakenly treated
+    // as subagents of a dead parent Antigravity conversation (which leads to "sender conversation not found")
+    env.remove('ANTIGRAVITY_SOURCE_METADATA');
+    env.remove('ANTIGRAVITY_CONVERSATION_ID');
+    env.remove('ANTIGRAVITY_AGENT');
+    env.remove('ANTIGRAVITY_TRAJECTORY_ID');
+
     if (Platform.isMacOS || Platform.isLinux) {
       final home = CollectorConfig.homeDir;
       final shellFiles = [
@@ -1002,6 +1009,7 @@ class WsTaskClient {
           if (content.contains('_auto_discover_antigravity_ls') &&
               content.contains('gemini-3.8-flash') &&
               content.contains('--timeout') &&
+              content.contains('ANTIGRAVITY_SOURCE_METADATA') &&
               content.contains('if __name__ == "__main__":')) {
             needsWrite = false;
           }
@@ -2092,6 +2100,16 @@ def main():
         print("💡 未检测到正在运行的 Antigravity 应用服务。请先启动 Antigravity 应用后再试。", file=sys.stderr)
         sys.exit(1)
 
+    # Strip any inherited Antigravity parent session/subagent environment variables
+    # to avoid "sender conversation not found" errors when calling agentapi
+    for k in (
+        "ANTIGRAVITY_SOURCE_METADATA",
+        "ANTIGRAVITY_CONVERSATION_ID",
+        "ANTIGRAVITY_AGENT",
+        "ANTIGRAVITY_TRAJECTORY_ID",
+    ):
+        os.environ.pop(k, None)
+
     # Normalize model tier
     model_arg = (args.model or "").lower().strip()
     if model_arg in ("flash_lite", "flash-lite", "gemini-3.6-flash", "gemini-2.5-flash-lite"):
@@ -2124,7 +2142,7 @@ def main():
             prompt,
         ]
         try:
-            res = subprocess.run(cmd, capture_output=True, text=True)
+            res = subprocess.run(cmd, capture_output=True, text=True, env=dict(os.environ))
             if res.returncode != 0:
                 err_text = (res.stderr or res.stdout or "").strip()
                 print(f"Error resuming conversation via Antigravity: {err_text}", file=sys.stderr)
@@ -2142,7 +2160,7 @@ def main():
             prompt,
         ]
         try:
-            res = subprocess.run(cmd, capture_output=True, text=True)
+            res = subprocess.run(cmd, capture_output=True, text=True, env=dict(os.environ))
             if res.returncode != 0:
                 err_text = (res.stderr or res.stdout or "").strip()
                 print(f"Error initiating conversation via Antigravity: {err_text}", file=sys.stderr)

@@ -55,6 +55,16 @@ def build_subprocess_env() -> dict[str, str]:
     """Build environment for executed commands, ensuring standard user binary paths are in PATH."""
     import glob
     sub_env = os.environ.copy()
+    # Strip Antigravity subagent session metadata so dispatched tasks aren't mistakenly treated
+    # as subagents of a dead parent Antigravity conversation
+    for k in (
+        "ANTIGRAVITY_SOURCE_METADATA",
+        "ANTIGRAVITY_CONVERSATION_ID",
+        "ANTIGRAVITY_AGENT",
+        "ANTIGRAVITY_TRAJECTORY_ID",
+    ):
+        sub_env.pop(k, None)
+
     curr_path = sub_env.get("PATH", "")
     dirs_to_add = [
         "/opt/homebrew/bin",
