@@ -1,22 +1,22 @@
 {
   "version": "1.0.49",
   "title": "Memento v1.0.49",
-  "release_notes": "1. 视觉与交互全面升级：采用 Aurora 极光暗色玻璃拟态 2.0，换装一体化圆角胶囊分段导航栏\n2. 核心工程体系化呈现：五大根维度配备发光 HUD 概览卡与专属领域色彩图标，并引入 IDE 级树状缩进导轨\n3. 毫秒级即时过滤：新增记忆树实时搜索框，支持一键清空与智能展开定位\n4. Web 记忆工作台同步升维：支持 39 个核心工程树状展开与 MEMORY.md 全文 Markdown 弹窗预览",
+  "release_notes": "1. 根治 Ask 流式问答频繁请求异常：服务端引入 8 秒自动心跳注入，防 Traefik 网关空闲断连\n2. 客户端网络容灾重试：首包前静默自动重试，已接收数据中断优雅降级与友好提示\n3. 全链路测试覆盖与长连接保活保障",
   "platforms": {
     "windows": {
       "asset_name": "Memento-windows-x64.zip",
-      "size": 34782302,
-      "sha256": "424bc85d37563991e82c86e706c868a9c1cbbd166a36bdd7f189441870e653ad"
+      "size": 34817455,
+      "sha256": "926ddad3e46c36ae31dd7af9942135237af31df35e1f82745663e3b586b88e0a"
     },
     "macos": {
       "asset_name": "Memento-macos-arm64.zip",
-      "size": 38660339,
-      "sha256": "ba613cf2f83152bbeaaa8862cbc693f26298a72b773d7bf7acae89466ce3d751"
+      "size": 38703742,
+      "sha256": "464e2acf6ac88a3bad5f529faeb3aa6131e69b4305c87b7331ef8d99734b82a6"
     },
     "linux": {
       "asset_name": "Memento-linux-x64.tar.gz",
-      "size": 11822747,
-      "sha256": "4b542294b9f4aeebb8e4a4ba2e4f13b67a3f419c47a5aa8f83d154a5ffed4d13"
+      "size": 11842679,
+      "sha256": "607f9d52e56c07c6206b9f39fbabb366aedd03d170932ff584ce5bec65c0c832"
     }
   }
 }
