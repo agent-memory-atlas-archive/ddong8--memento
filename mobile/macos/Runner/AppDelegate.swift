@@ -17,6 +17,27 @@ class AppDelegate: FlutterAppDelegate {
   override func applicationDidFinishLaunching(_ notification: Notification) {
     super.applicationDidFinishLaunching(notification)
     setupStatusItem()
+    setupMethodChannel()
+  }
+
+  private func setupMethodChannel() {
+    guard let controller = MainFlutterWindow.shared?.contentViewController as? FlutterViewController else { return }
+    let channel = FlutterMethodChannel(name: "com.ihasy.memento/app_window", binaryMessenger: controller.engine.binaryMessenger)
+    channel.setMethodCallHandler { [weak self] (call, result) in
+      if call.method == "showMainWindow" {
+        self?.showMainWindow()
+        result(true)
+      } else if call.method == "hideMainWindow" {
+        guard let window = MainFlutterWindow.shared else {
+          result(false)
+          return
+        }
+        window.orderOut(nil)
+        result(true)
+      } else {
+        result(FlutterMethodNotImplemented)
+      }
+    }
   }
 
   override func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -77,6 +98,9 @@ class AppDelegate: FlutterAppDelegate {
 
   @objc private func showMainWindow() {
     guard let window = MainFlutterWindow.shared else { return }
+    if window.isMiniaturized {
+      window.deminiaturize(nil)
+    }
     window.makeKeyAndOrderFront(nil)
     NSApp.activate(ignoringOtherApps: true)
   }

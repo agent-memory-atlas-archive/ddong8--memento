@@ -1,4 +1,4 @@
-﻿#include <flutter/dart_project.h>
+#include <flutter/dart_project.h>
 #include <flutter/flutter_view_controller.h>
 #include <windows.h>
 
@@ -11,6 +11,24 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   // new console when running with a debugger.
   if (!::AttachConsole(ATTACH_PARENT_PROCESS) && ::IsDebuggerPresent()) {
     CreateAndAttachConsole();
+  }
+
+  // Single-instance named mutex guard: Prevents multiple processes on Windows
+  HANDLE hMutex = ::CreateMutexW(nullptr, TRUE, L"com.ihasy.memento.single_instance");
+  if (::GetLastError() == ERROR_ALREADY_EXISTS) {
+    if (hMutex) {
+      ::CloseHandle(hMutex);
+    }
+    HWND existing_hwnd = ::FindWindowW(L"FLUTTER_RUNNER_WIN32_WINDOW", L"Memento");
+    if (existing_hwnd) {
+      if (::IsIconic(existing_hwnd)) {
+        ::ShowWindow(existing_hwnd, SW_RESTORE);
+      } else {
+        ::ShowWindow(existing_hwnd, SW_SHOW);
+      }
+      ::SetForegroundWindow(existing_hwnd);
+    }
+    return EXIT_SUCCESS;
   }
 
   // Initialize COM, so that it is available for use in the library and/or
@@ -36,6 +54,10 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   while (::GetMessage(&msg, nullptr, 0, 0)) {
     ::TranslateMessage(&msg);
     ::DispatchMessage(&msg);
+  }
+
+  if (hMutex) {
+    ::CloseHandle(hMutex);
   }
 
   ::CoUninitialize();

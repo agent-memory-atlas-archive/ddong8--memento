@@ -1,6 +1,9 @@
+import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:media_kit/media_kit.dart';
+import 'core/services/single_instance_service.dart';
 import 'core/services/update_service.dart';
 import 'core/theme/aurora_theme.dart';
 import 'state/auth_state.dart';
@@ -9,6 +12,15 @@ import 'ui/screens/shell_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Desktop single-instance check: ensure only one instance runs per machine/user.
+  // If an existing instance is found, it will be brought to focus, and this process exits immediately.
+  if (!kIsWeb && (Platform.isMacOS || Platform.isWindows || Platform.isLinux)) {
+    final isPrimary = await SingleInstanceService.ensureSingleInstance();
+    if (!isPrimary) {
+      exit(0);
+    }
+  }
 
   // Initialize app version with timeout so it never blocks runApp
   try {

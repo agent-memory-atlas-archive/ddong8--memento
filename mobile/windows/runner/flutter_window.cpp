@@ -91,6 +91,24 @@ bool FlutterWindow::OnCreate() {
   RegisterPlugins(flutter_controller_->engine());
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
+  // Setup platform channel to allow Dart SingleInstanceService to show/focus window
+  window_channel_ = std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+      flutter_controller_->engine()->messenger(), "com.ihasy.memento/app_window",
+      &flutter::StandardMethodCodec::GetInstance());
+  window_channel_->SetMethodCallHandler(
+      [this](const flutter::MethodCall<flutter::EncodableValue>& call,
+             std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+        if (call.method_name() == "showMainWindow") {
+          ShowAndRestoreWindow();
+          result->Success(flutter::EncodableValue(true));
+        } else if (call.method_name() == "hideMainWindow") {
+          HideWindow();
+          result->Success(flutter::EncodableValue(true));
+        } else {
+          result->NotImplemented();
+        }
+      });
+
   bool start_minimized = false;
   int argc = 0;
   LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc);
@@ -124,6 +142,10 @@ void FlutterWindow::OnDestroy() {
   if (tray_icon_created_) {
     Shell_NotifyIconW(NIM_DELETE, &tray_icon_data_);
     tray_icon_created_ = false;
+  }
+
+  if (window_channel_) {
+    window_channel_ = nullptr;
   }
 
   if (flutter_controller_) {
