@@ -548,6 +548,7 @@ class FileWatcherService {
           relativePath: relPath,
           content: batchContent,
           contentHash: batchHash,
+          fileSize: currentSize,
           offset: lastOffset,
           mode: mode,
           metadata: syncMetadata,
@@ -563,6 +564,7 @@ class FileWatcherService {
             relativePath: relPath,
             content: batchContent,
             contentHash: batchHash,
+            fileSize: currentSize,
             offset: lastOffset,
             mode: mode,
             metadata: syncMetadata,
@@ -631,6 +633,7 @@ class FileWatcherService {
       relativePath: relPath,
       content: content,
       contentHash: contentHash,
+      fileSize: stat.size,
       mode: 'full',
       offset: 0,
     );

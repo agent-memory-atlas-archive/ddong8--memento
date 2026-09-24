@@ -344,6 +344,35 @@ def parse_conversation_line(raw_line: str, tool_id: str) -> NormalizedMessage | 
                 )
             return None
 
+        # Native transcript.jsonl: SYSTEM_MESSAGE wrapping queued user messages
+        if msg_type == "SYSTEM_MESSAGE":
+            raw_content = obj.get("content", "")
+            m = re.search(
+                r"\[Message\]\s+(?:timestamp=[^\s]+\s+)?(?:sender=([^\s]+)\s+)?(?:priority=[^\s]+\s+)?content=(.*)",
+                raw_content,
+                re.DOTALL,
+            )
+            if m:
+                sender = (m.group(1) or "").strip().lower()
+                body = m.group(2).strip()
+                if body.endswith("</SYSTEM_MESSAGE>"):
+                    body = body[:-len("</SYSTEM_MESSAGE>")].strip()
+                is_task_noise = (
+                    "task-" in sender
+                    or "task id " in body.lower()
+                    or "subagent" in sender
+                    or body.startswith("[Notice]")
+                    or body.startswith("Task id ")
+                )
+                if not is_task_noise and body:
+                    return NormalizedMessage(
+                        role="user",
+                        content=body,
+                        timestamp=obj.get("created_at") or timestamp,
+                        raw_type="user_message_queued",
+                    )
+            return None
+
         # Native transcript.jsonl: PLANNER_RESPONSE (Assistant text or Tool Call)
         if msg_type == "PLANNER_RESPONSE":
             tool_calls = obj.get("tool_calls") or []

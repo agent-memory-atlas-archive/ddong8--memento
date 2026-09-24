@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:path/path.dart' as p;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -404,33 +405,193 @@ class _AskScreenState extends ConsumerState<AskScreen> {
       _compactMode = isHeavy;
     });
 
-    List<dynamic> rawMsgs = (targetSession['messages'] as List<dynamic>?) ?? [];
-    final docId = targetSession['conversation_id']?.toString() ?? sid;
-    if (docId.isNotEmpty) {
-      try {
-        final full = await ApiClient().getConversationMessages(docId, limit: 100);
-        final fullMsgs = full['messages'] as List<dynamic>?;
-        if (fullMsgs != null && fullMsgs.isNotEmpty) {
-          rawMsgs = fullMsgs;
-        }
-      } catch (e) {
-        debugPrint('Failed to load full conversation messages: $e');
-      }
+    List<AskTurn> turns = [];
+    if (!Platform.isAndroid && !Platform.isIOS) {
+      turns = await _tryLoadLocalSessionTurns(sid);
     }
 
-    final turns = rawMsgs
-        .whereType<Map<String, dynamic>>()
-        .where((m) => m['role'] == 'user' || m['role'] == 'assistant')
-        .map((m) => AskTurn(
-              role: m['role']?.toString() ?? 'user',
-              content: m['content']?.toString() ?? '',
-              thinking: m['thinking']?.toString(),
-            ))
-        .toList();
+    if (turns.isEmpty) {
+      List<dynamic> rawMsgs = (targetSession['messages'] as List<dynamic>?) ?? [];
+      final docId = targetSession['conversation_id']?.toString() ?? sid;
+      if (docId.isNotEmpty) {
+        try {
+          final firstPage = await ApiClient().getConversationMessages(docId, limit: 100, offset: 0);
+          final total = (firstPage['total'] as num?)?.toInt() ?? 0;
+          if (total > 100) {
+            final tailOffset = (total - 100).clamp(0, total);
+            final tailPage = await ApiClient().getConversationMessages(docId, limit: 100, offset: tailOffset);
+            final tailMsgs = tailPage['messages'] as List<dynamic>?;
+            if (tailMsgs != null && tailMsgs.isNotEmpty) {
+              rawMsgs = tailMsgs;
+            }
+          } else {
+            final firstMsgs = firstPage['messages'] as List<dynamic>?;
+            if (firstMsgs != null && firstMsgs.isNotEmpty) {
+              rawMsgs = firstMsgs;
+            }
+          }
+        } catch (e) {
+          debugPrint('Failed to load full conversation messages: $e');
+        }
+      }
+
+      turns = rawMsgs
+          .whereType<Map<String, dynamic>>()
+          .where((m) => m['role'] == 'user' || m['role'] == 'assistant')
+          .map((m) => AskTurn(
+                role: m['role']?.toString() ?? 'user',
+                content: m['content']?.toString() ?? '',
+                thinking: m['thinking']?.toString(),
+              ))
+          .toList();
+    }
 
     final title = targetSession['title']?.toString();
     ref.read(askProvider.notifier).setSessionTurns(turns, title: title);
     _scrollToBottom(force: true, smooth: true);
+  }
+
+  Future<List<AskTurn>> _tryLoadLocalSessionTurns(String sid) async {
+    try {
+      final home = Platform.environment['USERPROFILE'] ?? Platform.environment['HOME'] ?? '';
+      if (home.isEmpty) return [];
+
+      File? targetFile;
+      if (_executionMode == 'antigravity') {
+        final f = File(p.join(home, '.gemini', 'antigravity', 'brain', sid, '.system_generated', 'logs', 'transcript.jsonl'));
+        if (await f.exists()) targetFile = f;
+      } else if (_executionMode == 'claude') {
+        final claudeDir = Directory(p.join(home, '.claude', 'projects'));
+        if (await claudeDir.exists()) {
+          await for (final entity in claudeDir.list()) {
+            if (entity is Directory) {
+              final cand = File(p.join(entity.path, '$sid.jsonl'));
+              if (await cand.exists()) {
+                targetFile = cand;
+                break;
+              }
+            }
+          }
+        }
+      } else if (_executionMode == 'codex') {
+        final sessDir = Directory(p.join(home, '.codex', 'sessions'));
+        if (await sessDir.exists()) {
+          await for (final entity in sessDir.list(recursive: true)) {
+            if (entity is File && entity.path.endsWith('$sid.jsonl')) {
+              targetFile = entity;
+              break;
+            }
+          }
+        }
+      }
+
+      if (targetFile == null || !await targetFile.exists()) return [];
+
+      final lines = await targetFile.readAsLines();
+      final List<AskTurn> turns = [];
+
+      if (_executionMode == 'antigravity') {
+        for (final line in lines) {
+          if (line.trim().isEmpty) continue;
+          try {
+            final obj = jsonDecode(line);
+            if (obj is! Map<String, dynamic>) continue;
+            final mtype = obj['type']?.toString();
+            final source = obj['source']?.toString();
+
+            if (mtype == 'USER_INPUT' || source == 'USER_EXPLICIT') {
+              final raw = obj['content']?.toString() ?? '';
+              final reqMatch = RegExp(r'<USER_REQUEST>([\s\S]*?)</USER_REQUEST>').firstMatch(raw);
+              final content = reqMatch != null ? reqMatch.group(1)!.trim() : raw.trim();
+              if (content.isNotEmpty) {
+                turns.add(AskTurn(role: 'user', content: content));
+              }
+            } else if (mtype == 'SYSTEM_MESSAGE') {
+              final raw = obj['content']?.toString() ?? '';
+              final m = RegExp(
+                r'\[Message\]\s+(?:timestamp=[^\s]+\s+)?(?:sender=([^\s]+)\s+)?(?:priority=[^\s]+\s+)?content=([\s\S]*)',
+              ).firstMatch(raw);
+              if (m != null) {
+                final sender = (m.group(1) ?? '').toLowerCase();
+                var body = m.group(2)!.trim();
+                if (body.endsWith('</SYSTEM_MESSAGE>')) {
+                  body = body.substring(0, body.length - '</SYSTEM_MESSAGE>'.length).trim();
+                }
+                final isTask = sender.contains('task-') ||
+                    body.toLowerCase().contains('task id ') ||
+                    sender.contains('subagent') ||
+                    body.startsWith('[Notice]') ||
+                    body.startsWith('Task id ');
+                if (!isTask && body.isNotEmpty) {
+                  turns.add(AskTurn(role: 'user', content: body));
+                }
+              }
+            } else if (mtype == 'PLANNER_RESPONSE') {
+              final toolCalls = obj['tool_calls'] as List?;
+              if (toolCalls == null || toolCalls.isEmpty) {
+                final c = (obj['content']?.toString() ?? '').trim();
+                final th = (obj['thinking']?.toString() ?? '').trim();
+                if (c.isNotEmpty || th.isNotEmpty) {
+                  turns.add(AskTurn(
+                    role: 'assistant',
+                    content: c.isNotEmpty ? c : '[AI 思考过程]',
+                    thinking: th.isNotEmpty ? th : null,
+                  ));
+                }
+              }
+            }
+          } catch (_) {}
+        }
+      } else if (_executionMode == 'claude') {
+        for (final line in lines) {
+          if (line.trim().isEmpty) continue;
+          try {
+            final obj = jsonDecode(line);
+            if (obj is! Map<String, dynamic>) continue;
+            final message = obj['message'];
+            if (message is Map<String, dynamic>) {
+              final role = message['role']?.toString();
+              final rawContent = message['content'];
+              String text = '';
+              if (rawContent is String) {
+                text = rawContent;
+              } else if (rawContent is List) {
+                for (final item in rawContent) {
+                  if (item is Map && item['type'] == 'text') {
+                    text += (item['text']?.toString() ?? '');
+                  }
+                }
+              }
+              if (role != null && text.trim().isNotEmpty) {
+                turns.add(AskTurn(role: role, content: text.trim()));
+              }
+            }
+          } catch (_) {}
+        }
+      } else if (_executionMode == 'codex') {
+        for (final line in lines) {
+          if (line.trim().isEmpty) continue;
+          try {
+            final obj = jsonDecode(line);
+            if (obj is! Map<String, dynamic>) continue;
+            final mtype = obj['type']?.toString();
+            final payload = obj['payload'];
+            if (payload is Map<String, dynamic>) {
+              final role = payload['role']?.toString() ?? mtype;
+              final content = payload['content']?.toString() ?? '';
+              if (role != null && (role == 'user' || role == 'assistant') && content.trim().isNotEmpty) {
+                turns.add(AskTurn(role: role, content: content.trim()));
+              }
+            }
+          } catch (_) {}
+        }
+      }
+
+      return turns;
+    } catch (e) {
+      debugPrint('Error reading local session turns: $e');
+      return [];
+    }
   }
 
   String _getHintText() {

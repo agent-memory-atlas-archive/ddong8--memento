@@ -1179,6 +1179,11 @@ async def get_project_conversations(
             needed_ids.append(child.id)
     msgs_by_doc: dict = {}
     if needed_ids:
+        msg_order = (
+            ConversationMessage.line_number.desc()
+            if order == "desc"
+            else ConversationMessage.line_number.asc()
+        )
         msg_q = (
             select(
                 ConversationMessage.document_id,
@@ -1190,7 +1195,7 @@ async def get_project_conversations(
                 ConversationMessage.metadata_,
             )
             .where(ConversationMessage.document_id.in_(needed_ids))
-            .order_by(ConversationMessage.document_id, ConversationMessage.line_number)
+            .order_by(ConversationMessage.document_id, msg_order)
         )
         if as_of is not None:
             # Either no timestamp recorded (legacy / parser miss — keep
@@ -1228,6 +1233,10 @@ async def get_project_conversations(
                 "raw_type": mtype or "",
                 "timestamp": ts.isoformat() if ts else None,
             })
+
+        if order == "desc":
+            for d_list in msgs_by_doc.values():
+                d_list.reverse()
 
     def _parse_doc_messages(d: Document) -> list[dict]:
         return msgs_by_doc.get(d.id, [])

@@ -92,6 +92,7 @@ class IngestClient {
     required String content,
     required String contentHash,
     int offset = 0,
+    int? fileSize,
     String mode = 'full',
     Map<String, dynamic> metadata = const {},
   }) async {
@@ -112,7 +113,7 @@ class IngestClient {
         'relative_path': relativePath,
         'content': sanitized,
         'hash': contentHash,
-        'file_size': bytes.length,
+        'file_size': fileSize ?? bytes.length,
         'mode': mode,
         'offset': offset,
         'metadata': metadata,

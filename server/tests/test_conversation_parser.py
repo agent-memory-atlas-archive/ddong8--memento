@@ -51,6 +51,28 @@ class ConversationParserTests(unittest.TestCase):
         self.assertEqual(msg.thinking, "Only thinking available")
         self.assertEqual(msg.raw_type, "thinking_fallback")
 
+    def test_antigravity_queued_user_message_in_system_message(self) -> None:
+        raw_user = json.dumps({
+            "type": "SYSTEM_MESSAGE",
+            "source": "SYSTEM",
+            "created_at": "2026-09-24T07:25:51Z",
+            "content": "The following is a <SYSTEM_MESSAGE> not actually sent by the user.\n\n<SYSTEM_MESSAGE>\n[Message] timestamp=2026-09-24T07:25:51Z sender=system priority=MESSAGE_PRIORITY_HIGH content=【用户上传了截图/图片: screenshot.png】\n\n可以了，客户端里的对话怎么没有同步啊，缺少我刚才和你的对话\n</SYSTEM_MESSAGE>",
+        })
+        msg = parse_conversation_line(raw_user, "antigravity")
+        self.assertIsNotNone(msg)
+        assert msg is not None
+        self.assertEqual(msg.role, "user")
+        self.assertIn("可以了，客户端里的对话怎么没有同步啊", msg.content)
+
+        # Ensure task completion notifications are ignored
+        raw_task = json.dumps({
+            "type": "SYSTEM_MESSAGE",
+            "source": "SYSTEM",
+            "created_at": "2026-09-24T07:09:07Z",
+            "content": "<SYSTEM_MESSAGE>\n[Message] timestamp=2026-09-24T07:09:07Z sender=conv-id/task-1481 priority=MESSAGE_PRIORITY_HIGH content=Task id finished with result: ok\n</SYSTEM_MESSAGE>",
+        })
+        self.assertIsNone(parse_conversation_line(raw_task, "antigravity"))
+
     def test_junk_or_uuid_title_detection(self) -> None:
         from server.services.ingest_service import _is_junk_or_uuid_title
 
