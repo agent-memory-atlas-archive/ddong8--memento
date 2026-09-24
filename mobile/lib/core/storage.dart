@@ -44,18 +44,27 @@ class AppStorage {
     }
   }
 
-  static Future<String> getServerUrl() async {
-    if (_cachedServerUrl != null) return _cachedServerUrl!;
-    final prefs = await _getPrefs();
-    _cachedServerUrl = prefs?.getString(_keyServerUrl) ?? defaultServerUrl;
-    return _cachedServerUrl!;
-  }
-
-  static Future<void> setServerUrl(String url) async {
+  static String _normalizeServerUrl(String url) {
     var cleanUrl = url.trim();
     if (cleanUrl.endsWith('/')) {
       cleanUrl = cleanUrl.substring(0, cleanUrl.length - 1);
     }
+    if (cleanUrl.startsWith('http://mem.ihasy.com')) {
+      cleanUrl = cleanUrl.replaceFirst('http://', 'https://');
+    }
+    return cleanUrl;
+  }
+
+  static Future<String> getServerUrl() async {
+    if (_cachedServerUrl != null) return _cachedServerUrl!;
+    final prefs = await _getPrefs();
+    final raw = prefs?.getString(_keyServerUrl) ?? defaultServerUrl;
+    _cachedServerUrl = _normalizeServerUrl(raw);
+    return _cachedServerUrl!;
+  }
+
+  static Future<void> setServerUrl(String url) async {
+    final cleanUrl = _normalizeServerUrl(url);
     _cachedServerUrl = cleanUrl;
     final prefs = await _getPrefs();
     await prefs?.setString(_keyServerUrl, cleanUrl);
