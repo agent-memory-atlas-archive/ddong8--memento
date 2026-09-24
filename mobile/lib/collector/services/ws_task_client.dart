@@ -1010,6 +1010,7 @@ class WsTaskClient {
               content.contains('gemini-3.8-flash') &&
               content.contains('--timeout') &&
               content.contains('ANTIGRAVITY_SOURCE_METADATA') &&
+              content.contains('last_error_message') &&
               content.contains('if __name__ == "__main__":')) {
             needsWrite = false;
           }
@@ -2190,6 +2191,7 @@ def main():
     start_time = time.time()
     idle_count = 0
     completed = False
+    last_error_message = ""
     with open(transcript_file, "r", encoding="utf-8") as f:
         if start_pos > 0:
             f.seek(start_pos)
@@ -2204,6 +2206,10 @@ def main():
             if not line:
                 time.sleep(0.2)
                 idle_count += 1
+                if last_error_message and idle_count > 75:  # 15s idle after error
+                    sys.stderr.write(f"\nAntigravity Error: {last_error_message}\n")
+                    sys.stderr.flush()
+                    sys.exit(1)
                 if idle_count > 1200:  # 4 minutes idle timeout
                     sys.stderr.write("\n[Agent timeout: 任务空闲超过 240s 无响应]\n")
                     sys.stderr.flush()
@@ -2230,11 +2236,19 @@ def main():
                 continue
 
             if step_type == "ERROR_MESSAGE":
-                sys.stderr.write(f"\nAntigravity Error: {content}\n")
-                sys.stderr.flush()
-                sys.exit(1)
+                err_msg = data.get("error") or data.get("message") or data.get("content") or ""
+                # Filter out transient API retry messages (e.g. attempt 1 failure) where Antigravity retries upstream
+                is_transient = any(kw in err_msg.lower() for kw in (
+                    "attempt 1", "attempt 2", "connection reset", "eof", "broken pipe",
+                    "timeout", "handshake", "temporarily unavailable"
+                ))
+                if is_transient:
+                    continue
+                last_error_message = err_msg
+                continue
 
             if source == "MODEL" and step_type == "PLANNER_RESPONSE":
+                last_error_message = ""
                 # Render tool action badges if any tools were invoked
                 if tool_calls:
                     for tc in tool_calls:
