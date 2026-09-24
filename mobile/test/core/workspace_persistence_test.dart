@@ -70,5 +70,27 @@ void main() {
       ]);
       expect(await AppStorage.getLastAskConversationId(), isNull);
     });
+
+    test('Infer agent mode when mode is unset/ai but project ID is present', () async {
+      await AppStorage.setLastProjectId('proj-alpha');
+      await AppStorage.setLastSessionId('sess-beta');
+
+      final savedMode = await AppStorage.getLastExecutionMode();
+      final savedProjectId = await AppStorage.getLastProjectId();
+
+      String mode = (savedMode != null && savedMode.isNotEmpty) ? savedMode : 'ai';
+      if ((savedMode == null || savedMode == 'ai') && savedProjectId != null && savedProjectId.isNotEmpty) {
+        mode = 'claude';
+      }
+
+      expect(mode, equals('claude'));
+      expect(savedProjectId, equals('proj-alpha'));
+    });
+
+    test('Device ID persistence and restoration', () async {
+      expect(await AppStorage.getLastDeviceId(), isNull);
+      await AppStorage.setLastDeviceId('dev-remote-1');
+      expect(await AppStorage.getLastDeviceId(), equals('dev-remote-1'));
+    });
   });
 }

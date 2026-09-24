@@ -104,6 +104,7 @@ class _AskScreenState extends ConsumerState<AskScreen> {
   int? _selectedTimeoutSeconds;
   bool _isUserScrolledUp = false;
   bool _isAutoScrolling = false;
+  bool _isWorkspaceRestored = false;
 
   // Artifacts Workspace State
   bool _isWorkspaceOpen = false;
@@ -312,14 +313,20 @@ class _AskScreenState extends ConsumerState<AskScreen> {
   Future<void> _handleProjectChange(String? projId, {String? restoreSessionId}) async {
     setState(() {
       _selectedProjectId = projId;
-      _selectedSessionId = null;
+      _selectedSessionId = restoreSessionId ?? (projId == null ? null : _selectedSessionId);
       _sessions = [];
       _loadingSessions = projId != null && projId.isNotEmpty;
     });
+    AppStorage.setLastExecutionMode(_executionMode);
     AppStorage.setLastProjectId(projId);
+    if (restoreSessionId != null) {
+      AppStorage.setLastSessionId(restoreSessionId);
+    } else if (projId == null) {
+      AppStorage.setLastSessionId(null);
+    }
 
     if (projId == null || projId.isEmpty) {
-      AppStorage.setLastSessionId(null);
+      ref.read(askProvider.notifier).newChat();
       return;
     }
 
@@ -372,6 +379,7 @@ class _AskScreenState extends ConsumerState<AskScreen> {
   }
 
   Future<void> _handleSelectSession(String? sid) async {
+    AppStorage.setLastExecutionMode(_executionMode);
     AppStorage.setLastSessionId(sid);
     if (sid == null || sid.isEmpty) {
       setState(() {
@@ -835,7 +843,10 @@ class _AskScreenState extends ConsumerState<AskScreen> {
 
   Future<void> _restoreLastWorkspaceState() async {
     final askState = ref.read(askProvider);
-    if (askState.turns.isNotEmpty || askState.activeConversationId != null) return;
+    if (askState.turns.isNotEmpty || askState.activeConversationId != null) {
+      _isWorkspaceRestored = true;
+      return;
+    }
 
     try {
       final savedMode = await AppStorage.getLastExecutionMode();
@@ -855,7 +866,11 @@ class _AskScreenState extends ConsumerState<AskScreen> {
         ref.read(deviceProvider.notifier).setSelectedDevice(savedDeviceId);
       }
 
-      final mode = (savedMode != null && savedMode.isNotEmpty) ? savedMode : 'ai';
+      // If savedMode is missing/ai but a project was saved, infer that the user was in an agent mode (defaulting to claude)
+      String mode = (savedMode != null && savedMode.isNotEmpty) ? savedMode : 'ai';
+      if ((savedMode == null || savedMode == 'ai') && savedProjectId != null && savedProjectId.isNotEmpty) {
+        mode = 'claude';
+      }
 
       setState(() {
         _executionMode = mode;
@@ -876,6 +891,12 @@ class _AskScreenState extends ConsumerState<AskScreen> {
           _cwdController.text = savedCwd;
           _showCwd = true;
         }
+        if (savedProjectId != null && savedProjectId.isNotEmpty) {
+          _selectedProjectId = savedProjectId;
+        }
+        if (savedSessionId != null && savedSessionId.isNotEmpty) {
+          _selectedSessionId = savedSessionId;
+        }
       });
 
       if (['codex', 'claude', 'antigravity'].contains(mode)) {
@@ -883,11 +904,31 @@ class _AskScreenState extends ConsumerState<AskScreen> {
         final projs = await _loadProjectsForMode(mode);
         if (!mounted) return;
 
+        // If the project tool_id can be inferred from loaded projects, align mode
         if (savedProjectId != null && savedProjectId.isNotEmpty) {
-          final projExists = projs.any((p) => p['id']?.toString() == savedProjectId);
-          if (projExists) {
-            await _handleProjectChange(savedProjectId, restoreSessionId: savedSessionId);
+          final matchedProj = projs.firstWhere(
+            (p) => p['id']?.toString() == savedProjectId,
+            orElse: () => {},
+          );
+          if (matchedProj.isNotEmpty) {
+            final tId = matchedProj['tool_id']?.toString();
+            if (tId == 'claude_code' && mode != 'claude') {
+              mode = 'claude';
+              setState(() => _executionMode = 'claude');
+              AppStorage.setLastExecutionMode('claude');
+            } else if (tId == 'codex' && mode != 'codex') {
+              mode = 'codex';
+              setState(() => _executionMode = 'codex');
+              AppStorage.setLastExecutionMode('codex');
+            } else if (tId == 'antigravity' && mode != 'antigravity') {
+              mode = 'antigravity';
+              setState(() => _executionMode = 'antigravity');
+              AppStorage.setLastExecutionMode('antigravity');
+            }
           }
+
+          // Unconditionally load project sessions and restore session
+          await _handleProjectChange(savedProjectId, restoreSessionId: savedSessionId);
         }
       } else {
         // AI / Shell mode: restore last conversation
@@ -918,6 +959,10 @@ class _AskScreenState extends ConsumerState<AskScreen> {
     } catch (e) {
       debugPrint('Error restoring workspace state: $e');
       _checkAutoRestoreLastConversation();
+    } finally {
+      if (mounted) {
+        _isWorkspaceRestored = true;
+      }
     }
   }
 
@@ -1393,6 +1438,18 @@ class _AskScreenState extends ConsumerState<AskScreen> {
     final cwd = _getEffectiveCwd();
     final attachmentsToSend = List<ChatAttachment>.from(_attachedFiles);
 
+    // Save entire active workspace context on message send
+    AppStorage.setLastExecutionMode(_executionMode);
+    AppStorage.setLastProjectId(_selectedProjectId);
+    AppStorage.setLastSessionId(_selectedSessionId);
+    AppStorage.setLastModel(_selectedModel);
+    AppStorage.setLastIsCustomModel(_isCustomModel);
+    AppStorage.setLastEffort(_selectedEffort);
+    AppStorage.setLastTimeoutSeconds(_selectedTimeoutSeconds);
+    if (cwd != null && cwd.isNotEmpty) {
+      AppStorage.setLastCwd(cwd);
+    }
+
     ref.read(askProvider.notifier).sendQuestion(
           question: text,
           selectedDevice: selectedDevice,
@@ -1489,6 +1546,7 @@ class _AskScreenState extends ConsumerState<AskScreen> {
                 setState(() {
                   _selectedSessionId = sid;
                 });
+                AppStorage.setLastSessionId(sid);
               }
             });
             break;
@@ -1498,16 +1556,19 @@ class _AskScreenState extends ConsumerState<AskScreen> {
     });
 
     ref.listen<DeviceState>(deviceProvider, (previous, next) {
-      if (previous?.selectedDeviceId != next.selectedDeviceId) {
-        setState(() {
-          _selectedProjectId = null;
-          _selectedSessionId = null;
-          _sessions = [];
-        });
-        if (['codex', 'claude', 'antigravity'].contains(_executionMode)) {
-          _loadProjectsForMode(_executionMode);
-          _loadCapabilitiesForMode(_executionMode);
-        }
+      if (!_isWorkspaceRestored) return;
+      if (previous == null || previous.selectedDeviceId == next.selectedDeviceId) return;
+
+      setState(() {
+        _selectedProjectId = null;
+        _selectedSessionId = null;
+        _sessions = [];
+      });
+      AppStorage.setLastProjectId(null);
+      AppStorage.setLastSessionId(null);
+      if (['codex', 'claude', 'antigravity'].contains(_executionMode)) {
+        _loadProjectsForMode(_executionMode);
+        _loadCapabilitiesForMode(_executionMode);
       }
     });
 
@@ -2468,6 +2529,16 @@ class _AskScreenState extends ConsumerState<AskScreen> {
                           value: 'auto',
                           child: Text('🤖 自动调度', overflow: TextOverflow.ellipsis),
                         ),
+                        if (deviceState.selectedDeviceId != 'auto' &&
+                            deviceState.selectedDeviceId != 'ask_only' &&
+                            !deviceState.devices.any((d) => d.deviceId == deviceState.selectedDeviceId))
+                          DropdownMenuItem(
+                            value: deviceState.selectedDeviceId,
+                            child: Text(
+                              '⚪ ${deviceState.selectedDeviceId.length > 8 ? deviceState.selectedDeviceId.substring(0, 8) : deviceState.selectedDeviceId}',
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
                         ...deviceState.devices.map(
                           (d) => DropdownMenuItem(
                             value: d.deviceId,
@@ -2690,7 +2761,7 @@ class _AskScreenState extends ConsumerState<AskScreen> {
                                             'name': (m is Map ? (m['name'] ?? m['id'] ?? '') : m).toString(),
                                           }).toList()
                                         : (kFallbackAgentModels[_executionMode] ?? []);
-                                    return currentModels.map((m) {
+                                    final items = currentModels.map((m) {
                                       return DropdownMenuItem<String>(
                                         value: m['id'],
                                         child: Row(
@@ -2708,7 +2779,27 @@ class _AskScreenState extends ConsumerState<AskScreen> {
                                           ],
                                         ),
                                       );
-                                    });
+                                    }).toList();
+                                    if (_selectedModel != null &&
+                                        _selectedModel!.isNotEmpty &&
+                                        !_isCustomModel &&
+                                        !currentModels.any((m) => m['id'] == _selectedModel)) {
+                                      items.insert(
+                                        0,
+                                        DropdownMenuItem<String>(
+                                          value: _selectedModel,
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              const Icon(Icons.auto_awesome, size: 12, color: AuroraColors.accent),
+                                              const SizedBox(width: 4),
+                                              Flexible(child: Text('🤖 $_selectedModel', overflow: TextOverflow.ellipsis)),
+                                            ],
+                                          ),
+                                        ),
+                                      );
+                                    }
+                                    return items;
                                   }(),
                                   const DropdownMenuItem<String>(
                                     value: '__custom__',
@@ -2752,6 +2843,13 @@ class _AskScreenState extends ConsumerState<AskScreen> {
                             value: null,
                             child: Text('📁 不指定项目', overflow: TextOverflow.ellipsis),
                           ),
+                          if (_selectedProjectId != null &&
+                              _selectedProjectId!.isNotEmpty &&
+                              !_projects.any((p) => p['id']?.toString() == _selectedProjectId))
+                            DropdownMenuItem<String>(
+                              value: _selectedProjectId,
+                              child: Text('📁 $_selectedProjectId', overflow: TextOverflow.ellipsis),
+                            ),
                           ..._projects.map((p) {
                             final id = p['id']?.toString() ?? '';
                             final title = (p['title'] ?? p['slug'] ?? id).toString().replaceAll('"', '').replaceAll("'", '').trim();
@@ -2920,6 +3018,13 @@ class _AskScreenState extends ConsumerState<AskScreen> {
                         value: null,
                         child: Text('➕ 新建独立会话', overflow: TextOverflow.ellipsis),
                       ),
+                      if (_selectedSessionId != null &&
+                          _selectedSessionId!.isNotEmpty &&
+                          !_sessions.any((s) => (s['session_id'] ?? s['conversation_id'])?.toString() == _selectedSessionId))
+                        DropdownMenuItem<String>(
+                          value: _selectedSessionId,
+                          child: Text('💬 $_selectedSessionId', overflow: TextOverflow.ellipsis),
+                        ),
                       ..._sessions.map((s) {
                         final sid = (s['session_id'] ?? s['conversation_id'] ?? '').toString();
                         final title = (s['title'] ?? (sid.length > 12 ? sid.substring(0, 12) : sid)).toString();
