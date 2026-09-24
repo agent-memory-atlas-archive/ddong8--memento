@@ -1,22 +1,22 @@
 {
   "version": "1.0.42",
   "title": "Memento v1.0.42",
-  "release_notes": "1. 做梦数据源全量扩充：将历史数千篇 Document 开发会话主题与数千个知识图谱实体深度纳入做梦摄取流，彻底解决历史会话遗漏问题\n2. 知识图谱冷启动自举 (Knowledge Bootstrap)：支持一键从历史全量技术实体、核心项目与深度观察中秒级梳理出长期认知记忆树\n3. 移动端记忆工作台体验升级：做梦抽屉新增「全量知识图谱冷启动自举」快捷操作，支持秒级沉淀与实时树状同步",
+  "release_notes": "1. 视觉与交互全面升级：采用 Aurora 极光暗色玻璃拟态 2.0，换装一体化圆角胶囊分段导航栏\n2. 核心工程体系化呈现：五大根维度配备发光 HUD 概览卡与专属领域色彩图标，并引入 IDE 级树状缩进导轨\n3. 毫秒级即时过滤：新增记忆树实时搜索框，支持一键清空与智能展开定位\n4. Web 记忆工作台同步升维：支持 39 个核心工程树状展开与 MEMORY.md 全文 Markdown 弹窗预览",
   "platforms": {
     "windows": {
       "asset_name": "Memento-windows-x64.zip",
-      "size": 34664921,
-      "sha256": "596b9629777bc380ce83255973df5bffd612a9d3dd1c44740aa39c923a4882e2"
+      "size": 34782302,
+      "sha256": "424bc85d37563991e82c86e706c868a9c1cbbd166a36bdd7f189441870e653ad"
     },
     "macos": {
       "asset_name": "Memento-macos-arm64.zip",
-      "size": 38441859,
-      "sha256": "9152e229ff95873b9d01534e44af91cee08b10ac77aa5dcf3ac05d477ad1fd7d"
+      "size": 38660339,
+      "sha256": "ba613cf2f83152bbeaaa8862cbc693f26298a72b773d7bf7acae89466ce3d751"
     },
     "linux": {
       "asset_name": "Memento-linux-x64.tar.gz",
-      "size": 11703304,
-      "sha256": "50a36d036c812b96be36bab116b5f512073293d2cc3dde0416fed4d042a9fcde"
+      "size": 11822747,
+      "sha256": "4b542294b9f4aeebb8e4a4ba2e4f13b67a3f419c47a5aa8f83d154a5ffed4d13"
     }
   }
 }
