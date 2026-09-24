@@ -516,6 +516,76 @@ class ToolDiscoveryService {
     );
   }
 
+  /// Discover Windsurf (~/.codeium/windsurf or Windsurf User globalStorage)
+  static Future<DiscoveredTool?> discoverWindsurf() async {
+    final codeiumRoot = Directory(p.join(_home, '.codeium', 'windsurf'));
+    Directory? storageDir;
+    if (Platform.isMacOS) {
+      storageDir = Directory(p.join(_appSupport, 'Windsurf', 'User', 'globalStorage'));
+    } else if (Platform.isWindows) {
+      storageDir = Directory(p.join(_appData, 'Windsurf', 'User', 'globalStorage'));
+    } else if (Platform.isLinux) {
+      storageDir = Directory(p.join(_linuxConfig, 'Windsurf', 'User', 'globalStorage'));
+    }
+
+    final hasRoot = await codeiumRoot.exists();
+    final hasStorage = storageDir != null && await storageDir.exists();
+    if (!hasRoot && !hasStorage) return null;
+
+    final List<DiscoveredProject> projects = [];
+    final seenPaths = <String>{};
+
+    if (hasStorage) {
+      final workspacePaths = await _extractVscWorkspaces(storageDir);
+      for (final rawPath in workspacePaths) {
+        if (seenPaths.add(rawPath)) {
+          final name = p.basename(rawPath);
+          if (!isInvalidProjectName(name)) {
+            projects.add(DiscoveredProject(name: name, path: rawPath));
+          }
+        }
+      }
+    }
+
+    return DiscoveredTool(
+      id: 'windsurf',
+      name: 'Windsurf',
+      root: hasRoot ? codeiumRoot.path : (storageDir?.parent.path ?? ''),
+      projects: projects,
+    );
+  }
+
+  /// Discover Cline / Roo-Code (VS Code extension globalStorage)
+  static Future<DiscoveredTool?> discoverCline() async {
+    final candDirs = <Directory>[];
+    if (Platform.isMacOS) {
+      candDirs.add(Directory(p.join(_appSupport, 'Code', 'User', 'globalStorage', 'saoudrizwan.claude-dev')));
+      candDirs.add(Directory(p.join(_appSupport, 'Code', 'User', 'globalStorage', 'rooveterinaryinc.roo-cline')));
+    } else if (Platform.isWindows) {
+      candDirs.add(Directory(p.join(_appData, 'Code', 'User', 'globalStorage', 'saoudrizwan.claude-dev')));
+      candDirs.add(Directory(p.join(_appData, 'Code', 'User', 'globalStorage', 'rooveterinaryinc.roo-cline')));
+    } else if (Platform.isLinux) {
+      candDirs.add(Directory(p.join(_linuxConfig, 'Code', 'User', 'globalStorage', 'saoudrizwan.claude-dev')));
+      candDirs.add(Directory(p.join(_linuxConfig, 'Code', 'User', 'globalStorage', 'rooveterinaryinc.roo-cline')));
+    }
+
+    Directory? activeDir;
+    for (final d in candDirs) {
+      if (await d.exists()) {
+        activeDir = d;
+        break;
+      }
+    }
+    if (activeDir == null) return null;
+
+    return DiscoveredTool(
+      id: 'cline',
+      name: 'Cline',
+      root: activeDir.path,
+      projects: [],
+    );
+  }
+
   /// Run full discovery across all supported tools
   static Future<Map<String, DiscoveredTool>> discoverAll() async {
     final Map<String, DiscoveredTool> tools = {};
@@ -525,6 +595,8 @@ class ToolDiscoveryService {
       discoverCodex(),
       discoverAntigravity(),
       discoverCursor(),
+      discoverWindsurf(),
+      discoverCline(),
       discoverObsidian(),
     ]);
 

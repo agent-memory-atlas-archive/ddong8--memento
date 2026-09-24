@@ -26,5 +26,22 @@ void main() {
       expect(name, 'memento');
       expect(path, '/Users/haixingdong/Desktop/dev/memento');
     });
+
+    test('discoverWindsurf returns safely without exception', () async {
+      final tool = await ToolDiscoveryService.discoverWindsurf();
+      // On machines without Windsurf, safely returns null; if present, valid tool
+      if (tool != null) {
+        expect(tool.id, 'windsurf');
+        expect(tool.name, 'Windsurf');
+      }
+    });
+
+    test('discoverCline returns safely without exception', () async {
+      final tool = await ToolDiscoveryService.discoverCline();
+      if (tool != null) {
+        expect(tool.id, 'cline');
+        expect(tool.name, 'Cline');
+      }
+    });
   });
 }

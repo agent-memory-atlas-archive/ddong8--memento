@@ -151,6 +151,16 @@ class FileWatcherService {
         if (await Directory(projDir).exists()) {
           watchPaths[projDir] = 'cursor';
         }
+      } else if (tool.id == 'windsurf') {
+        final cascadeDir = p.join(tool.root, 'cascade');
+        if (await Directory(cascadeDir).exists()) {
+          watchPaths[cascadeDir] = 'windsurf';
+        }
+      } else if (tool.id == 'cline') {
+        final tasksDir = p.join(tool.root, 'tasks');
+        if (await Directory(tasksDir).exists()) {
+          watchPaths[tasksDir] = 'cline';
+        }
       }
     }
 
