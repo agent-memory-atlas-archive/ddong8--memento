@@ -20,6 +20,8 @@ import re
 import uuid
 from datetime import datetime, timezone
 
+from typing import AsyncGenerator
+
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -788,6 +790,57 @@ async def delete_conversation(
     return {"ok": True}
 
 
+class _KeepaliveSentinel:
+    pass
+
+
+class _GeneratorError:
+    def __init__(self, exc: BaseException):
+        self.exc = exc
+
+
+async def sse_keepalive_generator(
+    generator: AsyncGenerator[str, None],
+    interval: float = 8.0,
+    keepalive_msg: str = ": keepalive\n\n",
+) -> AsyncGenerator[str, None]:
+    """Wraps an SSE generator to send keepalive comments (: keepalive\\n\\n) whenever
+    the inner generator is idle for more than `interval` seconds. This prevents
+    Traefik / Nginx / Cloudflare / client socket idle timeouts."""
+    queue: asyncio.Queue = asyncio.Queue()
+    sentinel = _KeepaliveSentinel()
+
+    async def worker():
+        try:
+            async for item in generator:
+                await queue.put(item)
+            await queue.put(sentinel)
+        except (asyncio.CancelledError, GeneratorExit):
+            pass
+        except BaseException as e:
+            await queue.put(_GeneratorError(e))
+
+    task = asyncio.create_task(worker())
+    try:
+        while True:
+            try:
+                item = await asyncio.wait_for(queue.get(), timeout=interval)
+                if item is sentinel:
+                    break
+                if isinstance(item, _GeneratorError):
+                    raise item.exc
+                yield item
+            except asyncio.TimeoutError:
+                yield keepalive_msg
+    finally:
+        if not task.done():
+            task.cancel()
+            try:
+                await task
+            except (asyncio.CancelledError, GeneratorExit, Exception):
+                pass
+
+
 async def _direct_agent_stream(
     db: AsyncSession,
     user: User,
@@ -936,85 +989,94 @@ async def _direct_agent_stream(
     yield f"data: {json.dumps({'type': 'tool_call', 'id': call_id, 'tool_call_id': call_id, 'name': 'run_on_device', 'args': args, 'device_name': device_id or 'auto', 'call': tool_call_item}, ensure_ascii=False)}\n\n"
 
     result_dict = None
-    try:
-        async for evt in _tool_run_on_device(db, user, args):
-            etype = evt.get("type")
-            if etype == "task_chunk":
-                stream_name = evt.get("stream", "stdout")
-                text = evt.get("text", "")
-                yield f"data: {json.dumps({'type': 'task_chunk', 'task_id': evt.get('task_id'), 'tool_call_id': call_id, 'device_name': evt.get('device_name'), 'stream': stream_name, 'text': text}, ensure_ascii=False)}\n\n"
-            elif etype == "task_progress":
-                yield f"data: {json.dumps({'type': 'task_progress', 'task_id': evt.get('task_id'), 'tool_call_id': call_id, 'device_name': evt.get('device_name'), 'status': evt.get('status')}, ensure_ascii=False)}\n\n"
-            elif etype == "tool_result":
-                result_dict = evt.get("result") or {}
-                if result_dict.get("device_name"):
-                    tool_call_item["device_name"] = result_dict["device_name"]
-                yield f"data: {json.dumps({'type': 'tool_result', 'task_id': result_dict.get('task_id'), 'tool_call_id': call_id, 'result': result_dict}, ensure_ascii=False)}\n\n"
-            elif etype == "ping":
-                yield "data: {\"type\": \"ping\"}\n\n"
-    except Exception as e:
-        logger.exception("Error in direct agent stream: %s", e)
-        yield f"data: {json.dumps({'type': 'error', 'message': str(e)}, ensure_ascii=False)}\n\n"
-
-    # Summary delta message
     summary_text = ""
-    if result_dict:
-        status = result_dict.get("status", "completed")
-        exit_code = result_dict.get("exit_code")
-        stdout = (result_dict.get("stdout") or "").strip()
-        stderr = (result_dict.get("stderr") or "").strip()
-        err_msg = result_dict.get("error") or stderr or f"退出码 {exit_code}"
+    saved = False
 
-        is_only_tool_calls = False
-        if action == "agent" and stdout:
-            non_empty_lines = [line.strip() for line in stdout.splitlines() if line.strip()]
-            if non_empty_lines and all(l.startswith(("[Tool:", "⚡ [", "[Tool ")) for l in non_empty_lines):
-                is_only_tool_calls = True
+    async def _persist():
+        nonlocal saved
+        if saved:
+            return
+        saved = True
+        tool_calls_to_save = []
+        if tool_call_item:
+            saved_call = dict(tool_call_item)
+            if result_dict:
+                saved_call["result"] = result_dict
+                saved_call["status"] = result_dict.get("status", "executed")
+            tool_calls_to_save.append(saved_call)
 
-        if status == "failed":
-            summary_text = f"❌ {err_msg}"
-        elif status == "timeout" or exit_code == 124:
-            if stdout:
-                summary_text = f"{stdout}\n\n> ⚠️ *[任务执行耗时较长触发安全保护中断，已记录上述排查过程。请发送“继续”以获取完整结论]*"
-            else:
-                summary_text = f"⚠️ 任务执行超时（{err_msg[:100]}）。您可以发送“继续”继续获取结果。"
-        elif action == "agent" and stdout:
-            if is_only_tool_calls:
-                summary_text = f"{stdout}\n\n> 💡 *[阶段工具排查已完成，正在生成结论。如未显示完整回复，请发送“继续”]*"
-            else:
-                summary_text = stdout
-        elif status == "succeeded" or exit_code == 0:
-            summary_text = f"✅ {execution_mode.capitalize()} 任务在设备上执行完毕。"
-        elif status == "still_running":
-            summary_text = "⏳ 任务仍在后台运行中。"
-        else:
-            summary_text = f"⚠️ 任务执行完成（{err_msg[:100]}）。"
-    else:
-        summary_text = "任务执行结束。"
+        await _append_conversation_turns(
+            conv_id=conv_id,
+            user_content=question,
+            assistant_content=summary_text or "任务执行完成",
+            sources=None,
+            tool_calls=tool_calls_to_save,
+            thinking=None,
+            device_id=device_id or (result_dict.get("device_id") if result_dict else None),
+            cwd=cwd,
+            images=images,
+            attachments=attachments,
+        )
 
-    yield f"data: {json.dumps({'type': 'delta', 'text': summary_text}, ensure_ascii=False)}\n\n"
+    try:
+        try:
+            async for evt in _tool_run_on_device(db, user, args):
+                etype = evt.get("type")
+                if etype == "task_chunk":
+                    stream_name = evt.get("stream", "stdout")
+                    text = evt.get("text", "")
+                    yield f"data: {json.dumps({'type': 'task_chunk', 'task_id': evt.get('task_id'), 'tool_call_id': call_id, 'device_name': evt.get('device_name'), 'stream': stream_name, 'text': text}, ensure_ascii=False)}\n\n"
+                elif etype == "task_progress":
+                    yield f"data: {json.dumps({'type': 'task_progress', 'task_id': evt.get('task_id'), 'tool_call_id': call_id, 'device_name': evt.get('device_name'), 'status': evt.get('status')}, ensure_ascii=False)}\n\n"
+                elif etype == "tool_result":
+                    result_dict = evt.get("result") or {}
+                    if result_dict.get("device_name"):
+                        tool_call_item["device_name"] = result_dict["device_name"]
+                    yield f"data: {json.dumps({'type': 'tool_result', 'task_id': result_dict.get('task_id'), 'tool_call_id': call_id, 'result': result_dict}, ensure_ascii=False)}\n\n"
+                elif etype == "ping":
+                    yield "data: {\"type\": \"ping\"}\n\n"
+        except Exception as e:
+            logger.exception("Error in direct agent stream: %s", e)
+            yield f"data: {json.dumps({'type': 'error', 'message': str(e)}, ensure_ascii=False)}\n\n"
 
-    # Persist turns in AskConversation
-    tool_calls_to_save = []
-    if tool_call_item:
-        saved_call = dict(tool_call_item)
+        # Summary delta message
         if result_dict:
-            saved_call["result"] = result_dict
-            saved_call["status"] = result_dict.get("status", "executed")
-        tool_calls_to_save.append(saved_call)
+            status = result_dict.get("status", "completed")
+            exit_code = result_dict.get("exit_code")
+            stdout = (result_dict.get("stdout") or "").strip()
+            stderr = (result_dict.get("stderr") or "").strip()
+            err_msg = result_dict.get("error") or stderr or f"退出码 {exit_code}"
 
-    await _append_conversation_turns(
-        conv_id=conv_id,
-        user_content=question,
-        assistant_content=summary_text,
-        sources=None,
-        tool_calls=tool_calls_to_save,
-        thinking=None,
-        device_id=device_id or (result_dict.get("device_id") if result_dict else None),
-        cwd=cwd,
-        images=images,
-        attachments=attachments,
-    )
+            is_only_tool_calls = False
+            if action == "agent" and stdout:
+                non_empty_lines = [line.strip() for line in stdout.splitlines() if line.strip()]
+                if non_empty_lines and all(l.startswith(("[Tool:", "⚡ [", "[Tool ")) for l in non_empty_lines):
+                    is_only_tool_calls = True
+
+            if status == "failed":
+                summary_text = f"❌ {err_msg}"
+            elif status == "timeout" or exit_code == 124:
+                if stdout:
+                    summary_text = f"{stdout}\n\n> ⚠️ *[任务执行耗时较长触发安全保护中断，已记录上述排查过程。请发送“继续”以获取完整结论]*"
+                else:
+                    summary_text = f"⚠️ 任务执行超时（{err_msg[:100]}）。您可以发送“继续”继续获取结果。"
+            elif action == "agent" and stdout:
+                if is_only_tool_calls:
+                    summary_text = f"{stdout}\n\n> 💡 *[阶段工具排查已完成，正在生成结论。如未显示完整回复，请发送“继续”]*"
+                else:
+                    summary_text = stdout
+            elif status == "succeeded" or exit_code == 0:
+                summary_text = f"✅ {execution_mode.capitalize()} 任务在设备上执行完毕。"
+            elif status == "still_running":
+                summary_text = "⏳ 任务仍在后台运行中。"
+            else:
+                summary_text = f"⚠️ 任务执行完成（{err_msg[:100]}）。"
+        else:
+            summary_text = "任务执行结束。"
+
+        yield f"data: {json.dumps({'type': 'delta', 'text': summary_text}, ensure_ascii=False)}\n\n"
+    finally:
+        await _persist()
 
     yield "data: {\"type\": \"done\"}\n\n"
     await asyncio.sleep(0.05)
@@ -1054,25 +1116,28 @@ async def ask(
     exec_mode = (body.execution_mode or "ai").lower().strip()
     if exec_mode in ("claude", "codex", "antigravity", "shell"):
         return StreamingResponse(
-            _direct_agent_stream(
-                db=db,
-                user=_user,
-                question=question,
-                conv_id=conv_id,
-                conv_title=conv_title,
-                execution_mode=exec_mode,
-                device_id=device_id or None,
-                cwd=body.cwd,
-                model=body.model,
-                effort=body.effort,
-                session_id=body.session_id,
-                project_id=body.project_id,
-                fork=body.fork,
-                compact_mode=body.compact_mode,
-                history=body.history,
-                timeout_seconds=body.timeout_seconds,
-                images=body.images,
-                attachments=body.attachments,
+            sse_keepalive_generator(
+                _direct_agent_stream(
+                    db=db,
+                    user=_user,
+                    question=question,
+                    conv_id=conv_id,
+                    conv_title=conv_title,
+                    execution_mode=exec_mode,
+                    device_id=device_id or None,
+                    cwd=body.cwd,
+                    model=body.model,
+                    effort=body.effort,
+                    session_id=body.session_id,
+                    project_id=body.project_id,
+                    fork=body.fork,
+                    compact_mode=body.compact_mode,
+                    history=body.history,
+                    timeout_seconds=body.timeout_seconds,
+                    images=body.images,
+                    attachments=body.attachments,
+                ),
+                interval=8.0,
             ),
             media_type="text/event-stream",
             headers={
@@ -1245,7 +1310,7 @@ async def ask(
             await asyncio.sleep(0.05)
 
         return StreamingResponse(
-            agent_stream(),
+            sse_keepalive_generator(agent_stream(), interval=8.0),
             media_type="text/event-stream",
             headers={
                 "Cache-Control": "no-cache",
@@ -1312,7 +1377,7 @@ async def ask(
         await asyncio.sleep(0.05)
 
     return StreamingResponse(
-        stream(),
+        sse_keepalive_generator(stream(), interval=8.0),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
