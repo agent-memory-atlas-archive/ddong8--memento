@@ -137,6 +137,18 @@ class KnowledgeObservation(Base):
     observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
+class UserMemory(Base):
+    __tablename__ = "user_memories"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    category: Mapped[str] = mapped_column(String(50))
+    key: Mapped[str] = mapped_column(String(120))
+    content: Mapped[str] = mapped_column(Text)
+    confidence: Mapped[float] = mapped_column(Float, default=1.0)
+    tree_path: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    is_folder: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
 def get_db_url() -> str:
     return os.environ.get(
         "MEMENTO_DATABASE_URL",

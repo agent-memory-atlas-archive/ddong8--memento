@@ -27,7 +27,7 @@ from pydantic import BaseModel
 from sqlalchemy import or_, select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..db.models import Document, Machine, User, AskConversation, UserMemory
+from ..db.models import Document, Machine, User, AskConversation, UserMemory, Project
 from ..db.session import get_db, async_session_factory
 from ..middleware.auth import get_current_user
 from ..services.user_filter import user_machine_ids, apply_user_filter, find_machine_by_id_or_hash
@@ -161,6 +161,126 @@ async def _retrieve(
             "excerpt": (text or "")[:CHARS_PER_DOC],
         })
     return sources
+
+
+async def _retrieve_core_memories(
+    db: AsyncSession,
+    user: User,
+    question: str,
+    project_id: str | None = None,
+    cwd: str | None = None,
+    session_id: str | None = None,
+    limit: int = 12,
+) -> list[UserMemory]:
+    """Retrieve high-signal core memories (L3) with project-scoped prioritization.
+
+    Prevents cross-project memory contamination (e.g. 30+ projects) by:
+    1. Always including global rules and user preferences (rule, preference, general).
+    2. Pinpointing project-specific memories (matching active project slug/path).
+    3. Fusing keyword matching against UserMemory content for the current question.
+    """
+    proj_slug: str | None = None
+
+    # A. Resolve active project identifier
+    if project_id:
+        try:
+            p_uuid = uuid.UUID(project_id)
+            p_obj = (await db.execute(select(Project).where(Project.id == p_uuid))).scalar_one_or_none()
+            if p_obj:
+                proj_slug = p_obj.slug
+        except (ValueError, TypeError):
+            proj_slug = project_id.strip()
+
+    if not proj_slug and cwd:
+        clean_cwd = cwd.strip().rstrip("/\\")
+        bname = os.path.basename(clean_cwd)
+        if bname:
+            p_obj = (await db.execute(
+                select(Project).where(or_(Project.slug == bname, Project.source_path.ilike(f"%{bname}%"))).limit(1)
+            )).scalar_one_or_none()
+            if p_obj:
+                proj_slug = p_obj.slug
+            else:
+                proj_slug = bname
+
+    collected: list[UserMemory] = []
+    seen_ids: set[uuid.UUID] = set()
+
+    def _add_mem(mem: UserMemory):
+        if mem.id not in seen_ids and not mem.is_folder and (mem.content or "").strip():
+            seen_ids.add(mem.id)
+            collected.append(mem)
+
+    # 1. Active project-scoped memories (Top priority)
+    if proj_slug:
+        slug_clean = proj_slug.lower()
+        proj_q = (
+            select(UserMemory)
+            .where(
+                UserMemory.user_id == user.id,
+                UserMemory.is_folder.is_(False),
+                or_(
+                    UserMemory.tree_path.ilike(f"%{slug_clean}%"),
+                    UserMemory.key.ilike(f"%{slug_clean}%"),
+                    UserMemory.category == "architecture",
+                ),
+            )
+            .order_by(UserMemory.confidence.desc(), UserMemory.updated_at.desc())
+            .limit(6)
+        )
+        for m in (await db.execute(proj_q)).scalars().all():
+            _add_mem(m)
+
+    # 2. Global rules, guidelines & developer preferences (Always preserved)
+    rules_q = (
+        select(UserMemory)
+        .where(
+            UserMemory.user_id == user.id,
+            UserMemory.is_folder.is_(False),
+            UserMemory.category.in_(["rule", "rules", "preference", "general"]),
+        )
+        .order_by(UserMemory.confidence.desc(), UserMemory.updated_at.desc())
+        .limit(6)
+    )
+    for m in (await db.execute(rules_q)).scalars().all():
+        _add_mem(m)
+
+    # 3. Keyword matching against user memory content for the current question
+    tokens = [t.strip() for t in re.split(r"[\s,;，；]+", question) if len(t.strip()) >= 2]
+    if tokens:
+        kw_conds = [UserMemory.content.ilike(f"%{tok[:20]}%") for tok in tokens[:4]]
+        if kw_conds:
+            kw_q = (
+                select(UserMemory)
+                .where(
+                    UserMemory.user_id == user.id,
+                    UserMemory.is_folder.is_(False),
+                    or_(*kw_conds),
+                )
+                .order_by(UserMemory.confidence.desc(), UserMemory.updated_at.desc())
+                .limit(4)
+            )
+            for m in (await db.execute(kw_q)).scalars().all():
+                _add_mem(m)
+
+    # 4. Fill remaining budget with highest confidence general memories if needed
+    if len(collected) < limit:
+        remain = limit - len(collected)
+        fill_q = (
+            select(UserMemory)
+            .where(
+                UserMemory.user_id == user.id,
+                UserMemory.is_folder.is_(False),
+            )
+            .order_by(UserMemory.confidence.desc(), UserMemory.updated_at.desc())
+            .limit(remain + 5)
+        )
+        for m in (await db.execute(fill_q)).scalars().all():
+            if len(collected) >= limit:
+                break
+            _add_mem(m)
+
+    return collected[:limit]
 
 
 ACTION_VERBS = (
@@ -993,13 +1113,16 @@ async def ask(
                         break
         sources = await _retrieve(db, _user, retrieval_query, body.tool, body.days)
 
-    # Fetch top core memories (L3) for user
-    core_mems = (await db.execute(
-        select(UserMemory)
-        .where(UserMemory.user_id == _user.id)
-        .order_by(UserMemory.confidence.desc(), UserMemory.updated_at.desc())
-        .limit(10)
-    )).scalars().all()
+    # Fetch prioritized core memories (L3) with active project scoping
+    core_mems = await _retrieve_core_memories(
+        db=db,
+        user=_user,
+        question=question,
+        project_id=body.project_id,
+        cwd=body.cwd,
+        session_id=body.session_id,
+        limit=12,
+    )
 
     messages = _build_messages(
         question,

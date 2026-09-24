@@ -64,6 +64,57 @@ class AskContinuationTests(unittest.TestCase):
         self.assertFalse(is_cont)
         self.assertFalse(is_act)
 
+    def test_retrieve_core_memories_prioritization(self):
+        import asyncio
+        from unittest.mock import AsyncMock, MagicMock
+        import uuid
+        from server.api.ask import _retrieve_core_memories
+        from server.db.models import User, UserMemory
+
+        mock_user = User(id=uuid.uuid4(), email="dev@example.com")
+        mem_proj = UserMemory(
+            id=uuid.uuid4(),
+            user_id=mock_user.id,
+            category="project",
+            key="proj_memento_overview",
+            tree_path="/project/memento/overview",
+            content="Memento project architecture",
+            is_folder=False,
+            confidence=0.95,
+        )
+        mem_rule = UserMemory(
+            id=uuid.uuid4(),
+            user_id=mock_user.id,
+            category="rule",
+            key="windows_zip_update",
+            tree_path="/rules/windows",
+            content="Windows desktop auto-update must use .zip",
+            is_folder=False,
+            confidence=1.0,
+        )
+
+        db = AsyncMock()
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = [mem_proj, mem_rule]
+        mock_result.scalar_one_or_none.return_value = None
+        db.execute.return_value = mock_result
+
+        async def _run():
+            return await _retrieve_core_memories(
+                db=db,
+                user=mock_user,
+                question="这个项目发布怎么做",
+                project_id="memento",
+                cwd="/Users/dev/memento",
+                limit=10,
+            )
+
+        mems = asyncio.run(_run())
+        self.assertTrue(len(mems) > 0)
+        keys = [m.key for m in mems]
+        self.assertIn("proj_memento_overview", keys)
+
 
 if __name__ == "__main__":
     unittest.main()
+

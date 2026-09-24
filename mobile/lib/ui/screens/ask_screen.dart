@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 import 'package:path/path.dart' as p;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -487,109 +488,21 @@ class _AskScreenState extends ConsumerState<AskScreen> {
 
       if (targetFile == null || !await targetFile.exists()) return [];
 
-      final lines = await targetFile.readAsLines();
-      final List<AskTurn> turns = [];
+      final rawTurns = await Isolate.run(
+        () => _parseLocalSessionTurnsInIsolate(
+          _LocalSessionParseArgs(targetFile!.path, _executionMode),
+        ),
+      );
 
-      if (_executionMode == 'antigravity') {
-        for (final line in lines) {
-          if (line.trim().isEmpty) continue;
-          try {
-            final obj = jsonDecode(line);
-            if (obj is! Map<String, dynamic>) continue;
-            final mtype = obj['type']?.toString();
-            final source = obj['source']?.toString();
-
-            if (mtype == 'USER_INPUT' || source == 'USER_EXPLICIT') {
-              final raw = obj['content']?.toString() ?? '';
-              final reqMatch = RegExp(r'<USER_REQUEST>([\s\S]*?)</USER_REQUEST>').firstMatch(raw);
-              final content = reqMatch != null ? reqMatch.group(1)!.trim() : raw.trim();
-              if (content.isNotEmpty) {
-                turns.add(AskTurn(role: 'user', content: content));
-              }
-            } else if (mtype == 'SYSTEM_MESSAGE') {
-              final raw = obj['content']?.toString() ?? '';
-              final m = RegExp(
-                r'\[Message\]\s+(?:timestamp=[^\s]+\s+)?(?:sender=([^\s]+)\s+)?(?:priority=[^\s]+\s+)?content=([\s\S]*)',
-              ).firstMatch(raw);
-              if (m != null) {
-                final sender = (m.group(1) ?? '').toLowerCase();
-                var body = m.group(2)!.trim();
-                if (body.endsWith('</SYSTEM_MESSAGE>')) {
-                  body = body.substring(0, body.length - '</SYSTEM_MESSAGE>'.length).trim();
-                }
-                final isTask = sender.contains('task-') ||
-                    body.toLowerCase().contains('task id ') ||
-                    sender.contains('subagent') ||
-                    body.startsWith('[Notice]') ||
-                    body.startsWith('Task id ');
-                if (!isTask && body.isNotEmpty) {
-                  turns.add(AskTurn(role: 'user', content: body));
-                }
-              }
-            } else if (mtype == 'PLANNER_RESPONSE') {
-              final toolCalls = obj['tool_calls'] as List?;
-              if (toolCalls == null || toolCalls.isEmpty) {
-                final c = (obj['content']?.toString() ?? '').trim();
-                final th = (obj['thinking']?.toString() ?? '').trim();
-                if (c.isNotEmpty || th.isNotEmpty) {
-                  turns.add(AskTurn(
-                    role: 'assistant',
-                    content: c.isNotEmpty ? c : '[AI 思考过程]',
-                    thinking: th.isNotEmpty ? th : null,
-                  ));
-                }
-              }
-            }
-          } catch (_) {}
-        }
-      } else if (_executionMode == 'claude') {
-        for (final line in lines) {
-          if (line.trim().isEmpty) continue;
-          try {
-            final obj = jsonDecode(line);
-            if (obj is! Map<String, dynamic>) continue;
-            final message = obj['message'];
-            if (message is Map<String, dynamic>) {
-              final role = message['role']?.toString();
-              final rawContent = message['content'];
-              String text = '';
-              if (rawContent is String) {
-                text = rawContent;
-              } else if (rawContent is List) {
-                for (final item in rawContent) {
-                  if (item is Map && item['type'] == 'text') {
-                    text += (item['text']?.toString() ?? '');
-                  }
-                }
-              }
-              if (role != null && text.trim().isNotEmpty) {
-                turns.add(AskTurn(role: role, content: text.trim()));
-              }
-            }
-          } catch (_) {}
-        }
-      } else if (_executionMode == 'codex') {
-        for (final line in lines) {
-          if (line.trim().isEmpty) continue;
-          try {
-            final obj = jsonDecode(line);
-            if (obj is! Map<String, dynamic>) continue;
-            final mtype = obj['type']?.toString();
-            final payload = obj['payload'];
-            if (payload is Map<String, dynamic>) {
-              final role = payload['role']?.toString() ?? mtype;
-              final content = payload['content']?.toString() ?? '';
-              if (role != null && (role == 'user' || role == 'assistant') && content.trim().isNotEmpty) {
-                turns.add(AskTurn(role: role, content: content.trim()));
-              }
-            }
-          } catch (_) {}
-        }
-      }
-
-      return turns;
+      return rawTurns
+          .map((m) => AskTurn(
+                role: m['role'] ?? 'user',
+                content: m['content'] ?? '',
+                thinking: m['thinking'],
+              ))
+          .toList();
     } catch (e) {
-      debugPrint('Error reading local session turns: $e');
+      debugPrint('Error reading local session turns in isolate: $e');
       return [];
     }
   }
@@ -3665,4 +3578,117 @@ class _AskScreenState extends ConsumerState<AskScreen> {
       ),
     );
   }
+}
+
+class _LocalSessionParseArgs {
+  final String filePath;
+  final String executionMode;
+  const _LocalSessionParseArgs(this.filePath, this.executionMode);
+}
+
+List<Map<String, String?>> _parseLocalSessionTurnsInIsolate(_LocalSessionParseArgs args) {
+  final file = File(args.filePath);
+  if (!file.existsSync()) return [];
+
+  final lines = file.readAsLinesSync();
+  final List<Map<String, String?>> turns = [];
+
+  if (args.executionMode == 'antigravity') {
+    for (final line in lines) {
+      if (line.trim().isEmpty) continue;
+      try {
+        final obj = jsonDecode(line);
+        if (obj is! Map<String, dynamic>) continue;
+        final mtype = obj['type']?.toString();
+        final source = obj['source']?.toString();
+
+        if (mtype == 'USER_INPUT' || source == 'USER_EXPLICIT') {
+          final raw = obj['content']?.toString() ?? '';
+          final reqMatch = RegExp(r'<USER_REQUEST>([\s\S]*?)</USER_REQUEST>').firstMatch(raw);
+          final content = reqMatch != null ? reqMatch.group(1)!.trim() : raw.trim();
+          if (content.isNotEmpty) {
+            turns.add({'role': 'user', 'content': content, 'thinking': null});
+          }
+        } else if (mtype == 'SYSTEM_MESSAGE') {
+          final raw = obj['content']?.toString() ?? '';
+          final m = RegExp(
+            r'\[Message\]\s+(?:timestamp=[^\s]+\s+)?(?:sender=([^\s]+)\s+)?(?:priority=[^\s]+\s+)?content=([\s\S]*)',
+          ).firstMatch(raw);
+          if (m != null) {
+            final sender = (m.group(1) ?? '').toLowerCase();
+            var body = m.group(2)!.trim();
+            if (body.endsWith('</SYSTEM_MESSAGE>')) {
+              body = body.substring(0, body.length - '</SYSTEM_MESSAGE>'.length).trim();
+            }
+            final isTask = sender.contains('task-') ||
+                body.toLowerCase().contains('task id ') ||
+                sender.contains('subagent') ||
+                body.startsWith('[Notice]') ||
+                body.startsWith('Task id ');
+            if (!isTask && body.isNotEmpty) {
+              turns.add({'role': 'user', 'content': body, 'thinking': null});
+            }
+          }
+        } else if (mtype == 'PLANNER_RESPONSE') {
+          final toolCalls = obj['tool_calls'] as List?;
+          if (toolCalls == null || toolCalls.isEmpty) {
+            final c = (obj['content']?.toString() ?? '').trim();
+            final th = (obj['thinking']?.toString() ?? '').trim();
+            if (c.isNotEmpty || th.isNotEmpty) {
+              turns.add({
+                'role': 'assistant',
+                'content': c.isNotEmpty ? c : '[AI 思考过程]',
+                'thinking': th.isNotEmpty ? th : null,
+              });
+            }
+          }
+        }
+      } catch (_) {}
+    }
+  } else if (args.executionMode == 'claude') {
+    for (final line in lines) {
+      if (line.trim().isEmpty) continue;
+      try {
+        final obj = jsonDecode(line);
+        if (obj is! Map<String, dynamic>) continue;
+        final message = obj['message'];
+        if (message is Map<String, dynamic>) {
+          final role = message['role']?.toString();
+          final rawContent = message['content'];
+          String text = '';
+          if (rawContent is String) {
+            text = rawContent;
+          } else if (rawContent is List) {
+            for (final item in rawContent) {
+              if (item is Map && item['type'] == 'text') {
+                text += (item['text']?.toString() ?? '');
+              }
+            }
+          }
+          if (role != null && text.trim().isNotEmpty) {
+            turns.add({'role': role, 'content': text.trim(), 'thinking': null});
+          }
+        }
+      } catch (_) {}
+    }
+  } else if (args.executionMode == 'codex') {
+    for (final line in lines) {
+      if (line.trim().isEmpty) continue;
+      try {
+        final obj = jsonDecode(line);
+        if (obj is! Map<String, dynamic>) continue;
+        final mtype = obj['type']?.toString();
+        final payload = obj['payload'];
+        if (payload is Map<String, dynamic>) {
+          final role = payload['role']?.toString() ?? mtype;
+          final content = payload['content']?.toString() ?? '';
+          if (role != null && (role == 'user' || role == 'assistant') && content.trim().isNotEmpty) {
+            turns.add({'role': role, 'content': content.trim(), 'thinking': null});
+          }
+        }
+      } catch (_) {}
+    }
+  }
+
+  return turns;
 }

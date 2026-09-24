@@ -803,3 +803,86 @@ async def get_core_memory_resource() -> str:
     """Get the user's consolidated MEMORY.md."""
     return await memory_core()
 
+
+@mcp.tool()
+async def memory_check_rule(action_type: str, project_name: str | None = None) -> str:
+    """Pre-flight safety check against user's consolidated engineering rules & guidelines.
+
+    Use this tool BEFORE performing critical operations (e.g. release, build, migration,
+    git push, deployment, refactor, config update) to retrieve relevant iron rules,
+    compatibility requirements, or past pitfalls recorded in Memento.
+
+    Args:
+        action_type: Type of action being planned (e.g. 'release', 'deploy', 'update', 'build', 'db_migration')
+        project_name: Optional target project name to include project-specific rules
+    """
+    rules: list[dict] = []
+    if _remote:
+        rule_mems = await _remote.get_core_memories(category="rule")
+        pref_mems = await _remote.get_core_memories(category="preference")
+        rules.extend(rule_mems or [])
+        rules.extend(pref_mems or [])
+        if project_name:
+            proj_mems = await _remote.get_core_memories(category="project")
+            for m in (proj_mems or []):
+                p_text = f"{m.get('key', '')} {m.get('tree_path', '')}".lower()
+                if project_name.lower() in p_text:
+                    rules.append(m)
+    elif _session_factory:
+        from sqlalchemy import or_, select
+        from .db import UserMemory
+        async with _session_factory() as db:
+            conds = [UserMemory.category.in_(["rule", "rules", "preference"])]
+            if project_name:
+                conds.append(UserMemory.tree_path.ilike(f"%{project_name}%"))
+            result = await db.execute(
+                select(UserMemory.key, UserMemory.content, UserMemory.category)
+                .where(or_(*conds))
+                .order_by(UserMemory.confidence.desc())
+            )
+            for key, content, category in result.all():
+                rules.append({"key": key, "content": content, "category": category})
+
+    if not rules:
+        return f"No specific engineering rules found for action '{action_type}'. Proceed with standard best practices."
+
+    act_tokens = [t.lower() for t in action_type.replace("_", " ").replace("-", " ").split() if len(t) > 1]
+    matched = []
+    for r in rules:
+        text = f"{r.get('key', '')} {r.get('content', '')}".lower()
+        if any(tok in text for tok in act_tokens) or r.get("category") == "rule":
+            matched.append(r)
+
+    display_rules = matched if matched else rules
+    lines = [f"# Pre-Flight Safety Check: '{action_type}'" + (f" for [{project_name}]" if project_name else "")]
+    for r in display_rules[:8]:
+        lines.append(f"- ⚠️ **[{r.get('key')}]**: {r.get('content')}")
+    lines.append("\nPlease review these guidelines and ensure your planned actions adhere to them.")
+    return "\n".join(lines)
+
+
+@mcp.tool()
+async def memory_project_map() -> str:
+    """Get a global portfolio map of all projects tracked in Memento.
+
+    Returns the list of active engineering projects, their slug, title, primary tool,
+    and document statistics. Use this to establish a high-level architectural overview
+    of the user's workspace before drilling into specific projects.
+    """
+    if _remote:
+        projects = await _remote.get_projects()
+        if not projects:
+            return "No projects currently tracked in Memento."
+        lines = [f"# Memento Workspace Project Map ({len(projects)} projects)\n"]
+        for p in projects:
+            title = p.get("title") or p.get("slug")
+            slug = p.get("slug", "")
+            tool = p.get("tool_id") or "universal"
+            doc_count = p.get("doc_count") or len(p.get("documents") or [])
+            summary = p.get("summary") or ""
+            desc = f": {summary}" if summary else ""
+            lines.append(f"- **{title}** (`{slug}`) [{tool}] - {doc_count} docs{desc}")
+        return "\n".join(lines)
+    return "Project map retrieval is supported in remote mode."
+
+
