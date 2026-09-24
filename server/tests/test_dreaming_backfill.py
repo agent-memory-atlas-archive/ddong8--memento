@@ -149,7 +149,11 @@ class TestDreamingBackfill(unittest.IsolatedAsyncioTestCase):
         res_existing = MagicMock()
         res_existing.scalar_one_or_none.return_value = None
 
-        mock_db.execute.side_effect = [res_doc_projs, res_ke_projs, res_techs, res_obs, res_existing, res_existing]
+        # Mock existing project memories query (none existing)
+        res_proj_mems = MagicMock()
+        res_proj_mems.scalars.return_value.all.return_value = []
+
+        mock_db.execute.side_effect = [res_doc_projs, res_ke_projs, res_techs, res_obs, res_proj_mems, res_existing, res_existing]
 
         res = await bootstrap_memories_from_knowledge_graph(mock_db, user)
 

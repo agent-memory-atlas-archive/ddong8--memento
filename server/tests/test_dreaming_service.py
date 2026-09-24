@@ -6,7 +6,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from server.db.models import User, UserMemory
 from server.services.dreaming_service import (
+    _is_suspicious_non_project,
     export_core_memory_markdown,
+    extract_canonical_projects,
+    resolve_canonical_slug,
     run_dreaming_pipeline,
     sanitize_transient_text,
 )
@@ -120,6 +123,68 @@ class TestDreamingService(unittest.IsolatedAsyncioTestCase):
             self.assertIn("清洗了会话与工具日志", journal.light_sleep_notes)
             self.assertIn("Windows 更新必须使用 .zip 在位热替换", journal.report_markdown)
             self.assertTrue(mock_db.commit.called)
+
+    def test_is_suspicious_non_project(self):
+        # Chemical compounds and IUPAC
+        self.assertTrue(_is_suspicious_non_project("3_甲基_3,9_二氮杂螺[5,5]十一烷", "3-甲基-3,9-二氮杂螺[5.5]十一烷"))
+        self.assertTrue(_is_suspicious_non_project("s_4_4_二苯并", "(S)-[4,4'-二苯并-1,3-二氧杂环戊-5,5'-二基]双(二苯基膦)"))
+        self.assertTrue(_is_suspicious_non_project("smiles_c1234", "SMILES: CC(C)C1=CC=C..."))
+
+        # IP addresses and nodes
+        self.assertTrue(_is_suspicious_non_project("192_168_1_144", "192.168.1.144"))
+        self.assertTrue(_is_suspicious_non_project("120_77", "120.77"))
+        self.assertTrue(_is_suspicious_non_project("node_144", "node-144"))
+
+        # Models & hardware specs
+        self.assertTrue(_is_suspicious_non_project("80b模型", "80b模型探讨"))
+        self.assertTrue(_is_suspicious_non_project("16gb_apple_silicon", "16gb_apple_silicon_mac小llm选型"))
+
+        # Valid projects should NOT be flagged
+        self.assertFalse(_is_suspicious_non_project("quant_future", "quant_future"))
+        self.assertFalse(_is_suspicious_non_project("binance_quant_bot", "binance_quant_bot"))
+        self.assertFalse(_is_suspicious_non_project("scifinder_retro_svc", "scifinder_retro_svc"))
+        self.assertFalse(_is_suspicious_non_project("yicaigou", "易采购"))
+
+    def test_resolve_canonical_slug(self):
+        self.assertEqual(resolve_canonical_slug("claude_code/quant-future"), "quant_future")
+        self.assertEqual(resolve_canonical_slug("antigravity/binance-quant-bot"), "binance_quant_bot")
+        self.assertEqual(resolve_canonical_slug("易采购b2b商城"), "yicaigou")
+        self.assertEqual(resolve_canonical_slug("qbacktest"), "quant_backtest")
+        self.assertEqual(resolve_canonical_slug("scifinder"), "scifinder_retro_svc")
+
+    async def test_extract_canonical_projects_filters_noise(self):
+        user = User(id=uuid.uuid4(), email="test@example.com")
+        mock_db = AsyncMock()
+
+        # Document projects: includes legitimate projects and some noisy ones
+        doc_rows = [
+            ("quant_future", "quant_future", 20),
+            ("3_甲基_3,9_二氮杂螺", "化学化合物", 10),  # Suspicious non-project -> filtered
+            ("192_168_1_144", "服务器节点", 8),        # IP -> filtered
+            ("scratch_tool", "临时脚本", 2),            # cnt < 5 and uncurated -> filtered
+        ]
+        # Knowledge entities: zero-doc noise entities marked as 'project'
+        ke_rows = [
+            ("quant_future", "量化期货系统总结", 15),
+            ("塞来昔布中间体", "化学物质总结", 5),       # Uncurated KE with 0 docs -> ignored
+            ("2周反转策略", "交易策略细节", 3),           # Uncurated KE with 0 docs -> ignored
+        ]
+
+        res_doc = MagicMock()
+        res_doc.all.return_value = doc_rows
+        res_ke = MagicMock()
+        res_ke.all.return_value = ke_rows
+        mock_db.execute.side_effect = [res_doc, res_ke]
+
+        projects = await extract_canonical_projects(mock_db, user)
+        slugs = [p["slug"] for p in projects]
+
+        self.assertIn("quant_future", slugs)
+        self.assertNotIn("3_甲基_3,9_二氮杂螺", slugs)
+        self.assertNotIn("192_168_1_144", slugs)
+        self.assertNotIn("scratch_tool", slugs)
+        self.assertNotIn("塞来昔布中间体", slugs)
+        self.assertNotIn("2周反转策略", slugs)
 
 
 if __name__ == "__main__":

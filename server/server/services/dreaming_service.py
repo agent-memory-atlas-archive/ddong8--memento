@@ -135,30 +135,33 @@ _DREAM_PROMPT = """你是一个高阶智能大脑的认知记忆固化中枢（�
 # Canonical Project Clustering & Extraction
 # ---------------------------------------------------------------------------
 CANONICAL_PROJECT_MAP: dict[str, dict[str, str]] = {
-    "favorite_chat": {
-        "slug": "favorite_chat",
-        "title": "favorite_chat (库存/询单管理系统)",
-        "default_summary": "Vue3 + FastAPI 驱动的库存与询单管理系统，包含前后端分离架构与数据导入、中转模块。",
-    },
+    # 核心量化体系
     "quant_future": {
         "slug": "quant_future",
         "title": "quant_future (量化交易与多因子回测)",
-        "default_summary": "量化期货交易与多因子回测系统，支持高频行情接入、实盘部署流与策略回测引擎。",
+        "default_summary": "期货多因子量化交易系统，支持高频行情接入、实盘部署流与策略回测引擎。",
     },
-    "openclaw": {
-        "slug": "openclaw",
-        "title": "openclaw (AI 自动化客户端与桌面沙箱)",
-        "default_summary": "OpenClaw 跨平台客户端与基于 KasmVNC 的容器化桌面沙箱运行环境，提供浏览器自动化与代理工具。",
+    "binance_quant_bot": {
+        "slug": "binance_quant_bot",
+        "title": "binance_quant_bot (币安现货/合约网关机器人)",
+        "default_summary": "BTC/USDT 现货网格与合约量化交易机器人，支持 paper/testnet/live 三种模式与 K8s 自动化调度。",
     },
-    "rke2_k8s": {
-        "slug": "rke2_k8s",
-        "title": "rke2_k8s (高可用 Kubernetes 集群基建)",
-        "default_summary": "基于 RKE2/K3s 的双集群基础设施运维，整合 NAS 存储、DaoCloud 加速、容灾备份与 GitOps 自动化流水线。",
+    "quant_backtest": {
+        "slug": "quant_backtest",
+        "title": "quant_backtest (私有量化回测服务引擎)",
+        "default_summary": "私有量化回测与模拟撮合服务系统（quant-backtest-service），为多策略提供极速历史回测。",
     },
-    "yicaigou": {
-        "slug": "yicaigou",
-        "title": "yicaigou (易采购 B2B 化学品电商平台)",
-        "default_summary": "B2B 化学品采购撮合与电商平台，前端采用 Next.js 15+React 18+TypeScript，后端采用 FastAPI+SQLAlchemy+MySQL。",
+    "fg_tqsdk_market_maker": {
+        "slug": "fg_tqsdk_market_maker",
+        "title": "fg_tqsdk_market_maker (天勤期货做市引擎)",
+        "default_summary": "基于 TQSDK 的期货自动化做市与网格撮合策略引擎。",
+    },
+
+    # 协作沟通与业务应用
+    "favorite_chat": {
+        "slug": "favorite_chat",
+        "title": "favorite_chat (库存/询单协同管理系统)",
+        "default_summary": "企业内部协同工作台、库存与询单管理系统，提供前后端分离协作与实时数据流。",
     },
     "daily_report": {
         "slug": "daily_report",
@@ -170,10 +173,141 @@ CANONICAL_PROJECT_MAP: dict[str, dict[str, str]] = {
         "title": "memento (开发者认知记忆与全生命周期收集系统)",
         "default_summary": "开发者全生命周期数据收集系统与认知记忆大脑，包含跨设备常驻采集器、三层记忆做梦固化管道与多端管理界面。",
     },
+    "yicaigou": {
+        "slug": "yicaigou",
+        "title": "yicaigou (易采购 B2B 化学品电商平台)",
+        "default_summary": "B2B 化学品采购撮合与电商平台，前端采用 Next.js 15+React 18+TypeScript，后端采用 FastAPI+SQLAlchemy+MySQL。",
+    },
+    "bulk_import": {
+        "slug": "bulk_import",
+        "title": "bulk_import (批量数据解析与高并发流式导入)",
+        "default_summary": "高性能大容量 Excel/CSV 批量数据异步解析、动态列映射与入库流水线服务。",
+    },
+    "sso": {
+        "slug": "sso",
+        "title": "sso (统一身份认证与单点登录鉴权中心)",
+        "default_summary": "基于 JWT 与 OAuth2/OIDC 的统一单点登录与权限认证中台，支持跨子域跨应用无感鉴权。",
+    },
+    "aipay": {
+        "slug": "aipay",
+        "title": "aipay (多通道支付与账务结算中台)",
+        "default_summary": "集成微信支付、支付宝及企业对公账户的统一支付中台，提供可靠异步对账与订单回调保障。",
+    },
+    "zentao": {
+        "slug": "zentao",
+        "title": "zentao (禅道项目管理与研发流程协同)",
+        "default_summary": "Kubernetes 部署的禅道协同软件与 OAuth2 SSO 统一接入网关。",
+    },
+    "easywork_copilot": {
+        "slug": "easywork_copilot",
+        "title": "easywork_copilot (跨平台统一研发 Copilot 协同大脑)",
+        "default_summary": "跨应用协同的统一 AI Copilot Agent，统一调度业务系统并支持工具调用。",
+    },
+
+    # 化学与药物研发平台
+    "pubchem": {
+        "slug": "pubchem",
+        "title": "pubchem (PubChem 化学数据库与数据流水线)",
+        "default_summary": "亿级化合物结构与属性数据同步流水线、CID/CAS 映射及化合物知识图谱。",
+    },
+    "chembook": {
+        "slug": "chembook",
+        "title": "chembook (化学品分子百科与化合物图谱)",
+        "default_summary": "面向化学合成与化合物数据的知识库与图谱检索系统，集成 ChemicalBook 爬虫与属性索引。",
+    },
+    "alphacas_reaction": {
+        "slug": "alphacas_reaction",
+        "title": "alphacas_reaction (易反应逆合成与化学反应 RAG)",
+        "default_summary": "化学逆合成路线预测与反应机理知识库，结合反应式爬虫与专业化学领域 RAG 检索问答系统。",
+    },
+    "scifinder_retro_svc": {
+        "slug": "scifinder_retro_svc",
+        "title": "scifinder_retro_svc (SciFinder 自动化逆合成服务)",
+        "default_summary": "驱动 SciFinder-n 执行逆合成查询与路线评估的自动化微服务，暴露 API 供业务调度。",
+    },
+    "dataset_platform": {
+        "slug": "dataset_platform",
+        "title": "dataset_platform (化学数据集与智能标注平台)",
+        "default_summary": "化学分子数据集管理、反应路线标注与协同评估平台，支持化合物资产沉淀。",
+    },
+    "aiphacas_platform": {
+        "slug": "aiphacas_platform",
+        "title": "aiphacas_platform (易合成综合门户与价格系统)",
+        "default_summary": "易合成核心综合门户、CAS 价格聚合查询与业务微服务协同调度平台。",
+    },
+    "aiphacas_eln": {
+        "slug": "aiphacas_eln",
+        "title": "aiphacas_eln (电子实验记录本系统 ELN)",
+        "default_summary": "智能化实验室电子记录本与研发门户，规范实验方案记录、谱图附件关联与科研流程合规留痕。",
+    },
+    "alphacas_translate": {
+        "slug": "alphacas_translate",
+        "title": "alphacas_translate (易翻译化学文献专业翻译)",
+        "default_summary": "面向化学化工领域的专业文献术语翻译与辅助阅读 Web 工具。",
+    },
+    "smiles_crawler": {
+        "slug": "smiles_crawler",
+        "title": "smiles_crawler (SMILES 结构式自动化爬虫)",
+        "default_summary": "基于 CDP 驱动的高并发分子结构式与化合物数据抓取微服务。",
+    },
+    "single_reaction_crawler": {
+        "slug": "single_reaction_crawler",
+        "title": "single_reaction_crawler (单步化学反应数据爬虫)",
+        "default_summary": "支持 standalone/api/worker 多种运行模式的化学反应式抓取流水线。",
+    },
+    "reaxys_crawler": {
+        "slug": "reaxys_crawler",
+        "title": "reaxys_crawler (Reaxys 化学反应批量抓取系统)",
+        "default_summary": "针对 Elsevier Reaxys 数据库的大规模自动化化学反应检索与提取流水线。",
+    },
+
+    # 桌面端与端智能
+    "openclaw": {
+        "slug": "openclaw",
+        "title": "openclaw (AI 自动化客户端与桌面沙箱)",
+        "default_summary": "OpenClaw 跨平台客户端与基于 KasmVNC 的容器化桌面沙箱运行环境，提供浏览器自动化与代理工具。",
+    },
+    "openclaw_kasmvnc": {
+        "slug": "openclaw_kasmvnc",
+        "title": "openclaw_kasmvnc (OpenClaw + KasmVNC 容器化桌面沙箱)",
+        "default_summary": "Docker 容器化桌面环境，整合 KasmVNC 实现低延迟远程桌面访问与自动化隔离。",
+    },
+    "openclaw_desktop": {
+        "slug": "openclaw_desktop",
+        "title": "openclaw_desktop (OpenClaw 桌面端原生应用)",
+        "default_summary": "OpenClaw 原生客户端开发与跨平台桌面集成项目。",
+    },
+    "webrtc_desktop": {
+        "slug": "webrtc_desktop",
+        "title": "webrtc_desktop (WebRTC 高性能浏览器远程桌面)",
+        "default_summary": "自研浏览器远程桌面项目，Go 后端 + Vue3 前端，支持 Linux/macOS/Windows 多端原生串流。",
+    },
+    "kasmvnc": {
+        "slug": "kasmvnc",
+        "title": "kasmvnc (KasmVNC 优化与远程沙箱渲染)",
+        "default_summary": "基于 TigerVNC 分支的低带宽优化 VNC 服务器，支持 WebRTC 编码与容器桌面集成。",
+    },
+    "aicut": {
+        "slug": "aicut",
+        "title": "aicut (AI 漫剧剪辑与音视频工作台)",
+        "default_summary": "AI 视频与漫剧自动化制作工作台，支持分镜剪辑、语音合成与自动化流媒体流水线。",
+    },
+    "filmkit": {
+        "slug": "filmkit",
+        "title": "filmkit (ComfyUI 自动化影视制作管线)",
+        "default_summary": "基于 ComfyUI 的短片制作与视觉内容自动化渲染流水线。",
+    },
+
+    # 基础设施、模型与网络
+    "rke2_k8s": {
+        "slug": "rke2_k8s",
+        "title": "rke2_k8s (高可用 Kubernetes 集群基建)",
+        "default_summary": "基于 RKE2/K3s 的双集群基础设施运维，整合 NAS 存储、DaoCloud 加速、容灾备份与 GitOps 自动化流水线。",
+    },
     "vps_infra": {
         "slug": "vps_infra",
         "title": "vps_infra (多节点 VPS 基础架构与网络网关)",
-        "default_summary": "多台海外与国内 VPS 节点拓扑运维、Hysteria 隧道代理及基于 acme.sh 与 Cloudflare 的自动化证书续期体系。",
+        "default_summary": "多台海外与国内 VPS 节点拓扑运维、Hysteria 隧道代理及自动化证书续期体系。",
     },
     "wechat_gateway": {
         "slug": "wechat_gateway",
@@ -183,47 +317,32 @@ CANONICAL_PROJECT_MAP: dict[str, dict[str, str]] = {
     "ray_train": {
         "slug": "ray_train",
         "title": "ray_train (分布式大模型训练与推理服务)",
-        "default_summary": "基于 Ray 的分布式大语言模型训练、微调与低延迟推理部署方案，支持动态资源伸缩与 K8s 集群调度。",
+        "default_summary": "基于 Ray 的分布式大语言模型训练、微调与低延迟推理部署方案。",
     },
-    "chembook": {
-        "slug": "chembook",
-        "title": "chembook (化学品分子百科与化合物图谱)",
-        "default_summary": "面向化学合成与化合物数据的知识库与图谱检索系统，集成 PubChem、SMILES 结构式解析与属性索引。",
+    "ml_platform": {
+        "slug": "ml_platform",
+        "title": "ml_platform (机器学习全生命周期平台)",
+        "default_summary": "基于 Kubernetes 的 ML 平台，支持模型训练、注册评估与推理服务编排调度。",
     },
-    "easywork_copilot": {
-        "slug": "easywork_copilot",
-        "title": "easywork_copilot (跨平台统一研发 Copilot 协同大脑)",
-        "default_summary": "跨应用协同的统一 AI Copilot Agent，统一调度 IMS、易商城、易反应等多业务系统，实现一句话自然语言驱动操作。",
-    },
-    "bulk_import": {
-        "slug": "bulk_import",
-        "title": "bulk_import (批量数据解析与高并发流式导入)",
-        "default_summary": "高性能大容量 Excel/CSV 批量数据异步解析、动态列映射与入库流水线服务。",
-    },
-    "alphacas_reaction": {
-        "slug": "alphacas_reaction",
-        "title": "alphacas_reaction (易反应逆合成与化学反应 RAG)",
-        "default_summary": "化学逆合成路线预测与反应机理知识库，结合反应式爬虫与专业化学领域 RAG 检索问答系统。",
-    },
-    "aiphacas_eln": {
-        "slug": "aiphacas_eln",
-        "title": "aiphacas_eln (电子实验记录本系统 ELN)",
-        "default_summary": "智能化实验室电子记录本与研发门户，规范实验方案记录、谱图附件关联与科研流程合规留痕。",
-    },
-    "sso": {
-        "slug": "sso",
-        "title": "sso (统一身份认证与单点登录鉴权中心)",
-        "default_summary": "基于 JWT 与 OAuth2 的统一单点登录与权限认证中台，支持跨系统 Token 续期与统一用户画像。",
-    },
-    "aipay": {
-        "slug": "aipay",
-        "title": "aipay (多通道支付与账务结算中台)",
-        "default_summary": "集成微信支付、支付宝及企业对公账户的统一支付中台，提供可靠异步对账与订单回调保障。",
+    "mem0": {
+        "slug": "mem0",
+        "title": "mem0 (长短期认知记忆中台)",
+        "default_summary": "多智能体长短期记忆检索与存储服务，支持向量化与个人经验召回。",
     },
     "sglang": {
         "slug": "sglang",
-        "title": "sglang (高性能 LLM 结构化推理与本地部署)",
-        "default_summary": "基于 SGLang 运行时与 RadixAttention 的超高速大模型推理引擎部署与吞吐优化方案。",
+        "title": "sglang (高性能 LLM 结构化推理部署)",
+        "default_summary": "基于 SGLang 运行时与 RadixAttention 的超高速大模型推理引擎部署方案。",
+    },
+    "service_monitor": {
+        "slug": "service_monitor",
+        "title": "service_monitor (生产服务健康巡检与可用性监控)",
+        "default_summary": "自动化服务健康探针、端点可用性检测与告警通知组件。",
+    },
+    "realtime_voice_chat": {
+        "slug": "realtime_voice_chat",
+        "title": "realtime_voice_chat (实时语音对话与流式 ASR 服务)",
+        "default_summary": "低延迟双向语音对话流服务，整合 ASR 语音识别与 TTS 实时推流。",
     },
 }
 
@@ -249,10 +368,12 @@ PROJECT_ALIAS_MAP: dict[str, str] = {
     "易工作": "favorite_chat",
     "易工作平台": "favorite_chat",
     "favorite_chat_项目": "favorite_chat",
+    "favorite-chat": "favorite_chat",
 
     # 协同与 Copilot
     "易工作_copilot": "easywork_copilot",
     "易工作_copilot_agent": "easywork_copilot",
+    "easywork-copilot": "easywork_copilot",
     "copilot": "easywork_copilot",
     "copilot_后端": "easywork_copilot",
     "copilot_backend": "easywork_copilot",
@@ -260,119 +381,152 @@ PROJECT_ALIAS_MAP: dict[str, str] = {
     "外部_copilot_服务": "easywork_copilot",
     "tool_calling_ai_agent_服务": "easywork_copilot",
 
-    # 易反应
+    # 易反应 / 逆合成
     "易反应": "alphacas_reaction",
     "易反应(alphacas_reaction)": "alphacas_reaction",
     "易反应_反应搜索": "alphacas_reaction",
     "alphacas_reaction(易反应)": "alphacas_reaction",
+    "alphacas-reaction": "alphacas_reaction",
     "alphacas_api": "alphacas_reaction",
+    "retrosynthesis": "alphacas_reaction",
+    "retrosynthesis-api": "alphacas_reaction",
+    "retro-service": "alphacas_reaction",
+    "retro_service": "alphacas_reaction",
+    "逆合成规划器": "alphacas_reaction",
+    "retrosynthesis_route_planner": "alphacas_reaction",
+    "reaction_rag": "alphacas_reaction",
 
     # 易合成平台
-    "易合成": "aiphacas_platform",
-    "易合成(aiphacas)平台": "aiphacas_platform",
     "易合成平台": "aiphacas_platform",
-    "aiphacas平台": "aiphacas_platform",
-    "aiphacas易合成平台": "aiphacas_platform",
-    "aiphacas_综合管理后台": "aiphacas_platform",
+    "易合成": "aiphacas_platform",
+    "易合成价格系统": "aiphacas_platform",
+    "aiphacas_platform": "aiphacas_platform",
+    "aiphacas-platform": "aiphacas_platform",
     "aiphacas_portal": "aiphacas_platform",
+    "aiphacas-portal": "aiphacas_platform",
     "aiphacas_price": "aiphacas_platform",
-    "cas价格查询服务": "aiphacas_platform",
-    "cas_price": "aiphacas_platform",
-
-    # 逆合成
-    "逆合成": "retrosynthesis",
-    "逆合成(retrosynthesis)": "retrosynthesis",
-    "逆合成应用": "retrosynthesis",
-    "逆合成应用_retrosynthesis_api": "retrosynthesis",
-    "retrosynthesis_应用": "retrosynthesis",
-    "retrosynthesis(逆合成)": "retrosynthesis",
-    "retrosynthesis_api": "retrosynthesis",
-    "retrosynthesis_app": "retrosynthesis",
-
-    # 易查询 / ChemBook
-    "易查询(chembook)": "chembook",
-    "易查询_chembook": "chembook",
-    "chembook(易查询)": "chembook",
-    "chemicalbook_crawler": "chembook_crawler",
-    "chembook_frontend": "chembook",
+    "aiphacas-price": "aiphacas_platform",
+    "aiphacas": "aiphacas_platform",
 
     # 易翻译
     "易翻译": "alphacas_translate",
-    "易翻译(alphacas_translate)": "alphacas_translate",
+    "alphacas-translate": "alphacas_translate",
+    "alphacas_translate": "alphacas_translate",
 
-    # 易支付
-    "易支付项目": "aipay",
-    "统一支付网关": "aipay",
-
-    # SSO
-    "企业内部sso单点登录系统": "sso",
-    "sso_login_项目": "sso_login",
-    "sso_系统": "sso",
-    "sso_系统前端": "sso",
-    "sso_项目": "sso",
-    "sso前端管理后台": "sso",
-    "sso单一身份项目": "sso",
-    "login_页面": "sso_login",
-    "login_frontend": "sso_login",
-    "login": "sso_login",
-    "favorite_chat_login": "sso_login",
-
-    # 量化 & 回测
-    "量化交易程序": "quant_future",
+    # 量化期货与网格
+    "quant_future": "quant_future",
+    "quant-future": "quant_future",
     "quant_future_backend": "quant_future",
-    "quant_future_前端项目": "quant_future",
-    "quant_backtest_service": "quant_backtest",
-    "backtest": "quant_backtest",
-    "backtestengine": "quant_backtest",
+    "quant_future_frontend": "quant_future",
+    "ctadaytrader": "quant_future",
+    "binance_quant_bot": "binance_quant_bot",
+    "binance-quant-bot": "binance_quant_bot",
+    "binance_quant": "binance_quant_bot",
+    "qbot": "binance_quant_bot",
+    "quant_backtest": "quant_backtest",
+    "quant-backtest": "quant_backtest",
     "qbacktest": "quant_backtest",
+    "backtest": "quant_backtest",
+    "quant-backtest-service": "quant_backtest",
+    "quant_backtest_service": "quant_backtest",
     "trading_qbacktest": "quant_backtest",
-    "trading_backend": "trading_platform",
+    "ddong8_quant_backtest_service": "quant_backtest",
+    "fg_tqsdk_market_maker": "fg_tqsdk_market_maker",
+    "fg-tqsdk-market-maker": "fg_tqsdk_market_maker",
+    "fg_tqsdk": "fg_tqsdk_market_maker",
 
-    # 云原生 K8s
-    "rke2_cicd_pilot": "rke2_k8s",
-    "rke2_k8s_cicd_pilot": "rke2_k8s",
-    "rke2_k8s_集群": "rke2_k8s",
-    "aliyun_k3s_cluster": "rke2_k8s",
-    "k3s_github": "rke2_k8s",
-    "nas_k3s": "rke2_k8s",
-    "k3s_synology": "rke2_k8s",
-    "nas集群": "nas_infra",
-    "nas": "nas_infra",
+    # 单点登录 SSO
+    "sso": "sso",
+    "sso系统": "sso",
+    "统一认证平台": "sso",
+    "统一单点登录": "sso",
+    "login": "sso",
+    "login项目": "sso",
+    "api_sso_aiphacas_com": "sso",
+    "sso-client-demo": "sso",
+    "sso_client_demo": "sso",
+    "auth_service": "sso",
+    "aiphacas_sso": "sso",
 
-    # 日报
-    "daily_report_collector": "daily_report",
-    "daily_report_web": "daily_report",
-    "ai_daily_report": "daily_report",
-    "ai_daily_report_project": "daily_report",
+    # 禅道
+    "zentao": "zentao",
+    "禅道": "zentao",
 
-    # Memento
-    "memento_server": "memento",
-    "memento_api": "memento",
-    "collector_cli": "memento_collector",
-    "collector": "memento_collector",
-    "ai_工具内存文件收集系统": "memento_collector",
+    # 化学爬虫与数据集
+    "pubchem": "pubchem",
+    "pubchem_crawler": "pubchem",
+    "chembook": "chembook",
+    "chemicalbook": "chembook",
+    "chemicalbook_com": "chembook",
+    "dataset-platform": "dataset_platform",
+    "dataset_platform": "dataset_platform",
+    "chemical_dataset_platform": "dataset_platform",
+    "化学数据集平台": "dataset_platform",
+    "chemical_dataset": "dataset_platform",
+    "scifinder-retro-svc": "scifinder_retro_svc",
+    "scifinder_retro_svc": "scifinder_retro_svc",
+    "scifinder": "scifinder_retro_svc",
+    "smiles-crawler": "smiles_crawler",
+    "smiles_crawler": "smiles_crawler",
+    "single-reaction-crawler": "single_reaction_crawler",
+    "single_reaction_crawler": "single_reaction_crawler",
+    "reaxys-crawler": "reaxys_crawler",
+    "reaxys_crawler": "reaxys_crawler",
+    "reaxys": "reaxys_crawler",
 
-    # 语音与 AI 基础设施
-    "funasr_server": "funasr",
-    "funasr_wss_server": "funasr",
-    "funasr_runtime_sdk": "funasr",
-    "openai_whisper_asr_webservice": "whisperx",
-
-    # OpenClaw
-    "openclaw_gateway": "openclaw_gateway",
+    # 桌面端与端智能
+    "openclaw": "openclaw",
     "openclaw_main": "openclaw",
     "openclaw助手": "openclaw",
+    "openclaw_kasmvnc": "openclaw_kasmvnc",
+    "openclaw-kasmvnc": "openclaw_kasmvnc",
+    "openclaw_desktop": "openclaw_desktop",
+    "openclaw-desktop": "openclaw_desktop",
     "project_openclaw_desktop": "openclaw_desktop",
+    "kasmvnc": "kasmvnc",
+    "webrtc-desktop": "webrtc_desktop",
+    "webrtc_desktop": "webrtc_desktop",
+    "neko": "webrtc_desktop",
+    "aicut": "aicut",
+    "ai漫剧工作台": "aicut",
+    "filmkit": "filmkit",
+    "h3-filmkit": "filmkit",
+    "h3_filmkit": "filmkit",
 
-    # VPS
+    # 机器学习与基础设施
+    "ml_platform": "ml_platform",
+    "ml-platform": "ml_platform",
+    "mlplatform": "ml_platform",
+    "ml_platform_backend": "ml_platform",
+    "rke2_k8s": "rke2_k8s",
+    "k8s_ops": "rke2_k8s",
+    "k8s": "rke2_k8s",
+    "aiphacas_k8s_集群": "rke2_k8s",
+    "vps_infra": "vps_infra",
     "vps1": "vps_infra",
     "vps3": "vps_infra",
     "vps3_us": "vps_infra",
     "vps文档仓库": "vps_infra",
     "vps": "vps_infra",
+    "ray_train": "ray_train",
+    "ray_cluster": "ray_train",
+    "sglang": "sglang",
+    "mem0": "mem0",
+    "mem0_postgres": "mem0",
+    "mem0_dashboard": "mem0",
+    "service_monitor": "service_monitor",
+    "realtime_voice_chat": "realtime_voice_chat",
+
+    # Memento 自身
+    "memento": "memento",
+    "memento_api": "memento",
+    "collector_cli": "memento",
+    "collector": "memento",
+    "ai_工具内存文件收集系统": "memento",
 
     # WeChat
     "wechat_msg": "wechat_gateway",
+    "wechat-msg": "wechat_gateway",
     "wechat": "wechat_gateway",
     "webchat": "wechat_gateway",
 
@@ -385,7 +539,8 @@ PROJECT_ALIAS_MAP: dict[str, str] = {
     "gitee_vavafan_aiphacas_eln": "aiphacas_eln",
     "gitlab_aiphacas_com_frank_aiphacas_eln": "aiphacas_eln",
 
-    # Bulk Import
+    # Bulk Import / IMS
+    "bulk_import": "bulk_import",
     "bulk_import_ims": "bulk_import",
     "bulk_import_ims_(ims.aiphacas.com)": "bulk_import",
     "bulk_import_backend": "bulk_import",
@@ -396,39 +551,66 @@ PROJECT_ALIAS_MAP: dict[str, str] = {
     "bulk_import后端": "bulk_import",
     "bulk_import项目": "bulk_import",
     "favorite_chat_bulk_import": "bulk_import",
-
-    # IMS
-    "ims_(bulk_import)": "ims",
-    "ims_(询单系统)": "ims",
-    "ims_bulk_import": "ims",
-    "ims_inventory": "ims",
-    "ims_对外接口": "ims",
-    "ims_系统": "ims",
-    "ims(bulk_import)": "ims",
-    "ims搜索定位功能": "ims",
-    "inquirylist": "ims_inquiry",
-
-    "inventory_backend": "inventory",
-    "inventory后端": "inventory",
-    "order_backend": "order",
-    "order后端": "order",
-    "rd_backend": "rd",
-    "rd后端": "rd",
-
-    "后端_websocket_桥接": "backend_bridge",
-    "后端桥接服务": "backend_bridge",
-    "python_后端桥接": "backend_bridge",
-
-    "mem0_dashboard": "mem0",
+    "ims": "bulk_import",
+    "ims_(bulk_import)": "bulk_import",
+    "ims_(询单系统)": "favorite_chat",
+    "ims_bulk_import": "bulk_import",
+    "ims_inventory": "favorite_chat",
+    "ims_对外接口": "favorite_chat",
+    "ims_系统": "favorite_chat",
+    "ims(bulk_import)": "bulk_import",
+    "ims搜索定位功能": "favorite_chat",
 }
 
 IGNORE_SLUGS: set[str] = {
+    # System, root & user directories
+    "home", "haixingdong", "donghaixing", "admin", "users_admin", "users_haixingdong",
+    "desktop", "workspace", "temp", "tmp", "var", "folders",
+    # Test & temporary scratch
+    "test", "tests", "test_项目", "analysis", "demo", "ban", "le", "foo", "scratch",
+    # Submodules & generic components
+    "api", "server", "web", "frontend", "mobile", "ios", "data", "scripts", "docs",
+    "mcp", "mcp_server", "collector", "deploy", "uiux", "cineflow", "gitops",
+    # Tool names
+    "codex", "antigravity", "claude_code", "cursor", "hermes", "hermes_hermes",
+    "antigravity_history", "antigravity_con", "antigravity_online",
+    # Non-project tasks & diagnostic sessions
     "oom_cpu治理任务", "基础设施侦察任务", "外接硬盘盒诊断", "influxdb_移除任务",
-    "phase_b_2", "errors_log", "test_项目", "ver1_kbw_04_17", "0212", "abc215",
-    "120_78_4_157", "内网穿透方案", "product_catalog_module", "pdf预览项目",
-    "chrome扩展", "systemd_ubuntu", "docker_gpu_镜像", "demo", "workspace",
-    "donghaixing", "antigravity_history", "antigravity_con",
+    "phase_b_2", "errors_log", "ver1_kbw_04_17", "0212", "abc215",
+    "120_78_4_157", "120_77", "192_168_1_144", "内网穿透方案", "product_catalog_module",
+    "pdf预览项目", "chrome扩展", "systemd_ubuntu", "docker_gpu_镜像",
+    # Miscellaneous files & licenses
+    "apache_2_0_license_codex_text", "dot_github", "license", "video", "jupyter",
+    "website", "wiki", "dingbang", "data_handler", "blazing_satellite",
+    "node_144", "top3_desktop", "top_desktop_66617557",
 }
+
+
+def _is_suspicious_non_project(slug: str, raw_name: str) -> bool:
+    """Detect non-project strings (chemical formulas, IP addresses, date stamps, hardware specs, etc.)."""
+    s = slug.lower().strip()
+    r = raw_name.lower().strip()
+    # IP address patterns (e.g. 192_168_1_144, 120_77, 120_78_4_157)
+    if re.match(r"^(\d+[\._])+\d+$", s) or re.search(r"\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b", r):
+        return True
+    # Chemical compound terms / IUPAC / reaction fragments
+    chem_indicators = (
+        "二氮杂", "双(", "联苯", "十一烷", "二基双", "苯并", "甲基", "酸", "醇", "酯",
+        "smiles", "cid", "cas_", "inchi", "corpus", "reaction_", "塞来昔布", "磷酰",
+        "二唑", "螺[", "thiazole", "carboxylic", "双(二苯基", "二氮杂螺",
+    )
+    if any(k in r or k in s for k in chem_indicators):
+        return True
+    # Hardware/model specs, trading strategy rules, task notes
+    if re.search(r"\d+b模型|\d+gb_apple|\d+m_seq2seq|反转策略|做市引擎|网格策略|治理任务|诊断|侦察", r):
+        return True
+    # Hostnames / node names
+    if re.search(r"top\d*[-_]desktop|node[-_]\d+|ecs[-_]\d+", s):
+        return True
+    # Pure numbers or date stamps
+    if s.isdigit() or re.match(r"^\d{4}[\-_]?\d{2,4}$", s):
+        return True
+    return False
 
 
 def resolve_canonical_slug(raw_name: str) -> str:
@@ -466,59 +648,63 @@ async def extract_canonical_projects(db: AsyncSession, user: User) -> list[dict[
     )
     ke_projects = ke_projects_res.all()
 
+    # Pre-populate results with curated canonical projects
     results: dict[str, dict[str, Any]] = {}
+    for slug, meta in CANONICAL_PROJECT_MAP.items():
+        results[slug] = {
+            "slug": slug,
+            "title": meta["title"],
+            "summary": meta["default_summary"],
+            "doc_count": 0,
+            "obs_count": 0,
+            "is_curated": True,
+        }
 
+    # Ingest from Document Projects
     for row in doc_projects:
         raw_name = str(row[0] or (row[1] if len(row) > 1 else "") or "").strip()
         if not raw_name:
             continue
         slug = resolve_canonical_slug(raw_name)
-        if not slug or len(slug) < 2 or slug in IGNORE_SLUGS:
-            continue
-        count_val = row[2] if len(row) > 2 and isinstance(row[2], (int, float)) else 0
-        if slug not in results:
-            defn = CANONICAL_PROJECT_MAP.get(slug, {})
-            title = defn.get("title") or (row[1] if len(row) > 1 and row[1] else slug)
-            summary = defn.get("default_summary") or ""
-            results[slug] = {
-                "slug": slug,
-                "title": title,
-                "summary": summary,
-                "doc_count": 0,
-                "obs_count": 0,
-            }
-        results[slug]["doc_count"] += int(count_val)
+        cnt = int(row[2]) if len(row) > 2 and isinstance(row[2], (int, float)) else 0
 
+        if slug in results:
+            results[slug]["doc_count"] += cnt
+        else:
+            # Only dynamically accept uncurated project if it has substantial real documents (>= 5)
+            # and passes strict non-project / noise filters
+            if (
+                cnt >= 5
+                and slug not in IGNORE_SLUGS
+                and len(slug) >= 3
+                and not _is_suspicious_non_project(slug, raw_name)
+            ):
+                title = row[1] if len(row) > 1 and row[1] else slug
+                results[slug] = {
+                    "slug": slug,
+                    "title": title,
+                    "summary": f"活跃研发工程，关联 {cnt} 份代码与工作会话。",
+                    "doc_count": cnt,
+                    "obs_count": 0,
+                    "is_curated": False,
+                }
+
+    # Ingest from Knowledge Graph Entities
     for row in ke_projects:
         raw_name = str(row[0] or "").strip()
         if not raw_name:
             continue
         slug = resolve_canonical_slug(raw_name)
-        if not slug or len(slug) < 2 or slug in IGNORE_SLUGS:
-            continue
-        summary_val = str(row[1] or "") if len(row) > 1 and isinstance(row[1], str) else ""
-        count_val = row[2] if len(row) > 2 and isinstance(row[2], (int, float)) else 0
-        if slug not in results:
-            defn = CANONICAL_PROJECT_MAP.get(slug, {})
-            title = defn.get("title") or raw_name
-            summary = summary_val or defn.get("default_summary") or ""
-            results[slug] = {
-                "slug": slug,
-                "title": title,
-                "summary": summary,
-                "doc_count": 0,
-                "obs_count": 0,
-            }
-        results[slug]["obs_count"] += int(count_val)
-        if summary_val and len(summary_val.strip()) > len(results[slug]["summary"]):
-            results[slug]["summary"] = summary_val.strip()
+        cnt = int(row[2]) if len(row) > 2 and isinstance(row[2], (int, float)) else 0
+        summary_val = str(row[1] or "").strip() if len(row) > 1 and isinstance(row[1], str) else ""
 
-    # Fill default summary for projects without explicit description
-    for p in results.values():
-        if not p["summary"]:
-            p["summary"] = f"活跃研发项目，包含跨设备同步与事实追踪（关联 {p['doc_count']} 份文档，{p['obs_count']} 条知识事实）。"
+        if slug in results:
+            results[slug]["obs_count"] += cnt
+            if summary_val and len(summary_val) > len(results[slug]["summary"]):
+                results[slug]["summary"] = summary_val
+        # Uncurated KnowledgeEntities with 0 docs are NEVER promoted to canonical projects
 
-    # Retain all active projects with engineering footprint
+    # Retain active projects that have real presence (either docs or observations)
     active_projs = [
         p for p in results.values()
         if (p["doc_count"] > 0 or p["obs_count"] > 0)
@@ -1382,6 +1568,21 @@ async def bootstrap_memories_from_knowledge_graph(
                 "tree_path": f"/project/{slug}/overview",
             })
             existing_proj_slugs.add(slug)
+
+    # Clean up obsolete/non-canonical project memories from UserMemory
+    valid_proj_slugs = {p["slug"] for p in canonical_projects}
+    existing_project_mems = (await db.execute(
+        select(UserMemory).where(
+            UserMemory.user_id == user.id,
+            UserMemory.category == "project",
+        )
+    )).scalars().all()
+    for e_mem in existing_project_mems:
+        tp = (e_mem.tree_path or "").strip()
+        parts = [p for p in tp.split("/") if p]
+        slug_in_path = parts[1] if len(parts) >= 2 else None
+        if slug_in_path and slug_in_path not in valid_proj_slugs:
+            await db.delete(e_mem)
 
     # Persist into UserMemory
     promoted_count = 0
