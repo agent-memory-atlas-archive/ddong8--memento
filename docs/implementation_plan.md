@@ -12,19 +12,23 @@
 
 ## 模块实施细则
 
-### 阶段一：流式请求稳定性与网络容灾（已完成并发布 v1.0.49）
+### 阶段一：流式请求稳定性与网络容灾（已完成并发布 v1.0.50）
 - [x] **服务端保活心跳注入**：
   - 在 [`server/server/api/ask.py`](file:///Users/haixingdong/dev/memento/server/server/api/ask.py) 中实现 `sse_keepalive_generator`。
   - 针对普通问答 `stream()`、协作调度 `agent_stream()`、直连设备 `_direct_agent_stream()` 注入 8s 心跳包，防止 Traefik / NAT 超时断连。
 - [x] **客户端首包断连静默重试与友好提示**：
   - 在 [`mobile/lib/core/sse_client.dart`](file:///Users/haixingdong/dev/memento/mobile/lib/core/sse_client.dart) 中扩大重试作用域至流消费阶段。
   - 首包前断开自动静默重试 2 次；已接收内容中断连友好拼接降级提示；原始 `HttpException` 转译为中文友好说明。
+- [x] **强制 HTTPS 协议升级规避 301 掐断**：
+  - 在 [`mobile/lib/core/storage.dart`](file:///Users/haixingdong/dev/memento/mobile/lib/core/storage.dart) 中自动将 `http://mem.ihasy.com` 升级为 `https://mem.ihasy.com`，彻底消除 301 重定向引起的 Dart HttpClient 连接重置。
+- [x] **Antigravity 瞬态重试防误杀机制**：
+  - 在 [`mobile/lib/collector/services/ws_task_client.dart`](file:///Users/haixingdong/dev/memento/mobile/lib/collector/services/ws_task_client.dart) 与 `agy_cli.py` 中识别并忽略上游瞬态错误重试（如 `attempt 1 EOF`），增加 15s 状态机宽限期，彻底杜绝客户端界面误报 `Antigravity Error:`。
 - [x] **端到端测试与质量验证**：
   - 服务端 Pytest 84 项测试全部通过。
   - 客户端 Flutter Test 64 项测试全部通过。
-- [x] **版本发布与 CI/CD 触发**：
-  - 发布版本 `v1.0.49`（Git Tag `v1.0.49`），触发 GitHub Actions 构建 macOS、Windows、Linux 更新包及服务端镜像部署。
-  - 主分支元数据已同步更新（Commit `e9df7f4`）。
+- [x] **版本发布与 CI/CD 交付（v1.0.50）**：
+  - 发布版本 `v1.0.50`（Git Tag `v1.0.50`），触发 GitHub Actions 完成 macOS、Windows、Linux 更新包构建与 GitHub Release。
+  - 更新发布元数据 [`data/updates/version.json`](file:///Users/haixingdong/dev/memento/data/updates/version.json) 并完成三位一体精确校验。
 
 ---
 

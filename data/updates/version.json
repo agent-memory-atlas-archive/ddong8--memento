@@ -1,22 +1,22 @@
 {
   "version": "1.0.50",
   "title": "Memento v1.0.50",
-  "release_notes": "1. 根治 Ask 流式问答频繁请求异常：服务端引入 8 秒自动心跳注入，防 Traefik 网关空闲断连\n2. 客户端网络容灾重试：首包前静默自动重试，已接收数据中断优雅降级与友好提示\n3. 全链路测试覆盖与长连接保活保障",
+  "release_notes": "1. 根治 Ask 流式问答频繁请求异常：服务端引入 8 秒自动心跳注入，防 Traefik 网关空闲断连\n2. 强制 HTTPS 协议升级：消除 301 重定向掐断 SSE 流\n3. 客户端网络容灾重试：首包前静默自动重试，已接收数据中断优雅降级与友好提示\n4. 修复 Antigravity 上游瞬态重试被误杀导致的 Antigravity Error 异常",
   "platforms": {
     "windows": {
       "asset_name": "Memento-windows-x64.zip",
-      "size": 34817455,
-      "sha256": "926ddad3e46c36ae31dd7af9942135237af31df35e1f82745663e3b586b88e0a"
+      "size": 34817415,
+      "sha256": "00a5247e08d77a5a9bef8891d89f46d8dc510a8ce260af297af11cb9d560dc82"
     },
     "macos": {
       "asset_name": "Memento-macos-arm64.zip",
-      "size": 38703742,
-      "sha256": "464e2acf6ac88a3bad5f529faeb3aa6131e69b4305c87b7331ef8d99734b82a6"
+      "size": 38702803,
+      "sha256": "0e76f23adb6a7fb045a3aa02604daa54db0de126b360210c8525051237befe61"
     },
     "linux": {
       "asset_name": "Memento-linux-x64.tar.gz",
-      "size": 11842679,
-      "sha256": "607f9d52e56c07c6206b9f39fbabb366aedd03d170932ff584ce5bec65c0c832"
+      "size": 11842851,
+      "sha256": "3118d104bdfcc700fb40a264c38e54b0dee939cccb915f5b560e6dd488a664c9"
     }
   }
 }
