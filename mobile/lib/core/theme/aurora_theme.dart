@@ -53,6 +53,28 @@ class AuroraColors {
 }
 
 class AuroraTheme {
+  static const List<String> monospaceFontFamilyFallback = [
+    'JetBrains Mono',
+    'Fira Code',
+    'Cascadia Code',
+    'SF Mono',
+    'Menlo',
+    'Consolas',
+    'Courier New',
+    'monospace',
+  ];
+
+  static const List<String> defaultFontFamilyFallback = [
+    'Inter',
+    '-apple-system',
+    'BlinkMacSystemFont',
+    'Segoe UI',
+    'PingFang SC',
+    'Hiragino Sans GB',
+    'Microsoft YaHei',
+    'sans-serif',
+  ];
+
   static ThemeData get darkTheme {
     return ThemeData(
       useMaterial3: true,
@@ -67,6 +89,7 @@ class AuroraTheme {
         onSurface: AuroraColors.fg1,
       ),
       fontFamily: 'SF Pro Display',
+      fontFamilyFallback: defaultFontFamilyFallback,
       appBarTheme: const AppBarTheme(
         backgroundColor: Colors.transparent,
         elevation: 0,

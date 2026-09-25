@@ -5,6 +5,8 @@ import '../../core/theme/aurora_theme.dart';
 import '../../models/search_hit.dart';
 import '../widgets/glass_card.dart';
 import '../widgets/app_markdown.dart';
+import '../widgets/aurora_shimmer.dart';
+import '../widgets/aurora_empty_state.dart';
 
 class MemoryScreen extends StatefulWidget {
   const MemoryScreen({super.key});
@@ -1035,14 +1037,21 @@ class _MemoryScreenState extends State<MemoryScreen> with SingleTickerProviderSt
             child: Text(_searchError!, style: const TextStyle(color: AuroraColors.danger, fontSize: 13)),
           ),
         Expanded(
-          child: _hits.isEmpty && !_isSearchLoading
-              ? const Center(
-                  child: Text(
-                    '输入关键词检索跨设备的编程记忆',
-                    style: TextStyle(color: AuroraColors.fg3, fontSize: 13.5),
-                  ),
-                )
-              : ListView.builder(
+          child: _isSearchLoading
+              ? const AuroraListSkeleton(count: 4)
+              : _hits.isEmpty
+                  ? ListView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      children: const [
+                        SizedBox(height: 36),
+                        AuroraEmptyState(
+                          icon: Icons.saved_search_rounded,
+                          title: '跨设备智能记忆检索',
+                          description: '输入任何关键词、函数名、报错日志或自然语言问题。\nMemento 基于向量语义与文本倒排索引穿透跨设备工作记录。',
+                        ),
+                      ],
+                    )
+                  : ListView.builder(
                   padding: const EdgeInsets.all(16),
                   itemCount: _hits.length,
                   itemBuilder: (context, index) {
@@ -1503,7 +1512,7 @@ class _MemoryScreenState extends State<MemoryScreen> with SingleTickerProviderSt
 
         Expanded(
           child: _isCoreLoading
-              ? const Center(child: CircularProgressIndicator(color: AuroraColors.accent))
+              ? const AuroraListSkeleton(count: 5)
               : _isTreeView
                   ? _buildDirectoryTreeView()
                   : _buildFlatListView(),
@@ -2451,7 +2460,7 @@ class _MemoryScreenState extends State<MemoryScreen> with SingleTickerProviderSt
           ),
           const SizedBox(height: 10),
           if (_isDreamLoading)
-            const Center(child: CircularProgressIndicator(color: AuroraColors.accent))
+            const AuroraListSkeleton(count: 2)
           else if (_dreamJournals.isEmpty)
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 24),

@@ -16,8 +16,25 @@ class ThinkingBlock extends StatefulWidget {
   State<ThinkingBlock> createState() => _ThinkingBlockState();
 }
 
-class _ThinkingBlockState extends State<ThinkingBlock> {
+class _ThinkingBlockState extends State<ThinkingBlock>
+    with SingleTickerProviderStateMixin {
   bool _expanded = false;
+  late AnimationController _pulseController;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1400),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _pulseController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -28,7 +45,11 @@ class _ThinkingBlockState extends State<ThinkingBlock> {
       decoration: BoxDecoration(
         color: Colors.white.withOpacity(0.02),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AuroraColors.border),
+        border: Border.all(
+          color: widget.isLive
+              ? AuroraColors.accent.withOpacity(0.3)
+              : AuroraColors.border,
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -40,11 +61,25 @@ class _ThinkingBlockState extends State<ThinkingBlock> {
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               child: Row(
                 children: [
-                  Icon(
-                    Icons.psychology_outlined,
-                    size: 16,
-                    color: widget.isLive ? AuroraColors.accent : AuroraColors.warn,
-                  ),
+                  widget.isLive
+                      ? AnimatedBuilder(
+                          animation: _pulseController,
+                          builder: (context, child) {
+                            return Opacity(
+                              opacity: 0.4 + (_pulseController.value * 0.6),
+                              child: const Icon(
+                                Icons.psychology_outlined,
+                                size: 16,
+                                color: AuroraColors.accent,
+                              ),
+                            );
+                          },
+                        )
+                      : const Icon(
+                          Icons.psychology_outlined,
+                          size: 16,
+                          color: AuroraColors.warn,
+                        ),
                   const SizedBox(width: 8),
                   Text(
                     widget.isLive ? 'AI 深度思考中...' : '已深度思考',
@@ -63,17 +98,23 @@ class _ThinkingBlockState extends State<ThinkingBlock> {
                     ),
                   ),
                   const SizedBox(width: 4),
-                  Icon(
-                    _expanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
-                    size: 14,
-                    color: AuroraColors.fg3,
+                  AnimatedRotation(
+                    turns: _expanded ? 0.5 : 0.0,
+                    duration: const Duration(milliseconds: 200),
+                    curve: Curves.easeInOut,
+                    child: const Icon(
+                      Icons.keyboard_arrow_down,
+                      size: 14,
+                      color: AuroraColors.fg3,
+                    ),
                   ),
                 ],
               ),
             ),
           ),
-          if (_expanded)
-            Container(
+          AnimatedCrossFade(
+            firstChild: const SizedBox.shrink(),
+            secondChild: Container(
               width: double.infinity,
               padding: const EdgeInsets.all(12),
               decoration: const BoxDecoration(
@@ -89,6 +130,11 @@ class _ThinkingBlockState extends State<ThinkingBlock> {
                 ),
               ),
             ),
+            crossFadeState: _expanded
+                ? CrossFadeState.showSecond
+                : CrossFadeState.showFirst,
+            duration: const Duration(milliseconds: 220),
+          ),
         ],
       ),
     );

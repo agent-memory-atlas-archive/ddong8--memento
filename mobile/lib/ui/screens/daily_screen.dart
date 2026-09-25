@@ -4,6 +4,8 @@ import '../../core/theme/aurora_theme.dart';
 import '../../models/daily_summary.dart';
 import '../widgets/glass_card.dart';
 import '../widgets/app_markdown.dart';
+import '../widgets/aurora_shimmer.dart';
+import '../widgets/aurora_empty_state.dart';
 
 class DailyScreen extends StatefulWidget {
   const DailyScreen({super.key});
@@ -162,15 +164,22 @@ class _DailyScreenState extends State<DailyScreen> {
         onRefresh: _loadDates,
         color: AuroraColors.accent,
         child: _isLoading
-            ? const Center(child: CircularProgressIndicator(color: AuroraColors.accent))
+            ? const AuroraListSkeleton(count: 4)
             : _error != null
                 ? Center(child: Text(_error!, style: const TextStyle(color: AuroraColors.danger)))
                 : _dates.isEmpty
-                    ? const Center(
-                        child: Text(
-                          '暂无每日工作总结记录',
-                          style: TextStyle(color: AuroraColors.fg3),
-                        ),
+                    ? ListView(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        children: [
+                          const SizedBox(height: 48),
+                          AuroraEmptyState(
+                            icon: Icons.auto_stories_rounded,
+                            title: '暂无工作总结记录',
+                            description: '系统将在每日感知代码编写与提炼成果，晚间自动归纳并生成全量每日研发总结。',
+                            actionLabel: '刷新列表',
+                            onAction: _loadDates,
+                          ),
+                        ],
                       )
                     : ListView.builder(
                         padding: const EdgeInsets.all(16),

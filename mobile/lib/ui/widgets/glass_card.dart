@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../core/theme/aurora_theme.dart';
 
-class GlassCard extends StatelessWidget {
+class GlassCard extends StatefulWidget {
   final Widget child;
   final EdgeInsetsGeometry padding;
   final double borderRadius;
@@ -20,35 +20,60 @@ class GlassCard extends StatelessWidget {
   });
 
   @override
+  State<GlassCard> createState() => _GlassCardState();
+}
+
+class _GlassCardState extends State<GlassCard> {
+  bool _isHovered = false;
+
+  @override
   Widget build(BuildContext context) {
-    final card = Container(
-      padding: padding,
+    final effectiveBorderColor = widget.borderColor ??
+        (_isHovered ? AuroraColors.borderStrong : AuroraColors.border);
+    final effectiveBgColor = widget.backgroundColor ??
+        (_isHovered ? AuroraColors.surfaceElevated : AuroraColors.surfaceSolid);
+
+    Widget card = AnimatedContainer(
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeOut,
+      padding: widget.padding,
       decoration: BoxDecoration(
-        color: backgroundColor ?? AuroraColors.surfaceSolid,
-        borderRadius: BorderRadius.circular(borderRadius),
+        color: effectiveBgColor,
+        borderRadius: BorderRadius.circular(widget.borderRadius),
         border: Border.all(
-          color: borderColor ?? AuroraColors.border,
+          color: effectiveBorderColor,
           width: 1,
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.15),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
+            color: Colors.black.withOpacity(_isHovered ? 0.28 : 0.15),
+            blurRadius: _isHovered ? 16 : 12,
+            offset: Offset(0, _isHovered ? 6 : 4),
           ),
+          if (_isHovered)
+            BoxShadow(
+              color: AuroraColors.accent.withOpacity(0.08),
+              blurRadius: 18,
+              spreadRadius: 1,
+            ),
         ],
       ),
-      child: child,
+      child: widget.child,
     );
 
-    if (onTap != null) {
-      return InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(borderRadius),
+    if (widget.onTap != null) {
+      card = InkWell(
+        onTap: widget.onTap,
+        borderRadius: BorderRadius.circular(widget.borderRadius),
         child: card,
       );
     }
 
-    return card;
+    return MouseRegion(
+      cursor: widget.onTap != null ? SystemMouseCursors.click : MouseCursor.defer,
+      onEnter: (_) => setState(() => _isHovered = true),
+      onExit: (_) => setState(() => _isHovered = false),
+      child: card,
+    );
   }
 }

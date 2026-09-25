@@ -17,6 +17,7 @@ class AppSyntaxHighlighter extends SyntaxHighlighter {
         return TextSpan(
           style: const TextStyle(
             fontFamily: 'monospace',
+            fontFamilyFallback: AuroraTheme.monospaceFontFamilyFallback,
             fontSize: 12.5,
             height: 1.5,
           ),
@@ -28,6 +29,7 @@ class AppSyntaxHighlighter extends SyntaxHighlighter {
     return TextSpan(
       style: const TextStyle(
         fontFamily: 'monospace',
+        fontFamilyFallback: AuroraTheme.monospaceFontFamilyFallback,
         fontSize: 12.5,
         color: Color(0xFFE2E8F0),
         height: 1.5,
@@ -131,6 +133,7 @@ class AppMarkdown extends StatelessWidget {
       ),
       code: const TextStyle(
         fontFamily: 'monospace',
+        fontFamilyFallback: AuroraTheme.monospaceFontFamilyFallback,
         fontSize: 12.5,
         color: AuroraColors.accent,
         backgroundColor: Color(0x1F38BDF8),

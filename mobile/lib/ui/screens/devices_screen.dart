@@ -4,6 +4,8 @@ import '../../core/theme/aurora_theme.dart';
 import '../../state/auth_state.dart';
 import '../../state/device_state.dart';
 import '../widgets/glass_card.dart';
+import '../widgets/aurora_shimmer.dart';
+import '../widgets/aurora_empty_state.dart';
 
 class DevicesScreen extends ConsumerWidget {
   const DevicesScreen({super.key});
@@ -35,19 +37,23 @@ class DevicesScreen extends ConsumerWidget {
       body: RefreshIndicator(
         onRefresh: () => ref.read(deviceProvider.notifier).loadDevices(),
         color: AuroraColors.accent,
-        child: deviceState.devices.isEmpty && !deviceState.isLoading
-            ? ListView(
-                children: const [
-                  SizedBox(height: 120),
-                  Center(
-                    child: Text(
-                      '暂无已连接的设备\n请在电脑上启动 Memento Collector 守护进程',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: AuroraColors.fg3, height: 1.5),
-                    ),
-                  ),
-                ],
-              )
+        child: deviceState.isLoading && deviceState.devices.isEmpty
+            ? const AuroraListSkeleton(count: 3)
+            : deviceState.devices.isEmpty
+                ? ListView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    children: [
+                      const SizedBox(height: 48),
+                      AuroraEmptyState(
+                        icon: Icons.devices_other_rounded,
+                        title: '暂无已纳管的终端设备',
+                        description: 'Memento 支持跨设备远程代码调度与跨端编程记忆共享。\n在您的开发电脑上运行采集守护进程，设备将在此自动呈现。',
+                        codeSnippet: 'memento start',
+                        actionLabel: '刷新设备列表',
+                        onAction: () => ref.read(deviceProvider.notifier).loadDevices(),
+                      ),
+                    ],
+                  )
             : ListView.builder(
                 padding: const EdgeInsets.all(16),
                 itemCount: deviceState.devices.length,
