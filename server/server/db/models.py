@@ -42,6 +42,11 @@ class Machine(Base):
     # for the operator to configure — it only exists once MEMENTO_REMOTE_EXEC
     # is on, and stays NULL otherwise.
     remote_exec_key: Mapped[str | None] = mapped_column(String(64))
+    # Resident-profile injection: which tool instruction files this device should
+    # carry the profile block in (chosen in the web UI, off by default), and what
+    # the collector last reported writing.
+    profile_targets: Mapped[list] = mapped_column(JSONB, default=list, server_default="[]")
+    profile_status: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}")
 
     user: Mapped["User | None"] = relationship()
     documents: Mapped[list[Document]] = relationship(back_populates="machine")
@@ -600,3 +605,33 @@ class DreamJournal(Base):
         Index("idx_dream_journal_user_date", "user_id", "dream_date", created_at.desc()),
     )
 
+
+
+# ---------------------------------------------------------------------------
+# Resident profile — the short "about me" block injected into every AI tool
+# ---------------------------------------------------------------------------
+class UserProfile(Base):
+    """One row per draft or published profile version.
+
+    Nightly dreaming refreshes the single draft row; nothing reaches any AI tool
+    until the user publishes it, which freezes the text under the next version
+    number. Collectors only ever see the highest published version.
+    """
+    __tablename__ = "user_profiles"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="draft")  # draft | published
+    version: Mapped[int | None] = mapped_column(Integer)  # set on publish
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    stats: Mapped[dict] = mapped_column(JSONB, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    user: Mapped["User"] = relationship()
+
+    __table_args__ = (
+        Index("idx_user_profile_user_status", "user_id", "status", version.desc()),
+        UniqueConstraint("user_id", "version", name="uq_user_profile_version"),
+    )

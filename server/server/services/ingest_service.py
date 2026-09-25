@@ -39,6 +39,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import settings
+from .profile_service import strip_profile_block
 from ..db.models import (
     ConversationMessage, Document, DocumentVersion, Project, SyncState, Tool,
 )
@@ -601,6 +602,10 @@ async def ingest_file(
     # Re-sanitize
     content = content.replace("\x00", "")  # PostgreSQL TEXT rejects null bytes
     content, had_sensitive = _resanitize(content)
+    if category != "conversation":
+        # Instruction files (CLAUDE.md, AGENTS.md, ...) may carry the profile block
+        # Memento injected; storing it would have dreaming re-learn its own output.
+        content = strip_profile_block(content)
 
     # Ensure tool exists
     tool = await ensure_tool(db, tool_id)

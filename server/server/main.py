@@ -8,7 +8,7 @@ from collections.abc import AsyncGenerator
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .api import admin, ask, auth, conversations, daily, dashboard, data_io, devices, documents, events, hierarchy, ingest, install_bootstrap, memory, projects, public, search, share, tools, updates
+from .api import admin, ask, auth, conversations, daily, dashboard, data_io, devices, documents, events, hierarchy, ingest, install_bootstrap, memory, profile, projects, public, search, share, tools, updates
 # Aliased: `server.api.tasks` (remote device task queue) is a different module
 # from the `server.tasks` package (Celery jobs). Importing it bare here would
 # read as the latter.
@@ -44,6 +44,12 @@ def _run_migrations(conn) -> None:
     # rows just stay NULL until then.
     if "remote_exec_key" not in machine_cols:
         conn.execute(text("ALTER TABLE machines ADD COLUMN remote_exec_key VARCHAR(64)"))
+
+    # Machine.profile_targets / profile_status — resident-profile injection.
+    if "profile_targets" not in machine_cols:
+        conn.execute(text("ALTER TABLE machines ADD COLUMN profile_targets JSONB NOT NULL DEFAULT '[]'"))
+    if "profile_status" not in machine_cols:
+        conn.execute(text("ALTER TABLE machines ADD COLUMN profile_status JSONB NOT NULL DEFAULT '{}'"))
 
     # User.collector_token
     user_cols = {c["name"] for c in insp.get_columns("users")}
@@ -382,6 +388,7 @@ app.include_router(events.router)
 app.include_router(devices.router)
 app.include_router(hierarchy.router)
 app.include_router(memory.router)
+app.include_router(profile.router)
 app.include_router(install_bootstrap.router)
 app.include_router(public.router)
 app.include_router(share.router)

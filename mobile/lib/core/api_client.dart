@@ -443,4 +443,40 @@ class ApiClient {
       return false;
     }
   }
+
+  // --- Resident profile (persona) ---
+
+  Future<Map<String, dynamic>> getProfile() async {
+    final response = await _dio.get('/api/profile');
+    return response.data as Map<String, dynamic>;
+  }
+
+  /// Returns {status, draft}; status is "updated" or the reason nothing changed.
+  Future<Map<String, dynamic>> regenerateProfileDraft() async {
+    final response = await _dio.post(
+      '/api/profile/draft/regenerate',
+      options: Options(receiveTimeout: const Duration(minutes: 5)),
+    );
+    return response.data as Map<String, dynamic>;
+  }
+
+  Future<void> saveProfileDraft(String content) async {
+    await _dio.put('/api/profile/draft', data: {'content': content});
+  }
+
+  Future<void> discardProfileDraft() async {
+    await _dio.delete('/api/profile/draft');
+  }
+
+  Future<void> publishProfile({String? content}) async {
+    await _dio.post('/api/profile/publish', data: {if (content != null) 'content': content});
+  }
+
+  Future<List<String>> setProfileTargets(String deviceId, List<String> targets) async {
+    final response = await _dio.put(
+      '/api/profile/devices/${Uri.encodeComponent(deviceId)}/targets',
+      data: {'targets': targets},
+    );
+    return ((response.data as Map<String, dynamic>)['targets'] as List).cast<String>();
+  }
 }

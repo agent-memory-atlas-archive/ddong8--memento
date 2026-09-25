@@ -376,7 +376,66 @@ export interface PublicStats {
   total_tools: number;
 }
 
+// --- Resident profile (persona) ---
+
+export interface ProfileVersion {
+  id: string;
+  status: "draft" | "published";
+  version: number | null;
+  content: string;
+  stats: {
+    edited_by_user?: boolean;
+    memories?: number;
+    user_voice?: { kept: number; corrections: number };
+  };
+  updated_at: string | null;
+  published_at: string | null;
+}
+
+export type ProfileDraftStatus =
+  | "updated" | "no_llm" | "user_editing" | "no_input" | "llm_failed" | "same_as_published";
+
+export interface ProfileDevice {
+  device_id: string;
+  name: string;
+  online: boolean;
+  targets: string[];
+  status: { version?: number | null; results?: Record<string, string>; reported_at?: string };
+}
+
+export interface ProfileState {
+  published: ProfileVersion | null;
+  draft: ProfileVersion | null;
+  history: { version: number; published_at: string | null }[];
+  targets: string[];
+  devices: ProfileDevice[];
+}
+
+function _invalidateProfile() {
+  invalidateApiCache(`${getApiBase()}/api/profile`);
+}
+
 export const api = {
+  getProfile: () => apiFetch<ProfileState>("/api/profile"),
+  regenerateProfileDraft: () =>
+    apiFetch<{ status: ProfileDraftStatus; draft: ProfileVersion | null }>(
+      "/api/profile/draft/regenerate", { method: "POST" },
+    ).finally(_invalidateProfile),
+  saveProfileDraft: (content: string) =>
+    apiFetch<{ draft: ProfileVersion }>("/api/profile/draft", {
+      method: "PUT", body: JSON.stringify({ content }),
+    }).finally(_invalidateProfile),
+  discardProfileDraft: () =>
+    apiFetch<{ status: string }>("/api/profile/draft", { method: "DELETE" }).finally(_invalidateProfile),
+  publishProfile: (content?: string) =>
+    apiFetch<{ published: ProfileVersion }>("/api/profile/publish", {
+      method: "POST", body: JSON.stringify(content === undefined ? {} : { content }),
+    }).finally(_invalidateProfile),
+  setProfileTargets: (deviceId: string, targets: string[]) =>
+    apiFetch<{ device_id: string; targets: string[] }>(
+      `/api/profile/devices/${encodeURIComponent(deviceId)}/targets`,
+      { method: "PUT", body: JSON.stringify({ targets }) },
+    ).finally(_invalidateProfile),
   getPublicStats: () => apiFetch<PublicStats>("/api/public/stats"),
   getTools: () => apiFetch<ToolSummary[]>("/api/tools"),
   getTool: (id: string) => apiFetch<ToolDetail>(`/api/tools/${id}`),

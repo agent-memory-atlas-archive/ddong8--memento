@@ -6,6 +6,7 @@ import 'models/collector_config.dart';
 import 'models/tool_discovery.dart';
 import 'services/file_watcher_service.dart';
 import 'services/ingest_client.dart';
+import 'services/profile_inject_service.dart';
 import 'services/ws_task_client.dart';
 
 class CollectorStatus {
@@ -55,6 +56,9 @@ class CollectorController {
   WsTaskClient? _wsClient;
   FileWatcherService? _watcherService;
   Timer? _commandPollTimer;
+  Timer? _profileSyncTimer;
+  Map<String, String>? _lastProfileReport;
+  bool _profileSyncing = false;
 
   bool _isRunning = false;
   bool _isOnline = false;
@@ -143,8 +147,43 @@ class CollectorController {
       await _ingestClient?.pollCommands();
     });
 
+    // 7. Resident profile: keep enabled tools' instruction files in step with
+    //    the published profile, and clean up tools switched off in the app.
+    unawaited(_syncProfile());
+    _profileSyncTimer = Timer.periodic(profileSyncInterval, (_) => _syncProfile());
+
     _addLog('Memento Collector is running.');
   }
+
+  Future<void> _syncProfile() async {
+    final client = _ingestClient;
+    if (client == null || _profileSyncing) return;
+    _profileSyncing = true;
+    try {
+      final data = await client.fetchProfileInjection();
+      if (data == null) return; // older server, or offline
+      final version = data['version'] as int?;
+      final results = await applyProfileInjection(
+        version: version,
+        block: data['block'] as String?,
+        targets: ((data['targets'] as List?) ?? const []).map((e) => e.toString()).toList(),
+      );
+      results.forEach((tool, outcome) {
+        if (outcome != 'unchanged') _addLog('Profile $tool: $outcome');
+      });
+      if (!_sameReport(results, _lastProfileReport)) {
+        await client.reportProfileInjection(version, results);
+        _lastProfileReport = results;
+      }
+    } catch (e) {
+      _addLog('Profile sync skipped: $e');
+    } finally {
+      _profileSyncing = false;
+    }
+  }
+
+  static bool _sameReport(Map<String, String> a, Map<String, String>? b) =>
+      b != null && a.length == b.length && a.entries.every((e) => b[e.key] == e.value);
 
   /// Stop the collector daemon
   void stop() {
@@ -153,6 +192,8 @@ class CollectorController {
 
     _commandPollTimer?.cancel();
     _commandPollTimer = null;
+    _profileSyncTimer?.cancel();
+    _profileSyncTimer = null;
 
     _watcherService?.dispose();
     _watcherService = null;

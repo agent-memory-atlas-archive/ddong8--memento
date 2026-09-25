@@ -61,6 +61,7 @@ export default function Sidebar({ open, onClose }: { open: boolean; onClose: () 
   }[] = [
     { href: "/ask", label: t.nav.ask, icon: "sparkles", highlight: true, badge: "AI" },
     { href: "/memory", label: t.nav.memory || "Memory", icon: "brain" },
+    { href: "/memory/persona", label: t.nav.persona, icon: "user" },
     { href: "/projects", label: t.nav.projects, icon: "folder" },
     { href: "/daily", label: t.nav.daily, icon: "calendar" },
     { href: "/devices", label: t.nav.devices, icon: "devices" },
@@ -147,10 +148,15 @@ export default function Sidebar({ open, onClose }: { open: boolean; onClose: () 
           />
 
           {/* Static nav */}
-          {STATIC_NAV.map((item) => {
-            const active = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href));
-            return <NavRow key={item.href} {...item} active={active} onClick={handleNavClick} />;
-          })}
+          {(() => {
+            // Most specific match wins, so /memory/persona lights up only 画像, not 记忆 too.
+            const matches = (href: string) => pathname === href || (href !== "/" && pathname.startsWith(href));
+            const activeHref = STATIC_NAV.filter((i) => matches(i.href))
+              .sort((a, b) => b.href.length - a.href.length)[0]?.href;
+            return STATIC_NAV.map((item) => (
+              <NavRow key={item.href} {...item} active={item.href === activeHref} onClick={handleNavClick} />
+            ));
+          })()}
 
           {/* Device tree */}
           {devices.length > 0 && (

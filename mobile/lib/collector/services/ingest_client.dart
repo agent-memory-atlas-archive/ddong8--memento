@@ -168,6 +168,35 @@ class IngestClient {
     return [];
   }
 
+  /// Published profile block plus the tools this device should carry it in.
+  /// Null when the server is older than the profile feature or unreachable.
+  Future<Map<String, dynamic>?> fetchProfileInjection() async {
+    try {
+      final uri = Uri.parse('${config.serverUrl}/api/profile/injection');
+      final req = await _client.getUrl(uri).timeout(const Duration(seconds: 15));
+      _authHeaders.forEach((k, v) => req.headers.set(k, v));
+      final resp = await req.close().timeout(const Duration(seconds: 20));
+      if (resp.statusCode == 200) {
+        final body = await resp.transform(utf8.decoder).join().timeout(const Duration(seconds: 10));
+        return jsonDecode(body) as Map<String, dynamic>;
+      }
+      await resp.drain().timeout(const Duration(seconds: 5));
+    } catch (_) {}
+    return null;
+  }
+
+  Future<void> reportProfileInjection(int? version, Map<String, String> results) async {
+    try {
+      final uri = Uri.parse('${config.serverUrl}/api/profile/injection/status');
+      final req = await _client.postUrl(uri).timeout(const Duration(seconds: 15));
+      _authHeaders.forEach((k, v) => req.headers.set(k, v));
+      req.headers.contentType = ContentType.json;
+      req.write(jsonEncode({'version': version, 'results': results}));
+      final resp = await req.close().timeout(const Duration(seconds: 20));
+      await resp.drain().timeout(const Duration(seconds: 5));
+    } catch (_) {}
+  }
+
   Future<void> _ackCommand(dynamic id) async {
     try {
       final uri = Uri.parse('${config.serverUrl}/api/devices/commands/$id/ack');

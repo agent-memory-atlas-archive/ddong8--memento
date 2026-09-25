@@ -11,6 +11,7 @@ from sqlalchemy import select
 from ..db.models import User
 from ..db.session import async_session_factory
 from ..services.dreaming_service import run_dreaming_backfill, run_dreaming_pipeline
+from ..services.profile_service import build_profile_draft
 
 try:
     from .celery_app import celery_app
@@ -54,7 +55,16 @@ async def _run_all_users_dreaming(days_back: int = 1) -> dict[str, int]:
                 processed += 1
             except Exception as e:
                 logger.error("Dreaming failed for user %s (%s): %s", user.id, user.email, e)
+                await db.rollback()
                 errors += 1
+
+            # Refresh the resident-profile draft. It only reaches AI tools once
+            # the user publishes it, so a bad night can't spread anywhere.
+            try:
+                await build_profile_draft(db, user)
+            except Exception as e:
+                logger.warning("Profile draft failed for user %s: %s", user.id, e)
+                await db.rollback()
 
         return {"processed": processed, "errors": errors}
 

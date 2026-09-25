@@ -7,6 +7,7 @@ import '../widgets/glass_card.dart';
 import '../widgets/app_markdown.dart';
 import '../widgets/aurora_shimmer.dart';
 import '../widgets/aurora_empty_state.dart';
+import 'persona_tab.dart';
 
 class MemoryScreen extends StatefulWidget {
   const MemoryScreen({super.key});
@@ -46,7 +47,7 @@ class _MemoryScreenState extends State<MemoryScreen> with SingleTickerProviderSt
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 4, vsync: this);
     _tabController.addListener(() {
       if (_tabController.indexIsChanging) return;
       if (_tabController.index == 1 && _coreMemories.isEmpty && !_isCoreLoading) {
@@ -844,6 +845,8 @@ class _MemoryScreenState extends State<MemoryScreen> with SingleTickerProviderSt
             ),
             child: TabBar(
               controller: _tabController,
+              // Four labelled tabs don't fit side by side on a phone.
+              isScrollable: MediaQuery.sizeOf(context).width < 640,
               indicator: BoxDecoration(
                 gradient: const LinearGradient(
                   colors: [Color(0x3338BDF8), Color(0x226366F1)],
@@ -923,6 +926,16 @@ class _MemoryScreenState extends State<MemoryScreen> with SingleTickerProviderSt
                     ],
                   ),
                 ),
+                const Tab(
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.badge_outlined, size: 16),
+                      SizedBox(width: 6),
+                      Text('常驻画像'),
+                    ],
+                  ),
+                ),
               ],
             ),
           ),
@@ -934,6 +947,7 @@ class _MemoryScreenState extends State<MemoryScreen> with SingleTickerProviderSt
           _buildSearchTab(),
           _buildCoreMemoryTab(),
           _buildDreamingTab(),
+          const PersonaTab(),
         ],
       ),
     );
