@@ -1,7 +1,7 @@
 {
   "version": "1.0.52",
   "title": "Memento v1.0.52",
-  "release_notes": "1. 界面视觉商业级精细化打磨：全面升级 Aurora 设计系统视觉层次与排版节奏\n2. 引入极光动态骨架屏（Aurora Shimmer）：设备列表、工作总结、记忆检索全面告别粗糙单调的旋转加载圈\n3. 品牌化空状态设计（Aurora Empty State）：新增流光胶囊徽章、清晰的操作引导（CTA）与快捷一键复制命令\n4. 桌面端触觉微交互提升：毛玻璃卡片（GlassCard）支持鼠标悬浮动态增亮微发光，提升桌面原生质感\n5. 深度思考指示器动效：AI 思考过程新增呼吸灯状态提示，展开/收起过渡更丝滑平整\n6. 专业字体系统增强：集成 JetBrains Mono / Inter 等宽及无衬线字体回退栈，代码块与终端排版质感显著增强",
+  "release_notes": "1. 新增「常驻画像」：Memento 每晚根据你亲口说的话生成一份「关于我」草稿，你审阅发布后，自动写入 Claude Code、Codex、Gemini、OpenClaw、Hermes 的全局指令文件，每个 AI 一开会话就知道该怎么和你协作\n2. 画像写入按设备、按工具单独开关，关闭后自动清理；只改 Memento 自己的标记段，首次写入前自动备份原文件\n3. 做梦记忆更准：只从你亲手输入的内容里学习偏好与铁律，工具输出和网页内容不再被误学；你手写或改过的记忆不会再被覆盖",
   "platforms": {
     "windows": {
       "asset_name": "Memento-windows-x64.zip",
