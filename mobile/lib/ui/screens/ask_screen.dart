@@ -101,7 +101,7 @@ class _AskScreenState extends ConsumerState<AskScreen> {
   String? _selectedSessionId;
   bool _loadingSessions = false;
   bool _showSessionContext = true;
-  bool _isConfigCollapsed = false;
+  bool _isConfigCollapsed = true;
   bool _compactMode = false;
   int? _selectedTimeoutSeconds;
   bool _isUserScrolledUp = false;
