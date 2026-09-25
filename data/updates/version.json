@@ -1,22 +1,22 @@
 {
   "version": "1.0.52",
   "title": "Memento v1.0.52",
-  "release_notes": "1. 问答界面启动优化：底部配置控制台默认折叠收起，提供沉浸式纯净问答体验\n2. 根治 Ask 流式问答频繁请求异常：服务端引入 8 秒自动心跳注入，防 Traefik 网关空闲断连\n3. 强制 HTTPS 协议升级：消除 301 重定向掐断 SSE 流\n4. 客户端网络容灾重试：首包前静默自动重试，已接收数据中断优雅降级与友好提示\n5. 修复 Antigravity 上游瞬态重试被误杀导致的 Antigravity Error 异常",
+  "release_notes": "1. 界面视觉商业级精细化打磨：全面升级 Aurora 设计系统视觉层次与排版节奏\n2. 引入极光动态骨架屏（Aurora Shimmer）：设备列表、工作总结、记忆检索全面告别粗糙单调的旋转加载圈\n3. 品牌化空状态设计（Aurora Empty State）：新增流光胶囊徽章、清晰的操作引导（CTA）与快捷一键复制命令\n4. 桌面端触觉微交互提升：毛玻璃卡片（GlassCard）支持鼠标悬浮动态增亮微发光，提升桌面原生质感\n5. 深度思考指示器动效：AI 思考过程新增呼吸灯状态提示，展开/收起过渡更丝滑平整\n6. 专业字体系统增强：集成 JetBrains Mono / Inter 等宽及无衬线字体回退栈，代码块与终端排版质感显著增强",
   "platforms": {
     "windows": {
       "asset_name": "Memento-windows-x64.zip",
-      "size": 34817413,
-      "sha256": "8d404c59e443b67dcd12227d855cfdbd8c79e75ac027f6d1fba95dd904a18225"
+      "size": 34826918,
+      "sha256": "57979ff8442717d761a75e987947230941b0bc120199436b84c638dc8202194d"
     },
     "macos": {
       "asset_name": "Memento-macos-arm64.zip",
-      "size": 38702432,
-      "sha256": "733d4e862a935c025b244fbf0399b13d16c11bad8b8d632689cd7a1b2da98916"
+      "size": 38730336,
+      "sha256": "259d9c08403ffdaf2ac8c6ad6318afea549e549101dc762609bf06705c70f7b8"
     },
     "linux": {
       "asset_name": "Memento-linux-x64.tar.gz",
-      "size": 11842658,
-      "sha256": "43aacef8ef95b82438282a806ebcd91acbdd902f6ea14fb096a02ed3630e2de8"
+      "size": 11849865,
+      "sha256": "d1b2656a8daf1280cb8268fa7903810ca7a8ad863e1d2d1a0fd79d816d7dd798"
     }
   }
 }
