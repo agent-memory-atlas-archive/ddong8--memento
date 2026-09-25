@@ -260,11 +260,24 @@ async def check_update(
 
     if use_github and gh_release:
         title = str(gh_release.get("name") or title)
-        release_notes = str(gh_release.get("body") or release_notes)
+        gh_body = str(gh_release.get("body") or "").strip()
+        if gh_body and not gh_body.startswith("**Full Changelog**"):
+            release_notes = gh_body
+        elif local_meta.get("release_notes"):
+            release_notes = local_meta.get("release_notes")
+        else:
+            release_notes = gh_body or release_notes
         published_at = gh_release.get("published_at")
         if gh_asset:
             asset_name = gh_asset.get("name")
             asset_size = gh_asset.get("size")
+            raw_digest = str(gh_asset.get("digest") or "")
+            if raw_digest.startswith("sha256:"):
+                sha256_val = raw_digest.split("sha256:", 1)[1].strip()
+        if not sha256_val and local_ver == latest_ver:
+            plat_meta = local_meta.get("platforms", {}).get(platform.lower(), {})
+            if plat_meta and isinstance(plat_meta, dict):
+                sha256_val = plat_meta.get("sha256")
     else:
         title = local_meta.get("title", title)
         release_notes = local_meta.get("release_notes", release_notes)
