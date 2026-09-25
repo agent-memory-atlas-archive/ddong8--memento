@@ -1,6 +1,6 @@
 {
-  "version": "1.0.51",
-  "title": "Memento v1.0.51",
+  "version": "1.0.52",
+  "title": "Memento v1.0.52",
   "release_notes": "1. 问答界面启动优化：底部配置控制台默认折叠收起，提供沉浸式纯净问答体验\n2. 根治 Ask 流式问答频繁请求异常：服务端引入 8 秒自动心跳注入，防 Traefik 网关空闲断连\n3. 强制 HTTPS 协议升级：消除 301 重定向掐断 SSE 流\n4. 客户端网络容灾重试：首包前静默自动重试，已接收数据中断优雅降级与友好提示\n5. 修复 Antigravity 上游瞬态重试被误杀导致的 Antigravity Error 异常",
   "platforms": {
     "windows": {
