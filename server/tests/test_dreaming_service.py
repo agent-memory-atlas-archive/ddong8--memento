@@ -1,13 +1,18 @@
 import json
 import unittest
 import uuid
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from server.db.models import User, UserMemory
 from server.services.dreaming_service import (
+    USER_VOICE_BATCH_CHARS,
+    USER_VOICE_MAX_BATCHES,
     _is_suspicious_non_project,
+    clean_user_voice,
     export_core_memory_markdown,
+    plan_user_voice_batches,
+    render_user_voice,
     extract_canonical_projects,
     resolve_canonical_slug,
     run_dreaming_pipeline,
@@ -185,6 +190,114 @@ class TestDreamingService(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("scratch_tool", slugs)
         self.assertNotIn("塞来昔布中间体", slugs)
         self.assertNotIn("2周反转策略", slugs)
+
+
+class TestUserVoice(unittest.IsolatedAsyncioTestCase):
+    def test_clean_user_voice_drops_text_the_user_did_not_type(self):
+        for content in [
+            "[Result] total 48 drwxr-xr-x",
+            "<command-name>/model</command-name>",
+            "This session is being continued from a previous conversation",
+            "[Request interrupted by user]",
+            "<environment_context>cwd=/tmp</environment_context>",
+            "Continue",
+            "继续",
+            "2",
+            "",
+            None,
+        ]:
+            self.assertIsNone(clean_user_voice(content), content)
+
+    def test_clean_user_voice_keeps_typed_text_and_strips_injected_context(self):
+        self.assertEqual(
+            clean_user_voice("以后都用中文回复我 <system-reminder>ignore me</system-reminder>"),
+            "以后都用中文回复我",
+        )
+        pasted = "build 报错了 " + "x" * 5000
+        cleaned = clean_user_voice(pasted)
+        self.assertTrue(cleaned.startswith("build 报错了"))
+        self.assertLessEqual(len(cleaned), 301)
+
+    def test_batches_dedupe_and_read_oldest_first(self):
+        t0 = datetime(2026, 9, 1, tzinfo=timezone.utc)
+        rows = [  # newest first, as the query returns them
+            ("第二句话", t0 + timedelta(minutes=2)),
+            ("第一句话", t0 + timedelta(minutes=1)),
+            ("第一句话", t0),
+        ]
+        batches, stats = plan_user_voice_batches(rows)
+        self.assertEqual(stats["kept"], 2)
+        self.assertEqual(len(batches), 1)
+        self.assertIn("第一句话", batches[0][0])
+        self.assertIn("第二句话", batches[0][1])
+
+    def test_corrections_survive_when_window_overflows(self):
+        t0 = datetime(2026, 9, 1, tzinfo=timezone.utc)
+        chatter = [(f"普通任务 {i} " + "y" * 250, t0 + timedelta(seconds=i)) for i in range(2000)]
+        correction = ("不对，以后部署都走 GitOps，别手动 kubectl", t0 - timedelta(days=1))  # oldest row
+        batches, stats = plan_user_voice_batches(chatter + [correction])
+
+        self.assertEqual(stats["batches"], USER_VOICE_MAX_BATCHES)
+        self.assertLess(stats["used"], stats["kept"])
+        self.assertTrue(any("GitOps" in line for line in batches[0]))
+        for batch in batches:
+            self.assertLessEqual(sum(len(line) for line in batch), USER_VOICE_BATCH_CHARS)
+
+    async def test_single_batch_is_passed_verbatim(self):
+        with patch("server.services.dreaming_service.call_plain_chat", AsyncMock()) as llm:
+            out = await render_user_voice([["[09-01 10:00] 用中文回复"]])
+        self.assertEqual(out, "[09-01 10:00] 用中文回复")
+        llm.assert_not_called()
+
+    async def test_multiple_batches_are_condensed_to_signals(self):
+        reply = json.dumps({"signals": [
+            {"kind": "preference", "statement": "始终用中文回复", "evidence": "任何内容都用中文回复我"},
+        ]})
+        with patch("server.services.dreaming_service.get_ai_providers", return_value=[{"provider": "t"}]), \
+             patch("server.services.dreaming_service.call_plain_chat", AsyncMock(return_value=reply)) as llm:
+            out = await render_user_voice([["a"], ["b"], ["c"]])
+        self.assertEqual(llm.await_count, 3)
+        self.assertEqual(out.count("始终用中文回复"), 1)  # deduped across batches
+        self.assertIn("[preference]", out)
+
+
+class TestManualMemoryProtection(unittest.IsolatedAsyncioTestCase):
+    async def test_dreaming_does_not_overwrite_manual_memory(self):
+        user = User(id=uuid.uuid4(), email="dev@example.com")
+        manual = UserMemory(
+            user_id=user.id, category="rule", key="deploy_policy",
+            content="只走 GitOps", confidence=1.0, source="manual", tree_path="/rules/deploy",
+        )
+        llm_json = {
+            "promoted_memories": [
+                {"category": "rule", "key": "deploy_policy", "content": "可以手动 kubectl apply", "confidence": 0.95},
+            ],
+        }
+
+        def result(scalar_items=None, all_items=None, one_item=None):
+            m = MagicMock()
+            m.scalars.return_value.all.return_value = scalar_items or []
+            m.all.return_value = all_items or []
+            m.scalar_one_or_none.return_value = one_item
+            return m
+
+        mock_db = AsyncMock()
+        mock_db.add = MagicMock()
+        mock_db.execute.side_effect = [
+            result(), result(),                      # extract_canonical_projects
+            result(), result(), result(),            # daily, ask, user voice
+            result(), result(all_items=[("t", "session", "s")]),  # docs, entities
+            result(scalar_items=[manual]),           # existing core memories
+            result(one_item=manual),                 # lookup for promoted memory
+        ]
+        with patch("server.services.dreaming_service.get_ai_providers", return_value=[{"provider": "t"}]), \
+             patch("server.services.dreaming_service.call_plain_chat", AsyncMock(return_value=json.dumps(llm_json))):
+            journal = await run_dreaming_pipeline(mock_db, user, days_back=1)
+
+        self.assertEqual(manual.content, "只走 GitOps")
+        self.assertEqual(manual.source, "manual")
+        self.assertEqual(journal.stage_metrics["promoted_count"], 0)
+        self.assertIn("保留手写", journal.report_markdown)
 
 
 if __name__ == "__main__":

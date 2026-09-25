@@ -855,6 +855,8 @@ async def update_core_memory(
         mem.key = body.key.strip().lower().replace(" ", "_")
     if body.content is not None:
         mem.content = body.content.strip()
+        # Hand-edited content is the user's now; dreaming must not overwrite it.
+        mem.source = "manual"
     if body.confidence is not None:
         mem.confidence = body.confidence
     if body.parent_id is not None:
