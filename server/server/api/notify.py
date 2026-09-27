@@ -18,6 +18,7 @@ class NotifySettingsBody(BaseModel):
     bark_url: str | None = None  # "" clears it; None leaves it unchanged
     notify_risky: bool | None = None
     notify_task_done: bool | None = None
+    notify_health: bool | None = None
 
 
 def _settings_out(user: User) -> dict:
@@ -27,6 +28,7 @@ def _settings_out(user: User) -> dict:
         "bark_masked": mask_bark_url(prefs.get("bark_url")),
         "notify_risky": prefs.get("notify_risky", True),
         "notify_task_done": prefs.get("notify_task_done", True),
+        "notify_health": prefs.get("notify_health", True),
     }
 
 
@@ -57,6 +59,8 @@ async def update_settings(
         prefs["notify_risky"] = body.notify_risky
     if body.notify_task_done is not None:
         prefs["notify_task_done"] = body.notify_task_done
+    if body.notify_health is not None:
+        prefs["notify_health"] = body.notify_health
     user.notify_settings = prefs
     await db.commit()
     return _settings_out(user)

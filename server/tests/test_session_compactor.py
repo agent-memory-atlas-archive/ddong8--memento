@@ -52,7 +52,9 @@ def test_split_sliding_window():
 
 
 @pytest.mark.asyncio
-async def test_generate_checkpoint_summary_heuristic():
+async def test_generate_checkpoint_summary_heuristic(monkeypatch):
+    # No LLM configured: exercise the heuristic path instead of calling a real provider.
+    monkeypatch.setattr("server.services.session_compactor.get_ai_providers", lambda *a, **k: [])
     older = [
         {"role": "user", "content": "请帮我修改 server/server/api/ask.py 和 web/src/app/ask/page.tsx 中的会话接续逻辑"},
         {"role": "assistant", "content": "好的，我已经定位到相关代码并完成了初始调研。"},

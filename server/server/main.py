@@ -8,7 +8,7 @@ from collections.abc import AsyncGenerator
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .api import admin, ask, auth, conversations, daily, dashboard, data_io, devices, documents, events, hierarchy, ingest, install_bootstrap, memory, notify, profile, projects, public, search, share, tools, updates
+from .api import admin, ask, auth, conversations, daily, dashboard, data_io, devices, documents, events, health, hierarchy, ingest, install_bootstrap, memory, notify, profile, projects, public, search, share, tools, updates
 # Aliased: `server.api.tasks` (remote device task queue) is a different module
 # from the `server.tasks` package (Celery jobs). Importing it bare here would
 # read as the latter.
@@ -400,6 +400,7 @@ app.include_router(hierarchy.router)
 app.include_router(memory.router)
 app.include_router(profile.router)
 app.include_router(notify.router)
+app.include_router(health.router)
 app.include_router(install_bootstrap.router)
 app.include_router(public.router)
 app.include_router(share.router)

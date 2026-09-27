@@ -10,10 +10,13 @@ from __future__ import annotations
 import json
 import logging
 import os
+import time
 from dataclasses import dataclass
 from typing import AsyncGenerator
 
 import httpx
+
+from . import ai_health
 
 logger = logging.getLogger("server.ai_provider")
 
@@ -118,8 +121,14 @@ async def call_chat_completion(
     if not providers:
         raise RuntimeError("No AI API providers configured (missing API keys)")
 
+    kind = "background" if background else "interactive"
     errors: list[str] = []
-    for p in providers:
+    failures: list[dict[str, str]] = []
+
+    def fell_short(p: AIProviderConfig, reason: str, detail: str) -> None:
+        failures.append({"provider": p.name, "model": p.model, "reason": reason, "detail": detail})
+
+    for index, p in enumerate(providers):
         budget = max_tokens
         switch_off_thinking = background and _provider_key(p) not in _THINKING_SWITCH_REJECTED
         widened = False
@@ -136,6 +145,7 @@ async def call_chat_completion(
             if switch_off_thinking:
                 req_body["thinking"] = {"type": "disabled"}
 
+            started = time.monotonic()
             try:
                 async with httpx.AsyncClient(timeout=timeout) as client:
                     resp = await client.post(
@@ -150,6 +160,7 @@ async def call_chat_completion(
                 err_msg = f"Provider '{p.name}' ({p.base_url}, {p.model}) error: {type(e).__name__}: {e}"
                 logger.warning(err_msg)
                 errors.append(err_msg)
+                fell_short(p, ai_health.reason_for_exception(e), f"{type(e).__name__}: {e}")
                 break
 
             if resp.status_code in (400, 422) and switch_off_thinking:
@@ -169,11 +180,18 @@ async def call_chat_completion(
                 err_msg = f"Provider '{p.name}' ({p.base_url}, {p.model}) returned HTTP {resp.status_code}: {resp.text[:200]}"
                 logger.warning(err_msg)
                 errors.append(err_msg)
+                fell_short(p, ai_health.reason_for_status(resp.status_code), f"HTTP {resp.status_code}: {resp.text[:200]}")
                 break
 
             data = resp.json()
             problem = completion_problem(data)
             if problem is None:
+                await ai_health.record_call(
+                    kind, "ok" if index == 0 else "fallback",
+                    provider=p.name, model=p.model,
+                    latency_ms=int((time.monotonic() - started) * 1000),
+                    failures=failures,
+                )
                 return data, p
             if problem == "reasoning_exhausted" and not widened:
                 widened = True
@@ -182,12 +200,15 @@ async def call_chat_completion(
                     "Provider '%s' (%s) spent max_tokens=%d on reasoning; retrying with %d",
                     p.name, p.model, max_tokens, budget,
                 )
+                fell_short(p, "reasoning_retry", f"max_tokens={max_tokens}")
                 continue
             err_msg = f"Provider '{p.name}' ({p.base_url}, {p.model}) returned no usable answer ({problem}, max_tokens={budget})"
             logger.warning(err_msg)
             errors.append(err_msg)
+            fell_short(p, problem, f"max_tokens={budget}")
             break
 
+    await ai_health.record_call(kind, "failed", failures=failures)
     raise RuntimeError(f"All {len(providers)} AI providers failed: " + "; ".join(errors))
 
 
@@ -266,8 +287,10 @@ async def stream_chat_completion(
         raise RuntimeError("No AI API providers configured (missing API keys)")
 
     errors: list[str] = []
-    for p in providers:
+    failures: list[dict[str, str]] = []
+    for index, p in enumerate(providers):
         started = False
+        began = time.monotonic()
         try:
             async with httpx.AsyncClient(timeout=timeout) as client:
                 async with client.stream(
@@ -290,6 +313,11 @@ async def stream_chat_completion(
                         err_msg = f"Provider '{p.name}' HTTP {resp.status_code}: {detail}"
                         logger.warning(err_msg)
                         errors.append(err_msg)
+                        failures.append({
+                            "provider": p.name, "model": p.model,
+                            "reason": ai_health.reason_for_status(resp.status_code),
+                            "detail": f"HTTP {resp.status_code}: {detail}",
+                        })
                         continue
 
                     started = True
@@ -338,14 +366,26 @@ async def stream_chat_completion(
                                     yield {"type": "content", "text": content}
                         except Exception:
                             continue
+                    await ai_health.record_call(
+                        "stream", "ok" if index == 0 else "fallback",
+                        provider=p.name, model=p.model,
+                        latency_ms=int((time.monotonic() - began) * 1000),
+                        failures=failures,
+                    )
                     return
         except Exception as e:
             err_msg = f"Provider '{p.name}' stream error: {type(e).__name__}: {e}"
             logger.warning(err_msg)
             errors.append(err_msg)
-            if started:
+            failures.append({
+                "provider": p.name, "model": p.model,
+                "reason": ai_health.reason_for_exception(e), "detail": f"{type(e).__name__}: {e}",
+            })
+            if started:  # broke off mid-answer; the caller already has part of it
+                await ai_health.record_call("stream", "failed", failures=failures)
                 return
 
+    await ai_health.record_call("stream", "failed", failures=failures)
     raise RuntimeError(f"All {len(providers)} AI providers failed to stream: " + "; ".join(errors))
 
 

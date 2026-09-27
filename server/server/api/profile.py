@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..db.models import Machine, User, UserProfile
 from ..db.session import get_db
 from ..middleware.auth import get_current_user, verify_collector_token
+from ..services import ai_health
 from ..services.profile_service import (
     INJECTION_TARGETS,
     build_profile_draft,
@@ -113,7 +114,13 @@ async def regenerate_draft(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> dict:
-    draft, status = await build_profile_draft(db, user)
+    run = {"at": datetime.now(timezone.utc).isoformat()}
+    try:
+        draft, status = await build_profile_draft(db, user)
+    except Exception as e:
+        await ai_health.put_json(f"profile_run:{user.id}", {**run, "status": "error", "error": f"{type(e).__name__}: {e}"[:300]})
+        raise
+    await ai_health.put_json(f"profile_run:{user.id}", {**run, "status": status})
     return {"status": status, "draft": _profile_out(draft)}
 
 

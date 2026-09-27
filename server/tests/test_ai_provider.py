@@ -5,7 +5,7 @@ import os
 import sys
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "server"))
@@ -156,6 +156,12 @@ class CompletionProblemTests(unittest.TestCase):
 class CallChatCompletionTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self) -> None:
         ai_provider._THINKING_SWITCH_REJECTED.clear()
+        recorder = patch("server.services.ai_provider.ai_health.record_call", new=AsyncMock())
+        self.recorded = recorder.start()
+        self.addCleanup(recorder.stop)
+
+    def outcomes(self) -> list[str]:
+        return [c.args[1] for c in self.recorded.await_args_list]
 
     async def test_retries_with_more_tokens_when_reasoning_exhausts_budget(self) -> None:
         calls: list[tuple[str, dict]] = []
@@ -169,6 +175,8 @@ class CallChatCompletionTests(unittest.IsolatedAsyncioTestCase):
             data, used = await call_chat_completion([{"role": "user", "content": "hi"}], max_tokens=1500)
         self.assertEqual(used.name, "primary")
         self.assertEqual([body["max_tokens"] for _, body in calls], [1500, 1500 + REASONING_RETRY_EXTRA_TOKENS])
+        self.assertEqual(self.outcomes(), ["ok"])
+        self.assertEqual(self.recorded.await_args.kwargs["failures"][0]["reason"], "reasoning_retry")
         self.assertEqual(data["choices"][0]["message"]["content"], "### 沟通\n- 始终用中文回复")
 
     async def test_empty_answer_falls_through_to_next_provider(self) -> None:
@@ -186,6 +194,21 @@ class CallChatCompletionTests(unittest.IsolatedAsyncioTestCase):
             "https://a.example/v1/chat/completions",
             "https://b.example/v1/chat/completions",
         ])
+        self.assertEqual(self.outcomes(), ["fallback"])
+        failures = self.recorded.await_args.kwargs["failures"]
+        self.assertEqual([(f["provider"], f["reason"]) for f in failures], [("primary", "empty")])
+
+    async def test_all_providers_failing_is_recorded(self) -> None:
+        calls: list[tuple[str, dict]] = []
+        responses = [({"error": "busy"}, 503)]
+        providers = [AIProviderConfig("primary", "https://a.example/v1", "k1", "m1")]
+        with patch("server.services.ai_provider.get_ai_providers", return_value=providers), \
+                patch("server.services.ai_provider.httpx.AsyncClient", _fake_client(responses, calls)):
+            with self.assertRaises(RuntimeError):
+                await call_chat_completion([{"role": "user", "content": "hi"}])
+        self.assertEqual(self.outcomes(), ["failed"])
+        self.assertEqual(self.recorded.await_args.args[0], "interactive")
+        self.assertEqual(self.recorded.await_args.kwargs["failures"][0]["reason"], "server_error")
 
     async def test_background_calls_switch_thinking_off(self) -> None:
         calls: list[tuple[str, dict]] = []

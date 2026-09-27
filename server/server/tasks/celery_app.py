@@ -56,6 +56,7 @@ celery_app = Celery(
         "server.tasks.title_backfill",
         "server.tasks.db_backup",
         "server.tasks.dreaming_tasks",
+        "server.tasks.health_check",
     ],
 )
 
@@ -127,5 +128,11 @@ celery_app.conf.beat_schedule = {
     "title-backfill": {
         "task": "server.tasks.title_backfill.backfill_titles",
         "schedule": crontab(minute=7),
+    },
+    # Every 30 min — push to the phone if AI calls failed a lot in the last hour
+    # (at most once per 6 h). Background jobs fail quietly otherwise.
+    "health-check": {
+        "task": "server.tasks.health_check.check_health",
+        "schedule": crontab(minute="5,35"),
     },
 }

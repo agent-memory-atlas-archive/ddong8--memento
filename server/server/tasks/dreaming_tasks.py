@@ -4,13 +4,15 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import date
+from datetime import date, datetime, timezone
 
 from sqlalchemy import select
 
 from ..db.models import User
 from ..db.session import async_session_factory
+from ..services import ai_health
 from ..services.dreaming_service import run_dreaming_backfill, run_dreaming_pipeline
+from ..services.notify_service import notify_user
 from ..services.profile_service import build_profile_draft
 
 try:
@@ -50,23 +52,41 @@ async def _run_all_users_dreaming(days_back: int = 1) -> dict[str, int]:
         errors = 0
 
         for user in users:
+            run: dict = {"at": datetime.now(timezone.utc).isoformat(), "ok": True}
             try:
-                await run_dreaming_pipeline(db, user, days_back=days_back)
+                journal = await run_dreaming_pipeline(db, user, days_back=days_back)
                 processed += 1
+                run["promoted"] = ((journal.stage_metrics or {}).get("promoted_count") if journal else None)
             except Exception as e:
                 logger.error("Dreaming failed for user %s (%s): %s", user.id, user.email, e)
                 await db.rollback()
                 errors += 1
+                run.update(ok=False, error=f"{type(e).__name__}: {e}"[:300])
 
             # Refresh the resident-profile draft. It only reaches AI tools once
             # the user publishes it, so a bad night can't spread anywhere.
             try:
-                await build_profile_draft(db, user)
+                _, run["profile_status"] = await build_profile_draft(db, user)
             except Exception as e:
                 logger.warning("Profile draft failed for user %s: %s", user.id, e)
                 await db.rollback()
+                run["profile_status"] = "error"
+                run["profile_error"] = f"{type(e).__name__}: {e}"[:300]
+
+            await ai_health.put_json(f"dreaming:{user.id}", run)
+            await _alert_bad_night(user, run)
 
         return {"processed": processed, "errors": errors}
+
+
+async def _alert_bad_night(user: User, run: dict) -> None:
+    problems = []
+    if not run["ok"]:
+        problems.append(f"做梦失败：{run.get('error', '')}")
+    if run.get("profile_status") in ("llm_failed", "error"):
+        problems.append(f"画像草稿生成失败：{run.get('profile_error') or 'AI 没有返回可用内容'}")
+    if problems:
+        await notify_user(user.id, "health", "Memento 夜间任务出错", "\n".join(problems)[:500])
 
 
 @celery_app.task(
