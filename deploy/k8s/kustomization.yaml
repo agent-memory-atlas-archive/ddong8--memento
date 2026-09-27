@@ -25,6 +25,8 @@ configMapGenerator:
   - MEMENTO_EMBEDDING_SERVER_URL=http://192.168.1.88:18002
   - MEMENTO_AI_BASE_URL=https://ark.cn-beijing.volces.com/api/coding/v3
   - MEMENTO_AI_MODEL=glm-5.2
+  # 后台抽取/摘要/画像用的不思考模型(glm-5.2 在方舟上关不掉思考);失败会回退到上面的主模型
+  - MEMENTO_AI_BACKGROUND_MODEL=deepseek-v4.1-flash
   - MEMENTO_PORT=8000
   - MEMENTO_PUBLIC_URL=https://mem.ihasy.com
   - MEMENTO_REMOTE_EXEC=1

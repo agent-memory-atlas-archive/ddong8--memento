@@ -27,15 +27,28 @@ class AIProviderConfig:
     timeout: float = 120.0
 
 
-def get_ai_providers() -> list[AIProviderConfig]:
-    """Return all configured AI providers in fallback priority order."""
+def get_ai_providers(background: bool = False) -> list[AIProviderConfig]:
+    """Return all configured AI providers in fallback priority order.
+
+    background=True puts MEMENTO_AI_BACKGROUND_MODEL (same endpoint and key as
+    the primary) first, for extraction and summary jobs that want a fast
+    non-thinking model; the primary model stays next in line.
+    """
     providers: list[AIProviderConfig] = []
 
     # 1. Primary provider (MEMENTO_AI_*)
     primary_url = os.environ.get("MEMENTO_AI_BASE_URL", "https://coding.dashscope.aliyuncs.com/v1").rstrip("/")
     primary_key = os.environ.get("MEMENTO_AI_API_KEY", "").strip()
     primary_model = os.environ.get("MEMENTO_AI_MODEL", "kimi-k2.5").strip()
+    background_model = os.environ.get("MEMENTO_AI_BACKGROUND_MODEL", "").strip()
 
+    if primary_key and background and background_model and background_model != primary_model:
+        providers.append(AIProviderConfig(
+            name="primary_background",
+            base_url=primary_url,
+            api_key=primary_key,
+            model=background_model,
+        ))
     if primary_key:
         providers.append(AIProviderConfig(
             name="primary",
@@ -55,11 +68,7 @@ def get_ai_providers() -> list[AIProviderConfig]:
     ).strip()
     fallback_model = os.environ.get("MEMENTO_AI_FALLBACK_MODEL", "qwen3.8-27b").strip()
 
-    is_duplicate = bool(
-        providers
-        and providers[0].api_key == fallback_key
-        and providers[0].base_url == fallback_url
-    )
+    is_duplicate = any(p.api_key == fallback_key and p.base_url == fallback_url for p in providers)
     if fallback_key and not is_duplicate:
         providers.append(AIProviderConfig(
             name="oneapi_fallback",
@@ -94,24 +103,25 @@ async def call_chat_completion(
     temperature: float = 0.3,
     max_tokens: int = 1500,
     timeout: float = 120.0,
-    thinking: bool = True,
+    background: bool = False,
 ) -> tuple[dict, AIProviderConfig]:
     """Call chat/completions with automatic fallback across all configured providers.
 
-    thinking=False asks reasoning models to answer directly (extraction and
-    summary jobs don't need it, and thinking can take minutes).
+    background=True is for extraction and summary jobs: it prefers the background
+    model and asks reasoning models to answer without thinking, which can
+    otherwise take minutes.
 
     Returns (response_json_dict, provider_used).
     Raises RuntimeError if all providers fail.
     """
-    providers = get_ai_providers()
+    providers = get_ai_providers(background=background)
     if not providers:
         raise RuntimeError("No AI API providers configured (missing API keys)")
 
     errors: list[str] = []
     for p in providers:
         budget = max_tokens
-        switch_off_thinking = not thinking and _provider_key(p) not in _THINKING_SWITCH_REJECTED
+        switch_off_thinking = background and _provider_key(p) not in _THINKING_SWITCH_REJECTED
         widened = False
         retried_without_switch = False
         while True:
@@ -354,7 +364,7 @@ async def call_plain_chat(
             temperature=temperature,
             max_tokens=max_tokens,
             timeout=timeout,
-            thinking=False,
+            background=True,
         )
         choices = data.get("choices") or []
         if choices:
