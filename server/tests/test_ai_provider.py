@@ -10,7 +10,15 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "server"))
 
-from server.services.ai_provider import get_ai_providers, AIProviderConfig, split_thinking  # noqa: E402
+from server.services.ai_provider import (  # noqa: E402
+    REASONING_RETRY_EXTRA_TOKENS,
+    AIProviderConfig,
+    call_chat_completion,
+    call_plain_chat,
+    completion_problem,
+    get_ai_providers,
+    split_thinking,
+)
 
 
 class AIProviderTests(unittest.TestCase):
@@ -69,6 +77,97 @@ class AIProviderTests(unittest.TestCase):
             self.assertIn("custom_backup", names)
             custom = next(p for p in providers if p.name == "custom_backup")
             self.assertEqual(custom.model, "gpt-4o")
+
+
+def _completion(content: str | None, finish: str = "stop", reasoning: str | None = None, tool_calls=None) -> dict:
+    msg: dict = {"role": "assistant", "content": content}
+    if reasoning is not None:
+        msg["reasoning_content"] = reasoning
+    if tool_calls:
+        msg["tool_calls"] = tool_calls
+    return {"choices": [{"message": msg, "finish_reason": finish}], "usage": {}}
+
+
+class _FakeResponse:
+    def __init__(self, payload: dict, status_code: int = 200) -> None:
+        self.status_code = status_code
+        self._payload = payload
+        self.text = json.dumps(payload)
+
+    def json(self) -> dict:
+        return self._payload
+
+
+def _fake_client(responses: list[dict], calls: list[tuple[str, dict]]):
+    class FakeClient:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc) -> None:
+            return None
+
+        async def post(self, url: str, headers=None, json=None):
+            calls.append((url, json))
+            return _FakeResponse(responses.pop(0))
+
+    return FakeClient
+
+
+class CompletionProblemTests(unittest.TestCase):
+    def test_answer_is_fine(self) -> None:
+        self.assertIsNone(completion_problem(_completion("### 沟通\n- 始终用中文回复")))
+
+    def test_tool_calls_without_content_are_fine(self) -> None:
+        self.assertIsNone(completion_problem(_completion(None, tool_calls=[{"id": "t1"}])))
+
+    def test_reasoning_ran_out_of_tokens(self) -> None:
+        data = _completion("", finish="length", reasoning="让我先想想用户的偏好……")
+        self.assertEqual(completion_problem(data), "reasoning_exhausted")
+
+    def test_inline_think_cut_off(self) -> None:
+        self.assertEqual(completion_problem(_completion("<think>还在想", finish="length")), "reasoning_exhausted")
+
+    def test_plain_length_cut_is_callers_cap(self) -> None:
+        self.assertIsNone(completion_problem(_completion("被截断的回答", finish="length")))
+
+    def test_empty_answer(self) -> None:
+        self.assertEqual(completion_problem(_completion("<think>想完了</think>")), "empty")
+        self.assertEqual(completion_problem({"choices": []}), "empty")
+
+
+class CallChatCompletionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_retries_with_more_tokens_when_reasoning_exhausts_budget(self) -> None:
+        calls: list[tuple[str, dict]] = []
+        responses = [
+            _completion("", finish="length", reasoning="思考……"),
+            _completion("### 沟通\n- 始终用中文回复", reasoning="思考……"),
+        ]
+        providers = [AIProviderConfig("primary", "https://a.example/v1", "k1", "m1")]
+        with patch("server.services.ai_provider.get_ai_providers", return_value=providers), \
+                patch("server.services.ai_provider.httpx.AsyncClient", _fake_client(responses, calls)):
+            data, used = await call_chat_completion([{"role": "user", "content": "hi"}], max_tokens=1500)
+        self.assertEqual(used.name, "primary")
+        self.assertEqual([body["max_tokens"] for _, body in calls], [1500, 1500 + REASONING_RETRY_EXTRA_TOKENS])
+        self.assertEqual(data["choices"][0]["message"]["content"], "### 沟通\n- 始终用中文回复")
+
+    async def test_empty_answer_falls_through_to_next_provider(self) -> None:
+        calls: list[tuple[str, dict]] = []
+        responses = [_completion(""), _completion("ok")]
+        providers = [
+            AIProviderConfig("primary", "https://a.example/v1", "k1", "m1"),
+            AIProviderConfig("backup", "https://b.example/v1", "k2", "m2"),
+        ]
+        with patch("server.services.ai_provider.get_ai_providers", return_value=providers), \
+                patch("server.services.ai_provider.httpx.AsyncClient", _fake_client(responses, calls)):
+            text = await call_plain_chat([{"role": "user", "content": "hi"}])
+        self.assertEqual(text, "ok")
+        self.assertEqual([url for url, _ in calls], [
+            "https://a.example/v1/chat/completions",
+            "https://b.example/v1/chat/completions",
+        ])
 
 
 if __name__ == "__main__":

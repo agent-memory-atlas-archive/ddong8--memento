@@ -106,38 +106,85 @@ async def call_chat_completion(
 
     errors: list[str] = []
     for p in providers:
-        req_body: dict = {
-            "model": p.model,
-            "messages": messages,
-            "temperature": temperature,
-            "max_tokens": max_tokens,
-        }
-        if tools:
-            req_body["tools"] = tools
+        budget = max_tokens
+        for attempt in range(2):
+            req_body: dict = {
+                "model": p.model,
+                "messages": messages,
+                "temperature": temperature,
+                "max_tokens": budget,
+            }
+            if tools:
+                req_body["tools"] = tools
 
-        try:
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                resp = await client.post(
-                    f"{p.base_url}/chat/completions",
-                    headers={
-                        "Authorization": f"Bearer {p.api_key}",
-                        "Content-Type": "application/json",
-                    },
-                    json=req_body,
-                )
-                if resp.status_code == 200:
-                    data = resp.json()
-                    return data, p
+            try:
+                async with httpx.AsyncClient(timeout=timeout) as client:
+                    resp = await client.post(
+                        f"{p.base_url}/chat/completions",
+                        headers={
+                            "Authorization": f"Bearer {p.api_key}",
+                            "Content-Type": "application/json",
+                        },
+                        json=req_body,
+                    )
+            except Exception as e:
+                err_msg = f"Provider '{p.name}' ({p.base_url}, {p.model}) error: {type(e).__name__}: {e}"
+                logger.warning(err_msg)
+                errors.append(err_msg)
+                break
 
+            if resp.status_code != 200:
                 err_msg = f"Provider '{p.name}' ({p.base_url}, {p.model}) returned HTTP {resp.status_code}: {resp.text[:200]}"
                 logger.warning(err_msg)
                 errors.append(err_msg)
-        except Exception as e:
-            err_msg = f"Provider '{p.name}' ({p.base_url}, {p.model}) error: {type(e).__name__}: {e}"
+                break
+
+            data = resp.json()
+            problem = completion_problem(data)
+            if problem is None:
+                return data, p
+            if problem == "reasoning_exhausted" and attempt == 0:
+                budget = max_tokens + REASONING_RETRY_EXTRA_TOKENS
+                logger.warning(
+                    "Provider '%s' (%s) spent max_tokens=%d on reasoning; retrying with %d",
+                    p.name, p.model, max_tokens, budget,
+                )
+                continue
+            err_msg = f"Provider '{p.name}' ({p.base_url}, {p.model}) returned no usable answer ({problem}, max_tokens={budget})"
             logger.warning(err_msg)
             errors.append(err_msg)
+            break
 
     raise RuntimeError(f"All {len(providers)} AI providers failed: " + "; ".join(errors))
+
+
+# Reasoning models (Ark / DashScope coding plans) count their hidden thinking
+# against max_tokens. A budget sized for the answer can be spent entirely on
+# thinking, which comes back as HTTP 200 with empty or cut-off content.
+REASONING_RETRY_EXTRA_TOKENS = 8000
+
+
+def completion_problem(data: dict) -> str | None:
+    """Why a 200 chat/completions response has no usable answer, or None if it has one.
+
+    "reasoning_exhausted": thinking ran into max_tokens, so the answer is missing
+    or truncated. "empty": no answer and no tool calls.
+    """
+    choices = data.get("choices") or []
+    if not choices:
+        return "empty"
+    choice = choices[0]
+    msg = choice.get("message") or {}
+    if msg.get("tool_calls"):
+        return None
+    raw = msg.get("content") or ""
+    reasoning = msg.get("reasoning_content") or ""
+    usage = data.get("usage") or {}
+    reasoning_tokens = usage.get("reasoning_tokens") or (usage.get("completion_tokens_details") or {}).get("reasoning_tokens") or 0
+    if choice.get("finish_reason") == "length" and (reasoning.strip() or "<think>" in raw or reasoning_tokens):
+        return "reasoning_exhausted"
+    _, answer = split_thinking(raw, reasoning)
+    return None if answer else "empty"
 
 
 import re

@@ -184,7 +184,10 @@ async def build_profile_draft(db: AsyncSession, user: User) -> tuple[UserProfile
                 max_chars=PROFILE_MAX_CHARS,
             )},
         ],
-        max_tokens=1500,
+        # Room for a reasoning model's thinking plus a PROFILE_MAX_CHARS answer;
+        # the client waits up to 5 minutes for this request.
+        max_tokens=6000,
+        timeout=180.0,
     )
     content = sanitize_profile_content(raw)
     if not content:
