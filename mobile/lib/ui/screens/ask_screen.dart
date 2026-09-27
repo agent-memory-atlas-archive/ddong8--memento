@@ -1394,12 +1394,12 @@ class _AskScreenState extends ConsumerState<AskScreen> {
                                                   Container(
                                                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                                     decoration: BoxDecoration(
-                                                      color: AuroraColors.accent,
+                                                      color: AuroraColors.accentStrong,
                                                       borderRadius: BorderRadius.circular(4),
                                                     ),
                                                     child: const Text(
                                                       '当前',
-                                                      style: TextStyle(fontSize: 9.5, color: Colors.black, fontWeight: FontWeight.bold),
+                                                      style: TextStyle(fontSize: 9.5, color: AuroraColors.onAccent, fontWeight: FontWeight.bold),
                                                     ),
                                                   ),
                                                 ],
@@ -2209,7 +2209,7 @@ class _AskScreenState extends ConsumerState<AskScreen> {
                   SelectableText(
                     turn.content,
                     style: const TextStyle(
-                      fontSize: 14.5,
+                      fontSize: 15,
                       color: AuroraColors.fg1,
                       height: 1.5,
                     ),
@@ -2309,6 +2309,28 @@ class _AskScreenState extends ConsumerState<AskScreen> {
     );
   }
 
+  /// A 30 px chip in the composer's summary row; neutral unless tinted.
+  Widget _summaryChip({
+    required IconData icon,
+    required String label,
+    Color color = AuroraColors.fg2,
+    Color background = AuroraColors.chip,
+  }) {
+    return Container(
+      height: 30,
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      decoration: BoxDecoration(color: background, borderRadius: BorderRadius.circular(8)),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: color),
+          const SizedBox(width: 6),
+          Text(label, style: TextStyle(fontSize: 13, color: color, fontWeight: FontWeight.w500)),
+        ],
+      ),
+    );
+  }
+
   Widget _buildCollapsedSummaryBar(DeviceState deviceState) {
     final modes = [
       {'id': 'ai', 'label': 'AI 编排', 'icon': Icons.psychology_rounded, 'color': AuroraColors.accent},
@@ -2354,9 +2376,8 @@ class _AskScreenState extends ConsumerState<AskScreen> {
     return InkWell(
       onTap: () => setState(() => _isConfigCollapsed = false),
       borderRadius: BorderRadius.circular(10),
-      child: Container(
+      child: SizedBox(
         height: 32,
-        padding: const EdgeInsets.symmetric(horizontal: 2),
         child: Row(
           children: [
             Expanded(
@@ -2365,129 +2386,31 @@ class _AskScreenState extends ConsumerState<AskScreen> {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // Mode Chip
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: modeColor.withValues(alpha: 0.16),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(currentMode['icon'] as IconData, size: 12, color: modeColor),
-                          const SizedBox(width: 4),
-                          Text(
-                            currentMode['label'] as String,
-                            style: TextStyle(fontSize: 11, color: modeColor, fontWeight: FontWeight.w600),
-                          ),
-                        ],
-                      ),
+                    _summaryChip(
+                      icon: currentMode['icon'] as IconData,
+                      label: currentMode['label'] as String,
+                      color: modeColor,
+                      background: modeColor.withValues(alpha: 0.12),
                     ),
-                    const SizedBox(width: 6),
-
-                    // Device Chip
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: AuroraColors.surface,
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: AuroraColors.border, width: 0.8),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(Icons.devices_rounded, size: 11, color: AuroraColors.accent),
-                          const SizedBox(width: 4),
-                          Text(
-                            deviceLabel,
-                            style: const TextStyle(fontSize: 11, color: AuroraColors.fg2),
-                          ),
-                        ],
-                      ),
-                    ),
-
-                    // Project Chip
+                    const SizedBox(width: 8),
+                    _summaryChip(icon: Icons.laptop_mac_rounded, label: deviceLabel),
                     if (projectTitle != null && projectTitle.isNotEmpty) ...[
-                      const SizedBox(width: 6),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: AuroraColors.surface,
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: AuroraColors.border, width: 0.8),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.folder_outlined, size: 11, color: AuroraColors.fg3),
-                            const SizedBox(width: 4),
-                            Text(
-                              projectTitle,
-                              style: const TextStyle(fontSize: 11, color: AuroraColors.fg2),
-                            ),
-                          ],
-                        ),
-                      ),
+                      const SizedBox(width: 8),
+                      _summaryChip(icon: Icons.folder_outlined, label: projectTitle),
                     ],
-
-                    // Session Chip (if resuming)
+                    // Resuming a session
                     if (_selectedSessionId != null && _selectedSessionId!.isNotEmpty) ...[
-                      const SizedBox(width: 6),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: _compactMode ? const Color(0x1E10B981) : AuroraColors.accentSoft,
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(
-                            color: _compactMode ? const Color(0xFF10B981) : AuroraColors.accent,
-                            width: 0.8,
-                          ),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              _compactMode ? Icons.auto_awesome : Icons.access_time_rounded,
-                              size: 11,
-                              color: _compactMode ? const Color(0xFF10B981) : AuroraColors.accent,
-                            ),
-                            const SizedBox(width: 3),
-                            Text(
-                              _compactMode ? '瘦身续接' : '续接中',
-                              style: TextStyle(
-                                fontSize: 10.5,
-                                color: _compactMode ? const Color(0xFF10B981) : AuroraColors.accent,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
-                        ),
+                      const SizedBox(width: 8),
+                      _summaryChip(
+                        icon: _compactMode ? Icons.auto_awesome : Icons.access_time_rounded,
+                        label: _compactMode ? '瘦身续接' : '续接中',
+                        color: _compactMode ? AuroraColors.success : AuroraColors.accent,
+                        background: _compactMode ? AuroraColors.successSoft : AuroraColors.accentSoft,
                       ),
                     ],
-
-                    // Custom Timeout Chip (if set)
                     if (_selectedTimeoutSeconds != null && _selectedTimeoutSeconds! > 0) ...[
-                      const SizedBox(width: 6),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: AuroraColors.surface,
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: AuroraColors.border, width: 0.8),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.timer_outlined, size: 11, color: AuroraColors.accent),
-                            const SizedBox(width: 3),
-                            Text(
-                              '${(_selectedTimeoutSeconds! ~/ 60)}m',
-                              style: const TextStyle(fontSize: 10.5, color: AuroraColors.accent, fontWeight: FontWeight.w600),
-                            ),
-                          ],
-                        ),
-                      ),
+                      const SizedBox(width: 8),
+                      _summaryChip(icon: Icons.timer_outlined, label: '${(_selectedTimeoutSeconds! ~/ 60)}m'),
                     ],
                   ],
                 ),
@@ -2495,18 +2418,12 @@ class _AskScreenState extends ConsumerState<AskScreen> {
             ),
             const SizedBox(width: 6),
             // Expand button
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.tune_rounded, size: 14, color: AuroraColors.fg3),
-                  SizedBox(width: 4),
-                  Text(
-                    '配置',
-                    style: TextStyle(fontSize: 12, color: AuroraColors.fg3, fontWeight: FontWeight.w500),
-                  ),
-                ],
+            const Tooltip(
+              message: '展开配置',
+              child: SizedBox(
+                width: 36,
+                height: 30,
+                child: Icon(Icons.tune_rounded, size: 17, color: AuroraColors.fg3),
               ),
             ),
           ],
@@ -3360,12 +3277,14 @@ class _AskScreenState extends ConsumerState<AskScreen> {
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
             _buildAttachmentMenuButton(),
-            const SizedBox(width: 6),
+            const SizedBox(width: 8),
             Expanded(
               child: Container(
+                constraints: const BoxConstraints(minHeight: 44),
                 decoration: BoxDecoration(
-                  color: AuroraColors.surfaceElevated,
-                  borderRadius: BorderRadius.circular(20),
+                  color: AuroraColors.surfaceSolid,
+                  borderRadius: BorderRadius.circular(22),
+                  border: Border.all(color: const Color(0x14FFFFFF)),
                 ),
                 child: TextField(
                   controller: _inputController,
@@ -3374,14 +3293,16 @@ class _AskScreenState extends ConsumerState<AskScreen> {
                   minLines: 1,
                   maxLines: 4,
                   textInputAction: TextInputAction.send,
-                  style: const TextStyle(color: AuroraColors.fg1, fontSize: 14),
+                  style: const TextStyle(color: AuroraColors.fg1, fontSize: 15),
                   decoration: InputDecoration(
                     hintText: _getHintText(),
+                    hintStyle: const TextStyle(color: AuroraColors.fg3, fontSize: 15),
                     filled: false,
+                    isDense: true,
                     border: InputBorder.none,
                     enabledBorder: InputBorder.none,
                     focusedBorder: InputBorder.none,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   ),
                   onSubmitted: (_) => _handleSend(),
                 ),
@@ -3389,18 +3310,18 @@ class _AskScreenState extends ConsumerState<AskScreen> {
             ),
             const SizedBox(width: 8),
             if (askState.isStreaming)
-              IconButton.filled(
+              _roundAction(
                 onPressed: () => ref.read(askProvider.notifier).abort(),
-                style: IconButton.styleFrom(backgroundColor: AuroraColors.danger),
+                color: AuroraColors.danger,
                 tooltip: '中止生成',
-                icon: const Icon(Icons.stop, color: Colors.white, size: 20),
+                icon: Icons.stop_rounded,
               )
             else
-              IconButton.filled(
+              _roundAction(
                 onPressed: _handleSend,
-                style: IconButton.styleFrom(backgroundColor: AuroraColors.accent),
+                color: AuroraColors.accentStrong,
                 tooltip: '发送消息 (Enter，Shift+Enter 换行)',
-                icon: const Icon(Icons.send_rounded, color: Colors.black, size: 18),
+                icon: Icons.arrow_upward_rounded,
               ),
           ],
         ),
@@ -3495,29 +3416,55 @@ class _AskScreenState extends ConsumerState<AskScreen> {
     );
   }
 
+  /// 44 px filled circle with a soft glow of its own color (send / stop).
+  Widget _roundAction({
+    required VoidCallback onPressed,
+    required Color color,
+    required String tooltip,
+    required IconData icon,
+  }) {
+    return Tooltip(
+      message: tooltip,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          boxShadow: [BoxShadow(color: color.withValues(alpha: 0.3), blurRadius: 12, offset: const Offset(0, 3))],
+        ),
+        child: Material(
+          color: color,
+          shape: const CircleBorder(),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: onPressed,
+            child: SizedBox(
+              width: 44,
+              height: 44,
+              child: Icon(icon, color: AuroraColors.onAccent, size: 20),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildAttachmentMenuButton() {
     final isMobile = Platform.isIOS || Platform.isAndroid;
 
     if (isMobile) {
-      return Container(
-        height: 44,
-        width: 40,
-        alignment: Alignment.center,
-        child: IconButton(
-          onPressed: _showMobileAttachmentSheet,
-          tooltip: '拍照 / 选图 / 附件',
-          padding: EdgeInsets.zero,
-          constraints: const BoxConstraints(),
-          icon: const Icon(Icons.add_circle_outline_rounded, color: AuroraColors.accent, size: 24),
-        ),
+      return IconButton(
+        onPressed: _showMobileAttachmentSheet,
+        tooltip: '拍照 / 选图 / 附件',
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints(),
+        icon: _attachGlyph,
       );
     }
 
-    return Container(
+    return SizedBox(
       height: 44,
-      width: 40,
-      alignment: Alignment.center,
+      width: 44,
       child: PopupMenuButton<String>(
+        padding: EdgeInsets.zero,
         tooltip: '添加附件 / 截图',
         offset: const Offset(0, -120),
         color: AuroraColors.surface,
@@ -3570,10 +3517,17 @@ class _AskScreenState extends ConsumerState<AskScreen> {
             ),
           ),
         ],
-        child: const Icon(Icons.add_circle_outline_rounded, color: AuroraColors.accent, size: 24),
+        child: _attachGlyph,
       ),
     );
   }
+
+  static final Widget _attachGlyph = Container(
+    width: 44,
+    height: 44,
+    decoration: const BoxDecoration(color: AuroraColors.chip, shape: BoxShape.circle),
+    child: const Icon(Icons.add_rounded, color: AuroraColors.fg2, size: 20),
+  );
 }
 
 class _LocalSessionParseArgs {

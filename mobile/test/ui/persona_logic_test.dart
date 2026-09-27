@@ -14,6 +14,29 @@ void main() {
     expect(personaLineDiff('- a\n- b', null).added, ['- a', '- b']);
   });
 
+  group('sections', () {
+    test('groups bullets under their headings', () {
+      final s = personaSections('### 沟通\n- 用中文回复\n- 先给结论\n\n### 铁律\n- 只走 GitOps\n');
+      expect(s.map((e) => e.title), ['沟通', '铁律']);
+      expect(s.first.items, ['用中文回复', '先给结论']);
+      expect(s.last.items, ['只走 GitOps']);
+    });
+
+    test('bullets before any heading form an untitled group', () {
+      final s = personaSections('- 用中文回复\n### 铁律\n- 只走 GitOps');
+      expect(s.first.title, '');
+      expect(s.first.items, ['用中文回复']);
+    });
+
+    test('prose without bullets falls back to markdown', () {
+      expect(personaSections('这是一段没有条目的说明。'), isEmpty);
+    });
+
+    test('empty headings are dropped', () {
+      expect(personaSections('### 沟通\n- a\n### 技术偏好\n').map((e) => e.title), ['沟通']);
+    });
+  });
+
   group('target state', () {
     PersonaTargetState? state(bool enabled, String? result, {int? reported = 2, int? published = 2}) =>
         personaTargetState(enabled: enabled, result: result, reportedVersion: reported, publishedVersion: published);

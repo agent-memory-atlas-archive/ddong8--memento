@@ -227,7 +227,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                   height: 20,
                                   child: CircularProgressIndicator(
                                     strokeWidth: 2,
-                                    color: Colors.black,
+                                    color: AuroraColors.onAccent,
                                   ),
                                 )
                               : const Text('进入 Memento'),

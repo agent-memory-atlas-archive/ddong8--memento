@@ -155,8 +155,8 @@ class AuroraEmptyState extends StatelessWidget {
                 icon: const Icon(Icons.refresh_rounded, size: 16),
                 label: Text(actionLabel!),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: AuroraColors.accent,
-                  foregroundColor: Colors.black,
+                  backgroundColor: AuroraColors.accentStrong,
+                  foregroundColor: AuroraColors.onAccent,
                   elevation: 0,
                   padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                   shape: RoundedRectangleBorder(

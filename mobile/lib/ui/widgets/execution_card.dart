@@ -4,6 +4,7 @@ import '../../core/api_client.dart';
 import '../../core/theme/aurora_theme.dart';
 import '../../models/ask_turn.dart';
 import 'app_markdown.dart';
+import 'glass_card.dart';
 
 class ExecutionCard extends StatefulWidget {
   final ToolCallItem call;
@@ -136,7 +137,7 @@ class _ExecutionCardState extends State<ExecutionCard> {
     final statusColor = isRunning
         ? AuroraColors.accent
         : isStillRunning
-            ? const Color(0xFFF59E0B)
+            ? AuroraColors.warn
             : isSuccess
                 ? AuroraColors.success
                 : isFailed
@@ -154,419 +155,339 @@ class _ExecutionCardState extends State<ExecutionCard> {
                     : '就绪';
 
     final alertCount = res?.alerts.length ?? 0;
+    final title = call.command.isNotEmpty
+        ? (cmd.startsWith('[') && cmd.contains('] ') ? cmd.substring(cmd.indexOf('] ') + 2) : call.command)
+        : (call.prompt.isNotEmpty ? call.prompt : call.name);
+    final stdout = res?.stdout ?? '';
+    final rendersMarkdown =
+        stdout.isNotEmpty && (isClaude || isCodex || isAgy || call.action == 'agent' || _containsMarkdown(stdout));
 
-    return Container(
-      margin: const EdgeInsets.symmetric(vertical: 6),
-      decoration: BoxDecoration(
-        color: AuroraColors.surfaceSolid,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AuroraColors.border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Header
-          InkWell(
-            onTap: () => setState(() => _expanded = !_expanded),
-            borderRadius: _expanded
-                ? const BorderRadius.vertical(top: Radius.circular(12))
-                : BorderRadius.circular(12),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              child: Row(
-                children: [
-                  Container(
-                    width: 30,
-                    height: 30,
-                    decoration: BoxDecoration(
-                      color: agentColor.withValues(alpha: 0.14),
-                      borderRadius: BorderRadius.circular(8),
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: GlassCard(
+        padding: EdgeInsets.zero,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Header: what it's doing on top, agent and device underneath.
+            InkWell(
+              onTap: () => setState(() => _expanded = !_expanded),
+              borderRadius: BorderRadius.circular(13),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 32,
+                      height: 32,
+                      decoration: BoxDecoration(
+                        color: agentColor.withValues(alpha: 0.14),
+                        borderRadius: BorderRadius.circular(9),
+                      ),
+                      child: Icon(agentIcon, size: 16, color: agentColor),
                     ),
-                    child: Icon(agentIcon, size: 16, color: agentColor),
-                  ),
-                  const SizedBox(width: 10),
-                  // Title on top (what it's doing), agent and device underneath.
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          call.command.isNotEmpty
-                              ? (cmd.startsWith('[') && cmd.contains('] ') ? cmd.substring(cmd.indexOf('] ') + 2) : call.command)
-                              : (call.prompt.isNotEmpty ? call.prompt : call.name),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontFamily: call.action == 'shell' ? 'monospace' : null,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w500,
-                            color: AuroraColors.fg1,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text.rich(
-                          TextSpan(children: [
-                            TextSpan(
-                              text: agentLabel,
-                              style: TextStyle(color: agentColor, fontWeight: FontWeight.w600),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontFamily: call.action == 'shell' ? 'monospace' : null,
+                              fontFamilyFallback:
+                                  call.action == 'shell' ? AuroraTheme.monospaceFontFamilyFallback : null,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                              color: AuroraColors.fg1,
                             ),
-                            if (call.deviceName != null && call.deviceName!.isNotEmpty)
-                              TextSpan(text: '  ·  ${call.deviceName}'),
-                          ]),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 11, color: AuroraColors.fg3),
-                        ),
-                      ],
+                          ),
+                          const SizedBox(height: 3),
+                          Text.rich(
+                            TextSpan(children: [
+                              TextSpan(
+                                text: agentLabel,
+                                style: TextStyle(color: agentColor, fontWeight: FontWeight.w500),
+                              ),
+                              if (call.deviceName != null && call.deviceName!.isNotEmpty)
+                                TextSpan(text: ' · ${call.deviceName}'),
+                            ]),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: 12, color: AuroraColors.fg3),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  // Risky operations stay visible while the card is collapsed.
-                  if (alertCount > 0) ...[
-                    Tooltip(
-                      message: '期间有 $alertCount 次危险操作',
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: AuroraColors.warnSoft,
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
+                    const SizedBox(width: 8),
+                    // Risky operations stay visible while the card is collapsed.
+                    if (alertCount > 0) ...[
+                      Tooltip(
+                        message: '期间有 $alertCount 次危险操作',
+                        child: _Pill(
+                          color: AuroraColors.warn,
+                          background: AuroraColors.warn.withValues(alpha: 0.12),
                           children: [
-                            const Icon(Icons.warning_amber_rounded, size: 11, color: AuroraColors.warn),
-                            const SizedBox(width: 3),
-                            Text('$alertCount',
-                                style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: AuroraColors.warn)),
+                            const Icon(Icons.warning_amber_rounded, size: 12, color: AuroraColors.warn),
+                            const SizedBox(width: 4),
+                            Text('$alertCount'),
                           ],
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 6),
-                  ],
-                  // Status pill
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: statusColor.withValues(alpha: 0.14),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
+                      const SizedBox(width: 6),
+                    ],
+                    _Pill(
+                      color: statusColor,
+                      background: statusColor.withValues(alpha: 0.10),
                       children: [
-                        if (isRunning) ...[
+                        if (isRunning)
                           const SizedBox(
                             width: 8,
                             height: 8,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 1.5,
-                              color: AuroraColors.accent,
-                            ),
+                            child: CircularProgressIndicator(strokeWidth: 1.5, color: AuroraColors.accent),
+                          )
+                        else
+                          Container(
+                            width: 6,
+                            height: 6,
+                            decoration: BoxDecoration(color: statusColor, shape: BoxShape.circle),
                           ),
-                          const SizedBox(width: 4),
-                        ],
-                        Text(
-                          statusText,
-                          style: TextStyle(
-                            fontSize: 10.5,
-                            fontWeight: FontWeight.w600,
-                            color: statusColor,
-                          ),
-                        ),
+                        const SizedBox(width: 5),
+                        Text(statusText),
                       ],
                     ),
-                  ),
-                  const SizedBox(width: 4),
-                  Tooltip(
-                    message: _expanded ? '收起详情' : '展开查看详情',
-                    child: Icon(
-                      _expanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
-                      size: 16,
-                      color: AuroraColors.fg3,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-
-          // Console Output
-          if (_expanded)
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              decoration: const BoxDecoration(
-                color: AuroraColors.bg,
-                borderRadius: BorderRadius.vertical(bottom: Radius.circular(12)),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Expanded(
-                        child: Text(
-                          call.command.isNotEmpty ? '\$ ${call.command}' : '',
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontFamily: 'monospace',
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                            color: Color(0xFF38BDF8),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      if (res?.stdout != null && (isClaude || isCodex || isAgy || call.action == 'agent' || _containsMarkdown(res!.stdout!))) ...[
-                        InkWell(
-                          onTap: () => setState(() => _showRawTerminal = !_showRawTerminal),
-                          borderRadius: BorderRadius.circular(6),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  _showRawTerminal ? Icons.article_outlined : Icons.terminal_rounded,
-                                  size: 12,
-                                  color: AuroraColors.fg3,
-                                ),
-                                const SizedBox(width: 4),
-                                Text(
-                                  _showRawTerminal ? '渲染' : '终端',
-                                  style: const TextStyle(
-                                    fontSize: 10.5,
-                                    color: AuroraColors.fg3,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 4),
-                      ],
-                      InkWell(
-                        onTap: _copyOutput,
-                        borderRadius: BorderRadius.circular(6),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                _copied ? Icons.check : Icons.copy,
-                                size: 12,
-                                color: _copied ? AuroraColors.success : AuroraColors.fg3,
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                _copied ? '已复制' : '复制',
-                                style: TextStyle(
-                                  fontSize: 10.5,
-                                  color: _copied ? AuroraColors.success : AuroraColors.fg3,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      if (isRunning) ...[
-                        const SizedBox(width: 6),
-                        InkWell(
-                          onTap: _cancelTask,
-                          borderRadius: BorderRadius.circular(6),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(
-                                  Icons.stop_circle_outlined,
-                                  size: 13,
-                                  color: Color(0xFFEF4444),
-                                ),
-                                const SizedBox(width: 3),
-                                Text(
-                                  _feedbackMsg ?? '终止',
-                                  style: const TextStyle(
-                                    fontSize: 10.5,
-                                    fontWeight: FontWeight.bold,
-                                    color: Color(0xFFEF4444),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  if (res != null && res.alerts.isNotEmpty) ...[
-                    RiskAlertList(alerts: res.alerts),
-                    const SizedBox(height: 6),
-                  ],
-                  if (isRunning &&
-                      (res?.stdout == null || res!.stdout!.isEmpty) &&
-                      (res?.stderr == null || res!.stderr!.isEmpty))
-                    const Text(
-                      '设备已接收命令，正在运行...',
-                      style: TextStyle(
-                        fontFamily: 'monospace',
-                        fontSize: 11.5,
-                        fontStyle: FontStyle.italic,
+                    const SizedBox(width: 6),
+                    Tooltip(
+                      message: _expanded ? '收起详情' : '展开查看详情',
+                      child: Icon(
+                        _expanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
+                        size: 18,
                         color: AuroraColors.fg3,
                       ),
                     ),
-                  if (res?.stdout != null && res!.stdout!.isNotEmpty) ...[
-                    if ((isClaude || isCodex || isAgy || call.action == 'agent' || _containsMarkdown(res.stdout!)) && !_showRawTerminal)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 4),
-                        child: AppMarkdown(
-                          data: res.stdout!,
-                          baseTextStyle: const TextStyle(
-                            fontSize: 13,
-                            color: Color(0xFFF1F5F9),
-                            height: 1.5,
+                  ],
+                ),
+              ),
+            ),
+
+            if (_expanded)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        if (rendersMarkdown)
+                          _toolbarAction(
+                            icon: _showRawTerminal ? Icons.article_outlined : Icons.terminal_rounded,
+                            label: _showRawTerminal ? '渲染' : '终端',
+                            onTap: () => setState(() => _showRawTerminal = !_showRawTerminal),
                           ),
+                        _toolbarAction(
+                          icon: _copied ? Icons.check_rounded : Icons.copy_rounded,
+                          label: _copied ? '已复制' : '复制',
+                          color: _copied ? AuroraColors.success : AuroraColors.fg3,
+                          onTap: _copyOutput,
                         ),
-                      )
-                    else
-                      SelectableText(
-                        res.stdout!,
-                        style: const TextStyle(
-                          fontFamily: 'monospace',
-                          fontSize: 11.5,
-                          color: Color(0xFFF1F5F9),
-                          height: 1.45,
-                        ),
-                      ),
-                  ],
-                  if (res?.stderr != null && res!.stderr!.isNotEmpty) ...[
-                    const SizedBox(height: 4),
-                    SelectableText(
-                      res.stderr!,
-                      style: const TextStyle(
-                        fontFamily: 'monospace',
-                        fontSize: 11.5,
-                        color: Color(0xFFF87171),
-                        height: 1.45,
-                      ),
+                        if (isRunning)
+                          _toolbarAction(
+                            icon: Icons.stop_circle_outlined,
+                            label: _feedbackMsg ?? '终止',
+                            color: AuroraColors.danger,
+                            onTap: _cancelTask,
+                          ),
+                      ],
                     ),
-                  ],
-                  if (res?.error != null && res!.error!.isNotEmpty) ...[
-                    const SizedBox(height: 4),
-                    SelectableText(
-                      res.error!,
-                      style: const TextStyle(
-                        fontFamily: 'monospace',
-                        fontSize: 11.5,
-                        color: Color(0xFFEF4444),
-                        height: 1.45,
-                      ),
-                    ),
-                  ],
-                  if (res?.note != null && res!.note!.isNotEmpty) ...[
                     const SizedBox(height: 6),
+                    if (res != null && res.alerts.isNotEmpty) ...[
+                      RiskAlertList(alerts: res.alerts),
+                      const SizedBox(height: 10),
+                    ],
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 12),
                       decoration: BoxDecoration(
-                        color: const Color(0x19F59E0B),
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: const Color(0x40F59E0B)),
-                      ),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Icon(Icons.info_outline_rounded, size: 14, color: Color(0xFFF59E0B)),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            child: Text(
-                              res.note!,
-                              style: const TextStyle(
-                                fontSize: 11,
-                                color: Color(0xFFFBBF24),
-                                height: 1.4,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                  if ((res?.stdout?.contains('Prompt is too long') ?? false) ||
-                      (res?.stderr?.contains('Prompt is too long') ?? false)) ...[
-                    const SizedBox(height: 10),
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: const Color(0x1EF59E0B),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: const Color(0x59F59E0B)),
+                        color: AuroraColors.terminal,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: AuroraColors.chip),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Row(
-                            children: [
-                              Icon(Icons.warning_amber_rounded, size: 16, color: Color(0xFFF59E0B)),
-                              SizedBox(width: 6),
-                              Expanded(
-                                child: Text(
-                                  '历史会话超出上下文限制 (Prompt is too long)',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.bold,
-                                    color: Color(0xFFF59E0B),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 6),
-                          const Text(
-                            '“Prompt is too long” 并非指您输入的提问过长，而是当前续接的历史会话已累计大量消息与工具记录（超出了 200,000 Token 上下文限制）。\n👉 推荐解决办法：点击下方按钮一键智能提炼前序记忆并轻装重试；或在上方切换为【➕ 新建独立会话】。',
-                            style: TextStyle(
-                              fontSize: 11.5,
-                              color: AuroraColors.fg2,
-                              height: 1.45,
+                          if (call.command.isNotEmpty)
+                            Text.rich(
+                              TextSpan(children: [
+                                const TextSpan(text: '\$ ', style: TextStyle(color: AuroraColors.accent)),
+                                TextSpan(text: call.command),
+                              ]),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: _mono.copyWith(color: AuroraColors.fg1),
                             ),
-                          ),
-                          if (widget.onSmartCompactAndRetry != null) ...[
-                            const SizedBox(height: 10),
-                            ElevatedButton.icon(
-                              onPressed: () {
-                                final sid = (call.args['session_id'] ?? call.args['parent_session_id'])?.toString();
-                                widget.onSmartCompactAndRetry?.call(sid);
-                              },
-                              icon: const Icon(Icons.auto_awesome, size: 14, color: Colors.white),
-                              label: const Text(
-                                '⚡ 立即智能瘦身并重试 (Smart Compact & Retry)',
-                                style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Colors.white),
-                              ),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFFD97706),
-                                foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                              ),
+                          if (isRunning && stdout.isEmpty && (res?.stderr ?? '').isEmpty)
+                            Text(
+                              '设备已接收命令，正在运行...',
+                              style: _mono.copyWith(fontStyle: FontStyle.italic, color: AuroraColors.fg3),
                             ),
+                          if (stdout.isNotEmpty) ...[
+                            if (call.command.isNotEmpty) const SizedBox(height: 6),
+                            if (rendersMarkdown && !_showRawTerminal)
+                              AppMarkdown(
+                                data: stdout,
+                                baseTextStyle: const TextStyle(fontSize: 13, color: AuroraColors.fgBody, height: 1.55),
+                              )
+                            else
+                              SelectableText(stdout, style: _mono.copyWith(color: AuroraColors.fgCode)),
+                          ],
+                          if ((res?.stderr ?? '').isNotEmpty) ...[
+                            const SizedBox(height: 4),
+                            SelectableText(res!.stderr!, style: _mono.copyWith(color: AuroraColors.danger)),
+                          ],
+                          if ((res?.error ?? '').isNotEmpty) ...[
+                            const SizedBox(height: 4),
+                            SelectableText(res!.error!, style: _mono.copyWith(color: AuroraColors.danger)),
                           ],
                         ],
                       ),
                     ),
+                    if ((res?.note ?? '').isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      _amberNote(
+                        icon: Icons.info_outline_rounded,
+                        child: Text(
+                          res!.note!,
+                          style: const TextStyle(fontSize: 12, color: AuroraColors.warnText, height: 1.45),
+                        ),
+                      ),
+                    ],
+                    if ((res?.stdout?.contains('Prompt is too long') ?? false) ||
+                        (res?.stderr?.contains('Prompt is too long') ?? false)) ...[
+                      const SizedBox(height: 10),
+                      _amberNote(
+                        icon: Icons.warning_amber_rounded,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              '历史会话超出上下文限制 (Prompt is too long)',
+                              style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: AuroraColors.warnText),
+                            ),
+                            const SizedBox(height: 4),
+                            const Text(
+                              '不是这次的提问太长，而是续接的历史会话累计了太多消息和工具记录，超出了 200,000 Token 的上下文。'
+                              '可以一键提炼前序记忆后重试，或在上方切换为「新建独立会话」。',
+                              style: TextStyle(fontSize: 12, color: AuroraColors.fg2, height: 1.5),
+                            ),
+                            if (widget.onSmartCompactAndRetry != null) ...[
+                              const SizedBox(height: 10),
+                              FilledButton.icon(
+                                onPressed: () {
+                                  final sid = (call.args['session_id'] ?? call.args['parent_session_id'])?.toString();
+                                  widget.onSmartCompactAndRetry?.call(sid);
+                                },
+                                icon: const Icon(Icons.auto_awesome, size: 14),
+                                label: const Text('智能瘦身并重试'),
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: const Color(0xFFB7791F),
+                                  foregroundColor: Colors.white,
+                                  textStyle: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+                                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                                  minimumSize: const Size(0, 34),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ],
                   ],
-                ],
+                ),
               ),
-            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  static const TextStyle _mono = TextStyle(
+    fontFamily: 'monospace',
+    fontFamilyFallback: AuroraTheme.monospaceFontFamilyFallback,
+    fontSize: 12,
+    height: 1.65,
+  );
+
+  Widget _toolbarAction({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+    Color color = AuroraColors.fg3,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(6),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 13, color: color),
+            const SizedBox(width: 4),
+            Text(label, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: color)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _amberNote({required IconData icon, required Widget child}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
+      decoration: BoxDecoration(
+        color: AuroraColors.warn.withValues(alpha: 0.07),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AuroraColors.warn.withValues(alpha: 0.18)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Icon(icon, size: 14, color: AuroraColors.warn),
+          ),
+          const SizedBox(width: 9),
+          Expanded(child: child),
         ],
       ),
     );
   }
 }
 
+/// A 22 px status chip: tinted fill, text in the same hue.
+class _Pill extends StatelessWidget {
+  final Color color;
+  final Color background;
+  final List<Widget> children;
+
+  const _Pill({required this.color, required this.background, required this.children});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 22,
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      decoration: BoxDecoration(color: background, borderRadius: BorderRadius.circular(6)),
+      child: DefaultTextStyle.merge(
+        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: color),
+        child: Row(mainAxisSize: MainAxisSize.min, children: children),
+      ),
+    );
+  }
+}
 
 /// Risky operations the agent performed during a task (also pushed to the phone).
 class RiskAlertList extends StatelessWidget {
@@ -578,39 +499,54 @@ class RiskAlertList extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
       decoration: BoxDecoration(
-        color: AuroraColors.warnSoft,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AuroraColors.warn.withValues(alpha: 0.4)),
+        color: AuroraColors.warn.withValues(alpha: 0.07),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AuroraColors.warn.withValues(alpha: 0.18)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          for (final alert in alerts)
+          for (final (i, alert) in alerts.indexed)
             Padding(
-              padding: const EdgeInsets.symmetric(vertical: 2),
+              padding: EdgeInsets.only(top: i == 0 ? 0 : 8),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Icon(Icons.warning_amber_rounded, size: 14, color: AuroraColors.warn),
-                  const SizedBox(width: 6),
+                  const Padding(
+                    padding: EdgeInsets.only(top: 2),
+                    child: Icon(Icons.warning_amber_rounded, size: 14, color: AuroraColors.warn),
+                  ),
+                  const SizedBox(width: 9),
                   Expanded(
-                    child: Text.rich(
-                      TextSpan(children: [
-                        TextSpan(
-                          text: '${alert['label'] ?? '危险操作'}  ',
-                          style: const TextStyle(fontWeight: FontWeight.w600, color: AuroraColors.warn),
-                        ),
-                        TextSpan(
-                          text: alert['detail']?.toString() ?? '',
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          alert['label']?.toString() ?? '危险操作',
                           style: const TextStyle(
-                            color: AuroraColors.fg2,
-                            fontFamilyFallback: AuroraTheme.monospaceFontFamilyFallback,
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w600,
+                            color: AuroraColors.warnText,
                           ),
                         ),
-                      ]),
-                      style: const TextStyle(fontSize: 11.5, height: 1.4),
+                        if ((alert['detail']?.toString() ?? '').isNotEmpty) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            alert['detail'].toString(),
+                            maxLines: 3,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontFamily: 'monospace',
+                              fontFamilyFallback: AuroraTheme.monospaceFontFamilyFallback,
+                              fontSize: 12,
+                              height: 1.45,
+                              color: AuroraColors.fgCode,
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                   ),
                 ],

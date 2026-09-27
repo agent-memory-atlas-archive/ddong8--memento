@@ -107,45 +107,44 @@ class _DeviceCardBody extends StatelessWidget {
       if (platform != null) platform,
       if (dev.collectorVersion != null) 'v${dev.collectorVersion}',
       if (dev.documentCount > 0) '${dev.documentCount} 条记忆',
-    ].join('  ·  ');
+    ].join(' · ');
     final tools = dev.tools;
 
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Container(
-                width: 9,
-                height: 9,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: isOnline ? AuroraColors.success : AuroraColors.fg4,
-                ),
+            // Online devices get a soft halo so they read at a glance.
+            Container(
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: isOnline ? AuroraColors.success : AuroraColors.fg4,
+                boxShadow: isOnline
+                    ? [BoxShadow(color: AuroraColors.success.withValues(alpha: 0.16), spreadRadius: 3)]
+                    : null,
               ),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 10),
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    name,
-                    style: const TextStyle(fontSize: 15.5, fontWeight: FontWeight.w600, color: AuroraColors.fg1),
-                  ),
-                  if (meta.isNotEmpty) ...[
-                    const SizedBox(height: 3),
-                    Text(meta, style: const TextStyle(fontSize: 12, color: AuroraColors.fg3)),
-                  ],
-                ],
+              child: Text(
+                name,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: -0.2,
+                  color: isOnline ? AuroraColors.fg1 : AuroraColors.fgCode,
+                ),
               ),
             ),
             const SizedBox(width: 8),
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              height: 22,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              alignment: Alignment.center,
               decoration: BoxDecoration(
                 color: isOnline ? AuroraColors.successSoft : AuroraColors.chip,
                 borderRadius: BorderRadius.circular(6),
@@ -153,7 +152,7 @@ class _DeviceCardBody extends StatelessWidget {
               child: Text(
                 isOnline ? '在线' : '离线',
                 style: TextStyle(
-                  fontSize: 11.5,
+                  fontSize: 12,
                   fontWeight: FontWeight.w600,
                   color: isOnline ? AuroraColors.success : AuroraColors.fg3,
                 ),
@@ -161,6 +160,10 @@ class _DeviceCardBody extends StatelessWidget {
             ),
           ],
         ),
+        if (meta.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          Text(meta, style: const TextStyle(fontSize: 13, color: AuroraColors.fg2)),
+        ],
         if (tools.isNotEmpty) ...[
           const SizedBox(height: 12),
           Wrap(
@@ -169,25 +172,34 @@ class _DeviceCardBody extends StatelessWidget {
             children: [
               for (final tool in tools)
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  height: 24,
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
                   decoration: BoxDecoration(
                     color: AuroraColors.chip,
                     borderRadius: BorderRadius.circular(6),
                   ),
-                  child: Text(
-                    _toolNames[tool] ?? tool,
-                    style: const TextStyle(fontSize: 11.5, color: AuroraColors.fg2),
+                  child: Center(
+                    widthFactor: 1,
+                    child: Text(
+                      _toolNames[tool] ?? tool,
+                      style: const TextStyle(fontSize: 12, color: AuroraColors.fg2),
+                    ),
                   ),
                 ),
             ],
           ),
         ],
         const SizedBox(height: 12),
-        Text(
-          '最近心跳 ${dev.heartbeatText}  ·  ${dev.deviceId}',
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(fontSize: 11, color: AuroraColors.fg4),
+        const Divider(height: 1, thickness: 1, color: AuroraColors.chip),
+        const SizedBox(height: 12),
+        Tooltip(
+          message: dev.deviceId,
+          child: Text(
+            '最近心跳 ${dev.heartbeatText}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 12, color: AuroraColors.fg3),
+          ),
         ),
       ],
     );

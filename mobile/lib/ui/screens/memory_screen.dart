@@ -798,105 +798,40 @@ class _MemoryScreenState extends State<MemoryScreen> with SingleTickerProviderSt
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(48),
           child: Container(
-            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            height: 40,
+            margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
             padding: const EdgeInsets.all(3),
             // Segmented control: a quiet track with the selection as a solid block.
             decoration: BoxDecoration(
               color: AuroraColors.surfaceSolid,
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(10),
             ),
-            child: TabBar(
-              controller: _tabController,
-              // Four labelled tabs don't fit side by side on a phone.
-              isScrollable: MediaQuery.sizeOf(context).width < 640,
-              tabAlignment: MediaQuery.sizeOf(context).width < 640 ? TabAlignment.start : TabAlignment.fill,
-              indicator: BoxDecoration(
-                color: AuroraColors.surfaceElevated,
-                borderRadius: BorderRadius.circular(9),
-              ),
-              splashBorderRadius: BorderRadius.circular(9),
-              indicatorSize: TabBarIndicatorSize.tab,
-              dividerColor: Colors.transparent,
-              labelColor: AuroraColors.fg1,
-              unselectedLabelColor: AuroraColors.fg3,
-              labelStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-              unselectedLabelStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
-              tabs: [
-                Tab(
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(Icons.search_rounded, size: 16),
-                      const SizedBox(width: 6),
-                      const Text('检索与图谱'),
-                      if (_hits.isNotEmpty) ...[
-                        const SizedBox(width: 6),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                          decoration: BoxDecoration(
-                            color: AuroraColors.accent.withValues(alpha: 0.2),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Text('${_hits.length}', style: const TextStyle(fontSize: 10, color: AuroraColors.accent)),
-                        ),
-                      ],
-                    ],
-                  ),
+            child: LayoutBuilder(builder: (context, constraints) {
+              // Phones get the short labels so all four fit without scrolling.
+              final compact = constraints.maxWidth < 640;
+              return TabBar(
+                controller: _tabController,
+                indicator: BoxDecoration(
+                  color: AuroraColors.segmentSelected,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: AuroraColors.border),
                 ),
-                Tab(
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(Icons.account_tree_rounded, size: 16),
-                      const SizedBox(width: 6),
-                      const Text('长期核心准则'),
-                      if (_coreMemories.isNotEmpty) ...[
-                        const SizedBox(width: 6),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF10B981).withValues(alpha: 0.2),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Text('${_coreMemories.length}', style: const TextStyle(fontSize: 10, color: Color(0xFF10B981))),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-                Tab(
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(Icons.auto_awesome_rounded, size: 16),
-                      const SizedBox(width: 6),
-                      const Text('做梦与认知分层'),
-                      if (_dreamJournals.isNotEmpty) ...[
-                        const SizedBox(width: 6),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFA855F7).withValues(alpha: 0.2),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Text('${_dreamJournals.length}', style: const TextStyle(fontSize: 10, color: Color(0xFFA855F7))),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-                const Tab(
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.badge_outlined, size: 16),
-                      SizedBox(width: 6),
-                      Text('常驻画像'),
-                    ],
-                  ),
-                ),
-              ],
-            ),
+                splashBorderRadius: BorderRadius.circular(8),
+                indicatorSize: TabBarIndicatorSize.tab,
+                dividerColor: Colors.transparent,
+                labelPadding: EdgeInsets.zero,
+                labelColor: AuroraColors.fg1,
+                unselectedLabelColor: AuroraColors.fg3,
+                labelStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                unselectedLabelStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                tabs: [
+                  _segment(compact, Icons.search_rounded, '检索与图谱', '检索', _hits.length),
+                  _segment(compact, Icons.account_tree_rounded, '长期核心准则', '准则', _coreMemories.length),
+                  _segment(compact, Icons.auto_awesome_rounded, '做梦与认知分层', '做梦', _dreamJournals.length),
+                  _segment(compact, Icons.badge_outlined, '常驻画像', '画像', 0),
+                ],
+              );
+            }),
           ),
         ),
       ),
@@ -913,6 +848,30 @@ class _MemoryScreenState extends State<MemoryScreen> with SingleTickerProviderSt
   }
 
   // --- View: Tab 1 (Search) ---
+  Widget _segment(bool compact, IconData icon, String label, String shortLabel, int count) {
+    return Tab(
+      height: 34,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (!compact) ...[
+            Icon(icon, size: 16),
+            const SizedBox(width: 6),
+          ],
+          Text(compact ? shortLabel : label),
+          if (count > 0) ...[
+            const SizedBox(width: 5),
+            Text(
+              '$count',
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: AuroraColors.fg3),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   Widget _buildSearchTab() {
     return Column(
       children: [
@@ -997,7 +956,7 @@ class _MemoryScreenState extends State<MemoryScreen> with SingleTickerProviderSt
                     ? const SizedBox(
                         width: 16,
                         height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black),
+                        child: CircularProgressIndicator(strokeWidth: 2, color: AuroraColors.onAccent),
                       )
                     : const Text('检索'),
               ),
@@ -2359,15 +2318,15 @@ class _MemoryScreenState extends State<MemoryScreen> with SingleTickerProviderSt
                   child: ElevatedButton.icon(
                     onPressed: _isDreamingRunning ? null : _showDreamScopeDialog,
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: AuroraColors.accent,
-                      foregroundColor: Colors.black,
+                      backgroundColor: AuroraColors.accentStrong,
+                      foregroundColor: AuroraColors.onAccent,
                       padding: const EdgeInsets.symmetric(vertical: 12),
                     ),
                     icon: _isDreamingRunning
                         ? const SizedBox(
                             width: 16,
                             height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black),
+                            child: CircularProgressIndicator(strokeWidth: 2, color: AuroraColors.onAccent),
                           )
                         : const Icon(Icons.bedtime_outlined, size: 18),
                     label: Text(_isDreamingRunning ? '正在做梦反思与记忆重组...' : '唤醒做梦与历史沉淀 (Trigger Dream)'),

@@ -135,14 +135,14 @@ class AppMarkdown extends StatelessWidget {
         fontFamily: 'monospace',
         fontFamilyFallback: AuroraTheme.monospaceFontFamilyFallback,
         fontSize: 12.5,
-        color: AuroraColors.accent,
-        backgroundColor: Color(0x1F38BDF8),
+        color: AuroraColors.codeText,
+        backgroundColor: Color(0x0FFFFFFF),
       ),
       codeblockPadding: const EdgeInsets.all(12),
       codeblockDecoration: BoxDecoration(
-        color: const Color(0xFF090D16),
+        color: AuroraColors.terminal,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: AuroraColors.borderStrong),
+        border: Border.all(color: AuroraColors.chip),
       ),
       blockquote: const TextStyle(
         fontSize: 13.5,

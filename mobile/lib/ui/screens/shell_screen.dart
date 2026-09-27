@@ -177,81 +177,76 @@ class _ShellScreenState extends ConsumerState<ShellScreen> with WidgetsBindingOb
           children: [
             // Left Sidebar
             Container(
-              width: 220,
+              width: 232,
               decoration: const BoxDecoration(
-                color: AuroraColors.surface,
+                color: AuroraColors.sidebar,
                 border: Border(
                   right: BorderSide(color: AuroraColors.border, width: 1),
                 ),
               ),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   // App Brand Header
                   Padding(
-                    padding: const EdgeInsets.only(left: 20, right: 20, top: 28, bottom: 20),
+                    padding: const EdgeInsets.fromLTRB(20, 24, 20, 20),
                     child: Row(
                       children: [
                         Container(
-                          width: 32,
-                          height: 32,
+                          width: 28,
+                          height: 28,
                           decoration: BoxDecoration(
-                            gradient: AuroraColors.brandGradient,
-                            borderRadius: BorderRadius.circular(9),
+                            color: AuroraColors.accentStrong,
+                            borderRadius: BorderRadius.circular(8),
                           ),
-                          child: const Icon(Icons.psychology, size: 20, color: Colors.white),
+                          child: const Icon(Icons.psychology, size: 18, color: AuroraColors.onAccent),
                         ),
                         const SizedBox(width: 10),
                         const Text(
                           'Memento',
                           style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w700,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
                             color: AuroraColors.fg1,
-                            letterSpacing: -0.3,
+                            letterSpacing: -0.2,
                           ),
                         ),
                       ],
                     ),
                   ),
 
-                  const Divider(color: AuroraColors.border, height: 1),
-                  const SizedBox(height: 12),
-
                   // Nav items
                   Expanded(
                     child: ListView.separated(
                       padding: const EdgeInsets.symmetric(horizontal: 12),
                       itemCount: _navItems.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 4),
+                      separatorBuilder: (_, __) => const SizedBox(height: 2),
                       itemBuilder: (context, index) {
                         final item = _navItems[index];
                         final isSelected = _currentIndex == index;
+                        final color = isSelected ? AuroraColors.fg1 : AuroraColors.fg2;
 
                         return InkWell(
                           onTap: () => _switchTab(index),
-                          borderRadius: BorderRadius.circular(10),
+                          borderRadius: BorderRadius.circular(8),
                           child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                            height: 34,
+                            padding: const EdgeInsets.symmetric(horizontal: 10),
                             decoration: BoxDecoration(
                               color: isSelected ? AuroraColors.surfaceElevated : Colors.transparent,
-                              borderRadius: BorderRadius.circular(10),
+                              borderRadius: BorderRadius.circular(8),
                             ),
                             child: Row(
                               children: [
                                 Icon(
                                   isSelected ? item['activeIcon'] as IconData : item['icon'] as IconData,
-                                  size: 18,
-                                  color: isSelected ? AuroraColors.accent : AuroraColors.fg3,
+                                  size: 17,
+                                  color: color,
                                 ),
-                                const SizedBox(width: 12),
+                                const SizedBox(width: 10),
                                 Text(
                                   item['label'] as String,
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-                                    color: isSelected ? AuroraColors.fg1 : AuroraColors.fg2,
-                                  ),
+                                  style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w500, color: color),
                                 ),
                               ],
                             ),
@@ -265,47 +260,50 @@ class _ShellScreenState extends ConsumerState<ShellScreen> with WidgetsBindingOb
                   const _DesktopUpdateWidget(),
 
                   // Bottom User Info & Logout
-                  Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: AuroraColors.chip,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: AuroraColors.border),
-                      ),
-                      child: Row(
-                        children: [
-                          const CircleAvatar(
-                            radius: 13,
-                            backgroundColor: AuroraColors.accentSoft,
-                            child: Icon(Icons.person, size: 14, color: AuroraColors.accent),
+                  Container(
+                    margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                    padding: const EdgeInsets.fromLTRB(8, 8, 2, 0),
+                    decoration: const BoxDecoration(
+                      border: Border(top: BorderSide(color: AuroraColors.border)),
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 26,
+                          height: 26,
+                          alignment: Alignment.center,
+                          decoration: const BoxDecoration(
+                            color: AuroraColors.segmentSelected,
+                            shape: BoxShape.circle,
                           ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              authState.username ?? '用户',
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(fontSize: 12, color: AuroraColors.fg1, fontWeight: FontWeight.w500),
-                            ),
+                          child: Text(
+                            (authState.username ?? '用户').characters.first.toUpperCase(),
+                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AuroraColors.fgCode),
                           ),
-                          IconButton(
-                            icon: const Icon(Icons.notifications_none_rounded, size: 16, color: AuroraColors.fg3),
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(),
-                            tooltip: '手机推送',
-                            onPressed: () => showNotifySettingsSheet(context),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            authState.username ?? '用户',
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: 13, color: AuroraColors.fgCode),
                           ),
-                          const SizedBox(width: 10),
-                          IconButton(
-                            icon: const Icon(Icons.logout, size: 16, color: AuroraColors.fg3),
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(),
-                            tooltip: '退出登录',
-                            onPressed: () => ref.read(authProvider.notifier).logout(),
-                          ),
-                        ],
-                      ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.notifications_none_rounded, size: 17, color: AuroraColors.fg3),
+                          constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+                          padding: EdgeInsets.zero,
+                          tooltip: '手机推送',
+                          onPressed: () => showNotifySettingsSheet(context),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.logout_rounded, size: 16, color: AuroraColors.fg3),
+                          constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+                          padding: EdgeInsets.zero,
+                          tooltip: '退出登录',
+                          onPressed: () => ref.read(authProvider.notifier).logout(),
+                        ),
+                      ],
                     ),
                   ),
                 ],

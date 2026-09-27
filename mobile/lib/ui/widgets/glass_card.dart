@@ -28,22 +28,43 @@ class _GlassCardState extends State<GlassCard> {
 
   @override
   Widget build(BuildContext context) {
-    final effectiveBorderColor = widget.borderColor ??
-        (_isHovered && widget.onTap != null ? AuroraColors.borderStrong : AuroraColors.border);
-    final effectiveBgColor = widget.backgroundColor ??
-        (_isHovered && widget.onTap != null ? AuroraColors.surfaceElevated : AuroraColors.surfaceSolid);
+    final lifted = _isHovered && widget.onTap != null;
+    final fill = widget.backgroundColor ?? (lifted ? AuroraColors.surfaceSolid : AuroraColors.surface);
+    final radius = BorderRadius.circular(widget.borderRadius);
 
-    // Flat: tone and a hairline do the separating; drop shadows only muddy a dark UI.
+    // A 1 px frame whose top edge catches the light: a vertical gradient behind
+    // an opaque fill. Rounded Borders can't vary color per side, so the frame is
+    // the gradient showing around the inset fill. An explicit borderColor wins.
+    final frame = widget.borderColor != null
+        ? BoxDecoration(color: widget.borderColor, borderRadius: radius)
+        : BoxDecoration(
+            borderRadius: radius,
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              stops: const [0, 0.3],
+              colors: [
+                AuroraColors.edgeHighlight,
+                lifted ? AuroraColors.borderStrong : AuroraColors.border,
+              ],
+            ),
+          );
+
     Widget card = AnimatedContainer(
       duration: const Duration(milliseconds: 160),
       curve: Curves.easeOut,
-      padding: widget.padding,
-      decoration: BoxDecoration(
-        color: effectiveBgColor,
-        borderRadius: BorderRadius.circular(widget.borderRadius),
-        border: Border.all(color: effectiveBorderColor, width: 1),
+      padding: const EdgeInsets.all(1),
+      decoration: frame,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        curve: Curves.easeOut,
+        padding: widget.padding,
+        decoration: BoxDecoration(
+          color: fill,
+          borderRadius: BorderRadius.circular(widget.borderRadius - 1),
+        ),
+        child: widget.child,
       ),
-      child: widget.child,
     );
 
     if (widget.onTap != null) {
