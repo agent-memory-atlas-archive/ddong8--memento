@@ -165,9 +165,13 @@ async def build_profile_draft(db: AsyncSession, user: User) -> tuple[UserProfile
     now = datetime.now(timezone.utc)
     voice_rows = await fetch_user_voice_rows(db, user, now - timedelta(days=PROFILE_VOICE_DAYS), now)
     batches, voice_stats = plan_user_voice_batches(voice_rows)
-    voice = await render_user_voice(batches)
     memories = await _profile_memories(db, user)
     published = await get_published_profile(db, user)
+    # The LLM calls below can take minutes. End the read transaction so the
+    # pooled connection isn't held idle meanwhile (and closed under us).
+    await db.commit()
+
+    voice = await render_user_voice(batches)
 
     if not voice and not memories:
         return None, "no_input"

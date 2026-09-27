@@ -10,6 +10,7 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "server"))
 
+from server.services import ai_provider  # noqa: E402
 from server.services.ai_provider import (  # noqa: E402
     REASONING_RETRY_EXTRA_TOKENS,
     AIProviderConfig,
@@ -111,7 +112,10 @@ def _fake_client(responses: list[dict], calls: list[tuple[str, dict]]):
 
         async def post(self, url: str, headers=None, json=None):
             calls.append((url, json))
-            return _FakeResponse(responses.pop(0))
+            item = responses.pop(0)
+            if isinstance(item, tuple):
+                return _FakeResponse(item[0], status_code=item[1])
+            return _FakeResponse(item)
 
     return FakeClient
 
@@ -139,6 +143,9 @@ class CompletionProblemTests(unittest.TestCase):
 
 
 class CallChatCompletionTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self) -> None:
+        ai_provider._THINKING_SWITCH_REJECTED.clear()
+
     async def test_retries_with_more_tokens_when_reasoning_exhausts_budget(self) -> None:
         calls: list[tuple[str, dict]] = []
         responses = [
@@ -168,6 +175,36 @@ class CallChatCompletionTests(unittest.IsolatedAsyncioTestCase):
             "https://a.example/v1/chat/completions",
             "https://b.example/v1/chat/completions",
         ])
+
+    async def test_background_calls_switch_thinking_off(self) -> None:
+        calls: list[tuple[str, dict]] = []
+        providers = [AIProviderConfig("primary", "https://a.example/v1", "k1", "m1")]
+        with patch("server.services.ai_provider.get_ai_providers", return_value=providers), \
+                patch("server.services.ai_provider.httpx.AsyncClient", _fake_client([_completion("ok"), _completion("ok")], calls)):
+            await call_plain_chat([{"role": "user", "content": "hi"}])
+            await call_chat_completion([{"role": "user", "content": "hi"}])
+        self.assertEqual(calls[0][1]["thinking"], {"type": "disabled"})
+        self.assertNotIn("thinking", calls[1][1])  # interactive calls keep the model's default
+
+    async def test_provider_rejecting_the_switch_is_retried_without_it_and_remembered(self) -> None:
+        calls: list[tuple[str, dict]] = []
+        responses = [({"error": "unknown field thinking"}, 400), _completion("ok"), _completion("again")]
+        providers = [AIProviderConfig("primary", "https://a.example/v1", "k1", "m1")]
+        with patch("server.services.ai_provider.get_ai_providers", return_value=providers), \
+                patch("server.services.ai_provider.httpx.AsyncClient", _fake_client(responses, calls)):
+            self.assertEqual(await call_plain_chat([{"role": "user", "content": "hi"}]), "ok")
+            self.assertEqual(await call_plain_chat([{"role": "user", "content": "hi"}]), "again")
+        self.assertEqual(["thinking" in body for _, body in calls], [True, False, False])
+
+    async def test_unrelated_bad_request_does_not_blacklist_the_switch(self) -> None:
+        calls: list[tuple[str, dict]] = []
+        responses = [({"error": "context too long"}, 400), ({"error": "context too long"}, 400)]
+        providers = [AIProviderConfig("primary", "https://a.example/v1", "k1", "m1")]
+        with patch("server.services.ai_provider.get_ai_providers", return_value=providers), \
+                patch("server.services.ai_provider.httpx.AsyncClient", _fake_client(responses, calls)):
+            self.assertIsNone(await call_plain_chat([{"role": "user", "content": "hi"}]))
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(ai_provider._THINKING_SWITCH_REJECTED, set())
 
 
 if __name__ == "__main__":

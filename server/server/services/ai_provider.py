@@ -94,8 +94,12 @@ async def call_chat_completion(
     temperature: float = 0.3,
     max_tokens: int = 1500,
     timeout: float = 120.0,
+    thinking: bool = True,
 ) -> tuple[dict, AIProviderConfig]:
     """Call chat/completions with automatic fallback across all configured providers.
+
+    thinking=False asks reasoning models to answer directly (extraction and
+    summary jobs don't need it, and thinking can take minutes).
 
     Returns (response_json_dict, provider_used).
     Raises RuntimeError if all providers fail.
@@ -107,7 +111,10 @@ async def call_chat_completion(
     errors: list[str] = []
     for p in providers:
         budget = max_tokens
-        for attempt in range(2):
+        switch_off_thinking = not thinking and _provider_key(p) not in _THINKING_SWITCH_REJECTED
+        widened = False
+        retried_without_switch = False
+        while True:
             req_body: dict = {
                 "model": p.model,
                 "messages": messages,
@@ -116,6 +123,8 @@ async def call_chat_completion(
             }
             if tools:
                 req_body["tools"] = tools
+            if switch_off_thinking:
+                req_body["thinking"] = {"type": "disabled"}
 
             try:
                 async with httpx.AsyncClient(timeout=timeout) as client:
@@ -133,6 +142,19 @@ async def call_chat_completion(
                 errors.append(err_msg)
                 break
 
+            if resp.status_code in (400, 422) and switch_off_thinking:
+                switch_off_thinking = False
+                retried_without_switch = True
+                logger.warning(
+                    "Provider '%s' (%s) answered HTTP %d to thinking=disabled (%s); retrying without it",
+                    p.name, p.model, resp.status_code, resp.text[:200],
+                )
+                continue
+            if retried_without_switch and resp.status_code == 200:
+                # The switch was the problem; stop sending it to this provider.
+                _THINKING_SWITCH_REJECTED.add(_provider_key(p))
+                retried_without_switch = False
+
             if resp.status_code != 200:
                 err_msg = f"Provider '{p.name}' ({p.base_url}, {p.model}) returned HTTP {resp.status_code}: {resp.text[:200]}"
                 logger.warning(err_msg)
@@ -143,7 +165,8 @@ async def call_chat_completion(
             problem = completion_problem(data)
             if problem is None:
                 return data, p
-            if problem == "reasoning_exhausted" and attempt == 0:
+            if problem == "reasoning_exhausted" and not widened:
+                widened = True
                 budget = max_tokens + REASONING_RETRY_EXTRA_TOKENS
                 logger.warning(
                     "Provider '%s' (%s) spent max_tokens=%d on reasoning; retrying with %d",
@@ -156,6 +179,14 @@ async def call_chat_completion(
             break
 
     raise RuntimeError(f"All {len(providers)} AI providers failed: " + "; ".join(errors))
+
+
+# Providers (base_url|model) that answered 400 to {"thinking": {"type": "disabled"}}.
+_THINKING_SWITCH_REJECTED: set[str] = set()
+
+
+def _provider_key(p: AIProviderConfig) -> str:
+    return f"{p.base_url}|{p.model}"
 
 
 # Reasoning models (Ark / DashScope coding plans) count their hidden thinking
@@ -314,7 +345,8 @@ async def call_plain_chat(
     max_tokens: int = 1500,
     timeout: float = 120.0,
 ) -> str | None:
-    """Convenience wrapper for non-tool plain completion returning the clean response string or None."""
+    """Plain completion for background jobs (extraction, summaries, profile), returning
+    the clean response string or None. Asks reasoning models not to think."""
     try:
         data, _ = await call_chat_completion(
             messages=messages,
@@ -322,6 +354,7 @@ async def call_plain_chat(
             temperature=temperature,
             max_tokens=max_tokens,
             timeout=timeout,
+            thinking=False,
         )
         choices = data.get("choices") or []
         if choices:

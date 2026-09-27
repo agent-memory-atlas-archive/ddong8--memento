@@ -21,6 +21,7 @@ engine = create_async_engine(
     max_overflow=30,
     pool_recycle=3600,
     pool_timeout=10,  # fail fast instead of stalling user requests 30s
+    pool_pre_ping=True,  # drop connections Postgres or the network closed while pooled
 )
 
 # Separate engine for post-ingest (embedding + knowledge graph) so a re-sync
@@ -33,6 +34,7 @@ post_ingest_engine = create_async_engine(
     max_overflow=8,
     pool_recycle=3600,
     pool_timeout=15,
+    pool_pre_ping=True,
 )
 
 async_session_factory = async_sessionmaker(
