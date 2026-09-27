@@ -35,6 +35,19 @@ int? healthSuccessPercent(Map<String, dynamic> calls) {
   return (answered * 100 / total).floor();
 }
 
+/// Share of corrections that repeated something already said, as a whole percent.
+int? healthRepeatPercent(Map<String, dynamic> stats) {
+  final total = (stats['total'] as num?)?.toInt() ?? 0;
+  if (total == 0) return null;
+  return (((stats['repeat'] as num?) ?? 0) * 100 / total).round();
+}
+
+const healthTopicStatusLabels = <String, String>{
+  'accepted': '已学会',
+  'pending': '待确认',
+  'dismissed': '已忽略',
+};
+
 String healthLatency(num? ms) {
   if (ms == null) return '—';
   return ms >= 1000 ? '${(ms / 1000).toStringAsFixed(1)} 秒' : '${ms.round()} 毫秒';
@@ -107,6 +120,10 @@ class _HealthScreenState extends State<HealthScreen> {
                     if (data != null) ...[
                       _buildStatus(data),
                       const SizedBox(height: 14),
+                      if (data['learning'] is Map) ...[
+                        _buildLearning((data['learning'] as Map).cast<String, dynamic>()),
+                        const SizedBox(height: 14),
+                      ],
                       _buildAi((data['ai'] as Map).cast<String, dynamic>()),
                       const SizedBox(height: 14),
                       _buildDreaming((data['dreaming'] as Map).cast<String, dynamic>()),
@@ -160,20 +177,26 @@ class _HealthScreenState extends State<HealthScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(value,
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w600,
-                  color: color,
-                  fontFeatures: const [FontFeature.tabularFigures()],
-                )),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Text(value,
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w600,
+                    color: color,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  )),
+            ),
             const SizedBox(height: 2),
             Text(label, style: const TextStyle(fontSize: 12, color: AuroraColors.fg3)),
           ],
         ),
       );
 
-  Widget _row(String left, String right, {Color rightColor = AuroraColors.fg2, Widget? leading, String? sub}) => Padding(
+  Widget _row(String left, String right,
+          {Color rightColor = AuroraColors.fg2, Widget? leading, String? sub, bool subMono = true}) =>
+      Padding(
         padding: const EdgeInsets.symmetric(vertical: 6),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -186,11 +209,11 @@ class _HealthScreenState extends State<HealthScreen> {
                   Text(left, style: const TextStyle(fontSize: 13.5, color: AuroraColors.fgBody)),
                   if (sub != null)
                     Text(sub,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 11.5,
                           color: AuroraColors.fg3,
-                          fontFamily: 'monospace',
-                          fontFamilyFallback: AuroraTheme.monospaceFontFamilyFallback,
+                          fontFamily: subMono ? 'monospace' : null,
+                          fontFamilyFallback: subMono ? AuroraTheme.monospaceFontFamilyFallback : null,
                         )),
                 ],
               ),
@@ -289,6 +312,55 @@ class _HealthScreenState extends State<HealthScreen> {
         ],
       ),
     );
+  }
+
+  Widget _buildLearning(Map<String, dynamic> learning) {
+    final weekly = ((learning['weekly'] as List?) ?? const []).cast<Map>();
+    final top = ((learning['top'] as List?) ?? const []).cast<Map>();
+    final total = (learning['total'] as num?)?.toInt() ?? 0;
+    final learnedRepeat = (learning['learned_repeat'] as num?)?.toInt() ?? 0;
+    final percent = healthRepeatPercent(learning);
+
+    return _section('学习效果', trailing: '最近 ${learning['window_days'] ?? 30} 天', children: [
+      Row(
+        children: [
+          _metric('纠正 AI', '$total'),
+          _metric('重复率', percent == null ? '—' : '$percent%'),
+          _metric('学会后仍重复', '$learnedRepeat', color: learnedRepeat > 0 ? AuroraColors.danger : AuroraColors.fg1),
+          _metric('待确认', '${learning['pending'] ?? 0}'),
+        ],
+      ),
+      const SizedBox(height: 8),
+      const Text(
+        '重复纠正越来越少，说明它越来越懂你。学会后仍重复，说明那条规矩没传到 AI 那里：看看画像有没有发布、设备有没有开启写入。',
+        style: TextStyle(fontSize: 12, color: AuroraColors.fg3, height: 1.5),
+      ),
+      if (weekly.isNotEmpty && weekly.any((w) => (w['total'] as num? ?? 0) > 0)) ...[
+        const SizedBox(height: 14),
+        _WeeklyRepeatBars(weekly: weekly),
+      ],
+      if (top.isNotEmpty) ...[
+        _divider(),
+        _subhead('说得最多的'),
+        for (final t in top)
+          _row(
+            t['statement'].toString(),
+            '${t['count']} 次 · ${healthTopicStatusLabels[t['status']] ?? t['status']}',
+            sub: (t['learned_repeat'] as num? ?? 0) > 0 ? '学会之后你又说了 ${t['learned_repeat']} 次' : null,
+            subMono: false,
+            rightColor: (t['learned_repeat'] as num? ?? 0) > 0
+                ? AuroraColors.danger
+                : t['status'] == 'accepted'
+                    ? AuroraColors.success
+                    : AuroraColors.fg2,
+          ),
+      ] else if (total == 0)
+        const Padding(
+          padding: EdgeInsets.only(top: 10),
+          child: Text('还没有记录到纠正。你在任何 AI 工具里纠正它，10 分钟内会出现在这里。',
+              style: TextStyle(fontSize: 13, color: AuroraColors.fg3)),
+        ),
+    ]);
   }
 
   Widget _buildAi(Map<String, dynamic> ai) {
@@ -531,5 +603,77 @@ class _HourlyBars extends StatelessWidget {
         ),
       ],
     );
+  }
+}
+
+/// One bar per week: all corrections, with repeats in amber and repeats of
+/// already-learned rules in red on top. Shrinking amber is the goal.
+class _WeeklyRepeatBars extends StatelessWidget {
+  final List<Map> weekly;
+
+  const _WeeklyRepeatBars({required this.weekly});
+
+  @override
+  Widget build(BuildContext context) {
+    int n(Map w, String k) => (w[k] as num?)?.toInt() ?? 0;
+    final peak = weekly.fold<int>(1, (m, w) => math.max(m, n(w, 'total')));
+    const height = 56.0;
+    const usable = height - 2; // room for the 2 px minimum on the base segment
+
+    Widget part(double h, Color color, {bool top = false}) => Container(
+          height: h,
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: top ? const BorderRadius.vertical(top: Radius.circular(3)) : null,
+          ),
+        );
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        for (final w in weekly)
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 6),
+              child: Column(
+                children: [
+                  SizedBox(
+                    height: height,
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        if (n(w, 'learned_repeat') > 0)
+                          part(usable * n(w, 'learned_repeat') / peak, AuroraColors.danger, top: true),
+                        if (n(w, 'repeat') - n(w, 'learned_repeat') > 0)
+                          part(usable * (n(w, 'repeat') - n(w, 'learned_repeat')) / peak, AuroraColors.warn,
+                              top: n(w, 'learned_repeat') == 0),
+                        part(math.max(2, usable * (n(w, 'total') - n(w, 'repeat')) / peak),
+                            AuroraColors.accent.withValues(alpha: n(w, 'total') == 0 ? 0.15 : 0.45),
+                            top: n(w, 'repeat') == 0),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    n(w, 'total') == 0 ? '—' : '重复 ${(n(w, 'repeat') * 100 / n(w, 'total')).round()}%',
+                    style: const TextStyle(fontSize: 11, color: AuroraColors.fg2),
+                  ),
+                  Text(
+                    _weekLabel(w['end'] as String?),
+                    style: const TextStyle(fontSize: 10.5, color: AuroraColors.fg4),
+                  ),
+                ],
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  static String _weekLabel(String? endIso) {
+    final end = endIso == null ? null : DateTime.tryParse(endIso)?.toLocal();
+    if (end == null) return '';
+    final start = end.subtract(const Duration(days: 7));
+    return '${start.month}/${start.day}–${end.month}/${end.day}';
   }
 }

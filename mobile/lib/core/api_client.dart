@@ -471,14 +471,30 @@ class ApiClient {
 
   /// barkUrl: "" clears it, null leaves it unchanged.
   Future<Map<String, dynamic>> saveNotifySettings(
-      {String? barkUrl, bool? notifyRisky, bool? notifyTaskDone, bool? notifyHealth}) async {
+      {String? barkUrl, bool? notifyRisky, bool? notifyTaskDone, bool? notifyHealth, bool? notifyLearning}) async {
     final response = await _dio.put('/api/notify/settings', data: {
       if (barkUrl != null) 'bark_url': barkUrl,
       if (notifyRisky != null) 'notify_risky': notifyRisky,
       if (notifyTaskDone != null) 'notify_task_done': notifyTaskDone,
       if (notifyHealth != null) 'notify_health': notifyHealth,
+      if (notifyLearning != null) 'notify_learning': notifyLearning,
     });
     return response.data as Map<String, dynamic>;
+  }
+
+  /// Corrections waiting to be confirmed, plus the repeat-correction stats.
+  Future<Map<String, dynamic>> getCorrections() async {
+    final response = await _dio.get('/api/learning/corrections');
+    return response.data as Map<String, dynamic>;
+  }
+
+  /// Remembers the correction and adds it to the published profile. statement: the user's edit.
+  Future<void> acceptCorrection(String id, {String? statement}) async {
+    await _dio.post('/api/learning/corrections/$id/accept', data: {if (statement != null) 'statement': statement});
+  }
+
+  Future<void> dismissCorrection(String id) async {
+    await _dio.post('/api/learning/corrections/$id/dismiss');
   }
 
   /// AI call stats, dreaming, profile sync and pipeline backlog, plus the problems found.

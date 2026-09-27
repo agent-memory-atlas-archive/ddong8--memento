@@ -9,6 +9,11 @@ void main() {
 
   test('no calls has no success rate', () => expect(healthSuccessPercent({'total': 0}), isNull));
 
+  test('repeat rate is repeats over all corrections', () {
+    expect(healthRepeatPercent({'total': 6, 'repeat': 3}), 50);
+    expect(healthRepeatPercent({'total': 0, 'repeat': 0}), isNull);
+  });
+
   test('latency reads in seconds past one second', () {
     expect(healthLatency(null), '—');
     expect(healthLatency(850), '850 毫秒');

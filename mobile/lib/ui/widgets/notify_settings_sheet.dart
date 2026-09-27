@@ -89,8 +89,9 @@ class _NotifySettingsSheetState extends State<_NotifySettingsSheet> {
         _show(url.isEmpty ? '已清除推送地址' : '已保存，可以点「发送测试通知」确认一下');
       });
 
-  Future<void> _toggle({bool? risky, bool? taskDone, bool? health}) => _run(() async {
-        final s = await _api.saveNotifySettings(notifyRisky: risky, notifyTaskDone: taskDone, notifyHealth: health);
+  Future<void> _toggle({bool? risky, bool? taskDone, bool? health, bool? learning}) => _run(() async {
+        final s = await _api.saveNotifySettings(
+            notifyRisky: risky, notifyTaskDone: taskDone, notifyHealth: health, notifyLearning: learning);
         setState(() => _settings = s);
       });
 
@@ -186,6 +187,14 @@ class _NotifySettingsSheetState extends State<_NotifySettingsSheet> {
                 onChanged: _busy ? null : (v) => _toggle(health: v),
                 title: const Text('系统异常', style: TextStyle(fontSize: 14, color: AuroraColors.fg1)),
                 subtitle: const Text('AI 调用大量失败、夜间做梦或画像生成出错时推送（6 小时内最多一条）',
+                    style: TextStyle(fontSize: 12, color: AuroraColors.fg3)),
+              ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                value: s['notify_learning'] != false,
+                onChanged: _busy ? null : (v) => _toggle(learning: v),
+                title: const Text('学到新规矩', style: TextStyle(fontSize: 14, color: AuroraColors.fg1)),
+                subtitle: const Text('你纠正 AI 后，Memento 学到新规矩等你确认时推送（1 小时内最多一条）',
                     style: TextStyle(fontSize: 12, color: AuroraColors.fg3)),
               ),
             ],

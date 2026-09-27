@@ -96,6 +96,8 @@ class _PersonaTabState extends State<PersonaTab> with AutomaticKeepAliveClientMi
   String? _notice;
   String? _busy; // regenerate | publish | save | discard
   String? _editing; // draft | published
+  List<Map<String, dynamic>> _pending = const [];
+  String? _busyTopic;
   final _editor = TextEditingController();
 
   @override
@@ -118,15 +120,64 @@ class _PersonaTabState extends State<PersonaTab> with AutomaticKeepAliveClientMi
 
   Future<void> _load() async {
     try {
-      final state = await _api.getProfile();
+      final results = await Future.wait([
+        _api.getProfile(),
+        // An older server without the learning API just shows no learned card.
+        _api.getCorrections().catchError((_) => <String, dynamic>{}),
+      ]);
       if (!mounted) return;
       setState(() {
-        _state = state;
+        _state = results[0];
+        _pending = ((results[1]['pending'] as List?) ?? const []).cast<Map<String, dynamic>>();
         _error = null;
       });
     } catch (e) {
       if (mounted) setState(() => _error = _describe(e));
     }
+  }
+
+  Future<void> _decide(Map<String, dynamic> topic, {required bool accept, String? statement}) async {
+    setState(() {
+      _busyTopic = topic['id'] as String;
+      _notice = null;
+    });
+    try {
+      if (accept) {
+        await _api.acceptCorrection(topic['id'] as String, statement: statement);
+        _notice = '已采纳：写进了常驻画像，各工具下次同步（5 分钟内）就会用上。';
+      } else {
+        await _api.dismissCorrection(topic['id'] as String);
+      }
+      await _load();
+    } catch (e) {
+      if (mounted) setState(() => _error = _describe(e));
+    } finally {
+      if (mounted) setState(() => _busyTopic = null);
+    }
+  }
+
+  Future<void> _editAndAccept(Map<String, dynamic> topic) async {
+    final controller = TextEditingController(text: topic['statement'] as String);
+    final edited = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AuroraColors.surfaceSolid,
+        title: const Text('改一下再采纳', style: TextStyle(fontSize: 16)),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLines: 3,
+          minLines: 1,
+          decoration: const InputDecoration(hintText: '写成对 AI 说的一句话，如「始终用中文回复」'),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, controller.text.trim()), child: const Text('采纳')),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (edited != null && edited.isNotEmpty) await _decide(topic, accept: true, statement: edited);
   }
 
   String _describe(Object e) {
@@ -213,6 +264,10 @@ class _PersonaTabState extends State<PersonaTab> with AutomaticKeepAliveClientMi
           children: [
             if (_error != null) _banner(_error!, AuroraColors.danger, Icons.error_outline_rounded),
             if (_notice != null) _banner(_notice!, AuroraColors.fg2, Icons.info_outline_rounded),
+            if (_pending.isNotEmpty) ...[
+              _buildLearnedCard(),
+              const SizedBox(height: 14),
+            ],
             _buildDraftCard(),
             const SizedBox(height: 14),
             _buildPublishedCard(),
@@ -250,6 +305,95 @@ class _PersonaTabState extends State<PersonaTab> with AutomaticKeepAliveClientMi
         decoration: BoxDecoration(color: color.withValues(alpha: 0.14), borderRadius: BorderRadius.circular(6)),
         child: Text(text, style: TextStyle(fontSize: 12, color: color, fontWeight: FontWeight.w600)),
       );
+
+  /// Corrections picked up from what the user said to their AIs, waiting for a yes.
+  Widget _buildLearnedCard() {
+    return GlassCard(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              _pill('刚学到的', AuroraColors.accent),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  '${_pending.length} 条，从你纠正 AI 的话里学到',
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 12, color: AuroraColors.fg3),
+                ),
+              ),
+            ],
+          ),
+          for (final (i, topic) in _pending.indexed) ...[
+            if (i > 0)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 12),
+                child: Divider(height: 1, thickness: 1, color: AuroraColors.chip),
+              )
+            else
+              const SizedBox(height: 12),
+            _buildLearnedItem(topic),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLearnedItem(Map<String, dynamic> topic) {
+    final quotes = ((topic['quotes'] as List?) ?? const []).cast<Map>();
+    final times = (topic['times'] as num?)?.toInt() ?? 1;
+    final busy = _busyTopic == topic['id'];
+    final disabled = _busyTopic != null || _busy != null;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SelectableText(
+          topic['statement'].toString(),
+          style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w500, height: 1.5, color: AuroraColors.fgBody),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          [
+            times > 1 ? '你说过 $times 次' : '你说过 1 次',
+            if (topic['last_at'] != null) '最近 ${_formatTime(topic['last_at'] as String?)}',
+            '放进「${topic['heading'] ?? '铁律'}」',
+          ].join(' · '),
+          style: TextStyle(fontSize: 12, color: times > 1 ? AuroraColors.warnText : AuroraColors.fg3),
+        ),
+        for (final q in quotes.take(2))
+          Container(
+            margin: const EdgeInsets.only(top: 8),
+            padding: const EdgeInsets.only(left: 10),
+            decoration: const BoxDecoration(border: Border(left: BorderSide(color: AuroraColors.borderStrong, width: 2))),
+            child: Text(
+              '${q['text']}',
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 12.5, height: 1.45, color: AuroraColors.fg2),
+            ),
+          ),
+        const SizedBox(height: 10),
+        Wrap(
+          alignment: WrapAlignment.end,
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            TextButton(onPressed: disabled ? null : () => _decide(topic, accept: false), child: const Text('忽略')),
+            OutlinedButton(onPressed: disabled ? null : () => _editAndAccept(topic), child: const Text('改一下')),
+            FilledButton(
+              onPressed: disabled ? null : () => _decide(topic, accept: true),
+              child: busy
+                  ? const SizedBox(
+                      width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: AuroraColors.onAccent))
+                  : const Text('采纳'),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
 
   Widget _buildEditor() {
     return Column(
