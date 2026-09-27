@@ -359,7 +359,7 @@ class AgentArtifact {
     if (const {'md', 'markdown'}.contains(ext)) {
       return ArtifactType.markdown;
     }
-    if (const {'pdf', 'csv', 'json', 'xlsx', 'xls', 'parquet'}.contains(ext)) {
+    if (const {'pdf', 'csv', 'tsv', 'json', 'txt', 'log', 'xlsx', 'xls', 'parquet'}.contains(ext)) {
       return ArtifactType.document;
     }
 

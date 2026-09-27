@@ -5,7 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../core/storage.dart';
 import '../../core/theme/aurora_theme.dart';
 import '../../models/agent_artifact.dart';
-import 'app_markdown.dart';
+import 'artifact_document_view.dart';
 import 'embedded_video_player.dart';
 
 class ArtifactsWorkspace extends StatefulWidget {
@@ -116,8 +116,8 @@ class _ArtifactsWorkspaceState extends State<ArtifactsWorkspace> {
 
     return Container(
       decoration: const BoxDecoration(
-        color: Color(0xFF090D16),
-        border: Border(left: BorderSide(color: AuroraColors.borderStrong, width: 1.2)),
+        color: AuroraColors.bg2,
+        border: Border(left: BorderSide(color: AuroraColors.border)),
       ),
       child: Column(
         children: [
@@ -126,8 +126,8 @@ class _ArtifactsWorkspaceState extends State<ArtifactsWorkspace> {
             height: 44,
             padding: const EdgeInsets.symmetric(horizontal: 10),
             decoration: const BoxDecoration(
-              color: Color(0xFF0F172A),
-              border: Border(bottom: BorderSide(color: AuroraColors.borderStrong)),
+              color: AuroraColors.sidebar,
+              border: Border(bottom: BorderSide(color: AuroraColors.border)),
             ),
             child: Row(
               children: [
@@ -244,8 +244,8 @@ class _ArtifactsWorkspaceState extends State<ArtifactsWorkspace> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             decoration: const BoxDecoration(
-              color: Color(0xFF0F172A),
-              border: Border(top: BorderSide(color: AuroraColors.borderStrong)),
+              color: AuroraColors.sidebar,
+              border: Border(top: BorderSide(color: AuroraColors.border)),
             ),
             child: Row(
               children: [
@@ -286,11 +286,15 @@ class _ArtifactsWorkspaceState extends State<ArtifactsWorkspace> {
       case ArtifactType.image:
         return _buildImageCanvas(a, streamUrl);
       case ArtifactType.html:
-        return _buildHtmlCanvas(a, streamUrl);
       case ArtifactType.markdown:
       case ArtifactType.document:
       case ArtifactType.code:
-        return _buildDocCanvas(a, streamUrl);
+        return ArtifactDocumentView(
+          key: ValueKey(a.rawPath),
+          artifact: a,
+          streamUrl: a.getStreamUrl(_serverUrl, token: _token),
+          onOpenExternal: _handleLaunchExternal,
+        );
     }
   }
 
@@ -393,93 +397,6 @@ class _ArtifactsWorkspaceState extends State<ArtifactsWorkspace> {
             Text(a.title, style: const TextStyle(fontSize: 13, color: AuroraColors.fg2)),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _buildHtmlCanvas(AgentArtifact a, String streamUrl) {
-    return Column(
-      children: [
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-          color: const Color(0xFF0F172A),
-          child: Row(
-            children: [
-              const Icon(Icons.language_rounded, size: 14, color: Color(0xFFFBBF24)),
-              const SizedBox(width: 6),
-              const Text('交互式 HTML 沙箱画布', style: TextStyle(fontSize: 11, color: Color(0xFFFBBF24), fontWeight: FontWeight.w600)),
-              const Spacer(),
-              ElevatedButton.icon(
-                onPressed: _handleLaunchExternal,
-                icon: const Icon(Icons.launch_rounded, size: 13),
-                label: const Text('全屏交互预览', style: TextStyle(fontSize: 11)),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFD97706),
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  minimumSize: const Size(60, 26),
-                ),
-              ),
-            ],
-          ),
-        ),
-        Expanded(
-          child: Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.html_rounded, size: 64, color: Color(0xFFFBBF24)),
-                const SizedBox(height: 14),
-                Text(a.title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AuroraColors.fg1)),
-                const SizedBox(height: 6),
-                Text(a.rawPath, style: const TextStyle(fontSize: 11, color: AuroraColors.fg3, fontFamily: 'monospace')),
-                const SizedBox(height: 18),
-                ElevatedButton.icon(
-                  onPressed: _handleLaunchExternal,
-                  icon: const Icon(Icons.play_circle_outline_rounded, size: 16),
-                  label: const Text('启动交互原型'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFD97706),
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildDocCanvas(AgentArtifact a, String streamUrl) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Text(a.type.iconEmoji, style: const TextStyle(fontSize: 18)),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  a.title,
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AuroraColors.fg1),
-                ),
-              ),
-              OutlinedButton.icon(
-                onPressed: _handleLaunchExternal,
-                icon: const Icon(Icons.open_in_browser, size: 14),
-                label: const Text('外部查看', style: TextStyle(fontSize: 11)),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(a.rawPath, style: const TextStyle(fontSize: 11, color: AuroraColors.fg3, fontFamily: 'monospace')),
-          const Divider(height: 24, color: AuroraColors.borderStrong),
-          AppMarkdown(data: '### 文档产物摘要\n- **物理路径**: `${a.rawPath}`\n- **类型**: ${a.type.label}\n\n已成功生成并挂载至 Memento Artifacts 资源树。'),
-        ],
       ),
     );
   }
