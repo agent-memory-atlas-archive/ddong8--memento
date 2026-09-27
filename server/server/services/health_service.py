@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db.models import Document, DreamJournal, Machine, User, UserProfile
 from . import ai_health
+from .correction_service import correction_stats
 
 ONLINE_WINDOW = timedelta(seconds=180)  # same as the profile page
 DREAM_STALE = timedelta(hours=30)  # nightly at 03:00, plus slack
@@ -39,6 +40,7 @@ def assess(
     profile: dict[str, Any],
     pipeline: dict[str, Any],
     now: datetime,
+    learning: dict[str, Any] | None = None,
 ) -> list[dict[str, str]]:
     """Problems worth showing, most severe first. Each: {level, area, text}."""
     issues: list[dict[str, str]] = []
@@ -74,6 +76,10 @@ def assess(
     broken = [d["name"] for d in profile.get("devices", []) if d["errors"]]
     if broken:
         add("warn", "profile", f"{len(broken)} 台设备写入画像出错：{'、'.join(broken[:3])}")
+
+    if learning and learning.get("learned_repeat_7d", 0) >= 2:
+        add("warn", "learning", f"最近 7 天有 {learning['learned_repeat_7d']} 次纠正的是已经学会的规矩，"
+                                "说明它没传到 AI 那里（画像没发布，或设备没开启写入）")
 
     if pipeline["knowledge_failed"] >= BACKLOG_WARN:
         add("warn", "pipeline", f"{pipeline['knowledge_failed']} 篇文档知识图谱抽取失败，等待重试")
@@ -166,7 +172,8 @@ async def build_overview(db: AsyncSession, user: User) -> dict[str, Any]:
     profile = await _profile(db, user, now)
     pipeline = await _pipeline(db, user)
     devices = await _devices(db, user, now)
-    issues = assess(ai, last_hour, dreaming, profile, pipeline, now)
+    learning = await correction_stats(db, user)
+    issues = assess(ai, last_hour, dreaming, profile, pipeline, now, learning)
     level = "error" if any(i["level"] == "error" for i in issues) else ("warn" if issues else "ok")
     return {
         "generated_at": now.isoformat(),
@@ -177,4 +184,5 @@ async def build_overview(db: AsyncSession, user: User) -> dict[str, Any]:
         "profile": profile,
         "pipeline": pipeline,
         "devices": devices,
+        "learning": learning,
     }

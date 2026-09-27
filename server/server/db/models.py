@@ -639,3 +639,55 @@ class UserProfile(Base):
         Index("idx_user_profile_user_status", "user_id", "status", version.desc()),
         UniqueConstraint("user_id", "version", name="uq_user_profile_version"),
     )
+
+
+# ---------------------------------------------------------------------------
+# Corrections — the times the user told an AI it got something wrong
+# ---------------------------------------------------------------------------
+class CorrectionTopic(Base):
+    """One thing the user keeps telling AIs, e.g. "始终用中文回复".
+
+    Found in the user's own messages within minutes, then waits for the user to
+    accept it (it joins their memories and the published profile) or dismiss it.
+    A topic that matches something already remembered starts out accepted.
+    """
+
+    __tablename__ = "correction_topics"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    statement: Mapped[str] = mapped_column(Text, nullable=False)  # imperative, addressed to the AI
+    category: Mapped[str] = mapped_column(String(20), nullable=False, default="rule")  # communication | rule | workflow | tech
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")  # pending | accepted | dismissed
+    times: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    first_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    memory_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("user_memories.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (Index("idx_correction_topic_user_status", "user_id", "status"),)
+
+
+class CorrectionEvent(Base):
+    """One time the user said a topic. repeat / already_learned are as of that moment,
+    which is what the repeat-correction rate is measured from."""
+
+    __tablename__ = "correction_events"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    topic_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("correction_topics.id", ondelete="CASCADE"), nullable=False)
+    quote: Mapped[str] = mapped_column(Text, nullable=False)
+    said_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    repeat: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    already_learned: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # sha1 of said_at + text: re-synced transcripts get new message ids, not new events.
+    fingerprint: Mapped[str] = mapped_column(String(40), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "fingerprint", name="uq_correction_event_fingerprint"),
+        Index("idx_correction_event_user_said", "user_id", "said_at"),
+    )

@@ -57,6 +57,7 @@ celery_app = Celery(
         "server.tasks.db_backup",
         "server.tasks.dreaming_tasks",
         "server.tasks.health_check",
+        "server.tasks.learning_tasks",
     ],
 )
 
@@ -134,5 +135,11 @@ celery_app.conf.beat_schedule = {
     "health-check": {
         "task": "server.tasks.health_check.check_health",
         "schedule": crontab(minute="5,35"),
+    },
+    # Every 10 min — turn the user's fresh corrections into topics to confirm,
+    # and log each one for the repeat-correction rate on the health page.
+    "learn-corrections": {
+        "task": "server.tasks.learning_tasks.learn_corrections",
+        "schedule": crontab(minute="*/10"),
     },
 }

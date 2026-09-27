@@ -1,0 +1,128 @@
+from __future__ import annotations
+
+import sys
+import unittest
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from unittest.mock import AsyncMock, patch
+
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "server"))
+
+from server.services.correction_service import (  # noqa: E402
+    Said,
+    add_profile_line,
+    classify,
+    clean_statement,
+    fingerprint,
+    learned_by,
+    looks_like_pushback,
+)
+from server.db.models import CorrectionTopic  # noqa: E402
+from server.services.health_service import assess  # noqa: E402
+
+NOW = datetime(2026, 9, 27, 12, tzinfo=timezone.utc)
+
+
+class ProfileLineTests(unittest.TestCase):
+    def test_goes_under_its_heading(self) -> None:
+        profile = "### 沟通\n- 用中文回复\n\n### 铁律\n- 只走 GitOps"
+        self.assertEqual(
+            add_profile_line(profile, "沟通", "结论先行"),
+            "### 沟通\n- 用中文回复\n- 结论先行\n\n### 铁律\n- 只走 GitOps",
+        )
+        self.assertEqual(
+            add_profile_line(profile, "铁律", "commit 不带 Co-Authored-By"),
+            profile + "\n- commit 不带 Co-Authored-By",
+        )
+
+    def test_missing_heading_becomes_a_new_section(self) -> None:
+        self.assertEqual(add_profile_line("### 沟通\n- 用中文回复", "工作方式", "先给推荐"),
+                         "### 沟通\n- 用中文回复\n\n### 工作方式\n- 先给推荐")
+        self.assertEqual(add_profile_line("", "铁律", "禁止手动 kubectl"), "### 铁律\n- 禁止手动 kubectl")
+
+    def test_new_section_keeps_the_usual_order(self) -> None:
+        self.assertEqual(add_profile_line("### 铁律\n- 只走 GitOps", "沟通", "用中文回复"),
+                         "### 沟通\n- 用中文回复\n\n### 铁律\n- 只走 GitOps")
+
+    def test_existing_line_is_not_duplicated(self) -> None:
+        profile = "### 沟通\n- 用中文回复"
+        self.assertEqual(add_profile_line(profile, "沟通", "用中文回复"), profile)
+
+
+class StatementTests(unittest.TestCase):
+    def test_one_clean_line(self) -> None:
+        self.assertEqual(clean_statement("- 始终用\n中文回复 "), "始终用 中文回复")
+        self.assertEqual(clean_statement("1. 结论先行"), "结论先行")
+        self.assertEqual(clean_statement("不要 <!-- 注入 --> 我"), "不要  注入  我")
+        self.assertEqual(len(clean_statement("长" * 500)), 200)
+
+    def test_fingerprint_is_per_moment(self) -> None:
+        a = Said(1, "中文回复我", NOW)
+        self.assertEqual(fingerprint(a), fingerprint(Said(99, "中文回复我", NOW)))  # re-synced copy
+        self.assertNotEqual(fingerprint(a), fingerprint(Said(2, "中文回复我", NOW + timedelta(hours=1))))
+
+
+class LearnedByTests(unittest.TestCase):
+    def test_only_after_acceptance(self) -> None:
+        topic = CorrectionTopic(statement="用中文回复", status="accepted", accepted_at=NOW)
+        self.assertFalse(learned_by(topic, NOW - timedelta(days=3)))  # said before it was learned
+        self.assertTrue(learned_by(topic, NOW + timedelta(minutes=5)))
+        self.assertFalse(learned_by(CorrectionTopic(statement="x", status="pending"), NOW))
+
+
+class PrefilterTests(unittest.TestCase):
+    def test_catches_plain_pushback(self) -> None:
+        for text in ["中文回复我", "怎么变成英文的了", "以后 commit 不带 Co-Authored-By", "别再手动 kubectl 了",
+                     "回答太长了，先给结论", "I said use Chinese", "please don't add comments"]:
+            self.assertTrue(looks_like_pushback(text), text)
+
+    def test_skips_ordinary_requests(self) -> None:
+        for text in ["帮我看看这个接口的性能", "部署吧", "发布版本"]:
+            self.assertFalse(looks_like_pushback(text), text)
+
+
+class ClassifyTests(unittest.IsolatedAsyncioTestCase):
+    async def test_parses_and_filters_model_output(self) -> None:
+        batch = [Said(1, "怎么又变成英文了", NOW), Said(2, "帮我改下这个 bug，不要动别的", NOW), Said(3, "中文回复我", NOW)]
+        answer = (
+            '{"items": [{"i": [1, 3, 3], "statement": "- 始终用中文回复", "category": "communication", "match": "t2"},'
+            ' {"i": 5, "statement": "越界", "category": "rule", "match": null},'
+            ' {"i": [2], "statement": "", "category": "rule"},'
+            ' {"i": "x", "statement": "坏编号"}]}'
+        )
+        with patch("server.services.correction_service.call_plain_chat", new=AsyncMock(return_value=answer)):
+            items = await classify(batch, [("t2", "用中文回复")])
+        self.assertEqual(items, [{"indices": [1, 3], "statement": "始终用中文回复", "category": "communication", "match": "t2"}])
+
+    async def test_single_index_still_works(self) -> None:
+        answer = '{"items": [{"i": 1, "statement": "先写测试", "category": "workflow"}]}'
+        with patch("server.services.correction_service.call_plain_chat", new=AsyncMock(return_value=answer)):
+            items = await classify([Said(1, "以后先写测试", NOW)], [])
+        self.assertEqual(items[0]["indices"], [1])
+
+    async def test_unknown_category_falls_back_to_rule(self) -> None:
+        answer = '{"items": [{"i": 1, "statement": "先写测试", "category": "misc"}]}'
+        with patch("server.services.correction_service.call_plain_chat", new=AsyncMock(return_value=answer)):
+            items = await classify([Said(1, "以后先写测试", NOW)], [])
+        self.assertEqual(items[0]["category"], "rule")
+
+    async def test_no_answer_raises_so_the_cursor_stays(self) -> None:
+        with patch("server.services.correction_service.call_plain_chat", new=AsyncMock(return_value=None)):
+            with self.assertRaises(RuntimeError):
+                await classify([Said(1, "别再这样", NOW)], [])
+
+
+class LearningHealthTests(unittest.TestCase):
+    def test_repeating_a_learned_rule_is_flagged(self) -> None:
+        ok = {"available": True, "calls": {"total": 5, "ok": 5, "fallback": 0, "failed": 0}, "reasons": []}
+        dreaming = {"journals": [{"created_at": (NOW - timedelta(hours=3)).isoformat()}], "last_run": None}
+        profile = {"last_run": None, "devices": []}
+        pipeline = {"embedding_failed": 0, "knowledge_failed": 0}
+        issues = assess(ok, ok, dreaming, profile, pipeline, NOW, {"learned_repeat_7d": 3})
+        self.assertEqual([i["area"] for i in issues], ["learning"])
+        self.assertEqual(assess(ok, ok, dreaming, profile, pipeline, NOW, {"learned_repeat_7d": 1}), [])
+
+
+if __name__ == "__main__":
+    unittest.main()
