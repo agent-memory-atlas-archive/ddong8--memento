@@ -132,7 +132,14 @@ class _PersonaTabState extends State<PersonaTab> with AutomaticKeepAliveClientMi
   String _describe(Object e) {
     if (e is DioException) {
       final detail = e.response?.data is Map ? (e.response!.data as Map)['detail'] : null;
-      return detail?.toString() ?? e.message ?? e.toString();
+      if (detail != null) return detail.toString();
+      final code = e.response?.statusCode;
+      if (code != null && code >= 500) return '服务端出错（$code），稍后再试。';
+      return switch (e.type) {
+        DioExceptionType.receiveTimeout => '等待超时：服务端可能还在生成，过一会儿下拉刷新看看。',
+        DioExceptionType.connectionError || DioExceptionType.connectionTimeout => '连不上服务端，检查网络后再试。',
+        _ => e.message ?? e.toString(),
+      };
     }
     return e.toString();
   }
