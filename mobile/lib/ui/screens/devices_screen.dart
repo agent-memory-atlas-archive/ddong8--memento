@@ -8,6 +8,8 @@ import '../widgets/glass_card.dart';
 import '../widgets/aurora_shimmer.dart';
 import '../widgets/aurora_empty_state.dart';
 import '../widgets/notify_settings_sheet.dart';
+import '../../core/api_client.dart';
+import 'health_screen.dart';
 
 class DevicesScreen extends ConsumerWidget {
   const DevicesScreen({super.key});
@@ -27,6 +29,7 @@ class DevicesScreen extends ConsumerWidget {
               ref.read(deviceProvider.notifier).loadDevices();
             },
           ),
+          const _HealthButton(),
           IconButton(
             icon: const Icon(Icons.notifications_none_rounded, size: 20),
             tooltip: '手机推送',
@@ -202,6 +205,69 @@ class _DeviceCardBody extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// Opens the health page; a dot shows when something needs a look.
+class _HealthButton extends StatefulWidget {
+  const _HealthButton();
+
+  @override
+  State<_HealthButton> createState() => _HealthButtonState();
+}
+
+class _HealthButtonState extends State<_HealthButton> {
+  String? _level;
+
+  @override
+  void initState() {
+    super.initState();
+    _check();
+  }
+
+  Future<void> _check() async {
+    try {
+      final data = await ApiClient().getHealthOverview();
+      if (mounted) setState(() => _level = data['level'] as String?);
+    } catch (_) {
+      // An older server without the endpoint just shows no dot.
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final dot = switch (_level) {
+      'error' => AuroraColors.danger,
+      'warn' => AuroraColors.warn,
+      _ => null,
+    };
+    return IconButton(
+      tooltip: '系统健康',
+      onPressed: () async {
+        await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const HealthScreen()));
+        _check();
+      },
+      icon: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          const Icon(Icons.monitor_heart_outlined, size: 20),
+          if (dot != null)
+            Positioned(
+              right: -2,
+              top: -2,
+              child: Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  color: dot,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: AuroraColors.bg, width: 1.5),
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }

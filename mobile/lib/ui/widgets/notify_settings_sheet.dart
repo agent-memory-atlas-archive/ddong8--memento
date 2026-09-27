@@ -89,8 +89,8 @@ class _NotifySettingsSheetState extends State<_NotifySettingsSheet> {
         _show(url.isEmpty ? '已清除推送地址' : '已保存，可以点「发送测试通知」确认一下');
       });
 
-  Future<void> _toggle({bool? risky, bool? taskDone}) => _run(() async {
-        final s = await _api.saveNotifySettings(notifyRisky: risky, notifyTaskDone: taskDone);
+  Future<void> _toggle({bool? risky, bool? taskDone, bool? health}) => _run(() async {
+        final s = await _api.saveNotifySettings(notifyRisky: risky, notifyTaskDone: taskDone, notifyHealth: health);
         setState(() => _settings = s);
       });
 
@@ -178,6 +178,14 @@ class _NotifySettingsSheetState extends State<_NotifySettingsSheet> {
                 onChanged: _busy ? null : (v) => _toggle(taskDone: v),
                 title: const Text('任务完成', style: TextStyle(fontSize: 14, color: AuroraColors.fg1)),
                 subtitle: const Text('agent 任务结束时，如果你没在看，就推送一条',
+                    style: TextStyle(fontSize: 12, color: AuroraColors.fg3)),
+              ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                value: s['notify_health'] != false,
+                onChanged: _busy ? null : (v) => _toggle(health: v),
+                title: const Text('系统异常', style: TextStyle(fontSize: 14, color: AuroraColors.fg1)),
+                subtitle: const Text('AI 调用大量失败、夜间做梦或画像生成出错时推送（6 小时内最多一条）',
                     style: TextStyle(fontSize: 12, color: AuroraColors.fg3)),
               ),
             ],

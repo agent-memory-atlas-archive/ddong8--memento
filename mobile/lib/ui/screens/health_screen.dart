@@ -1,0 +1,535 @@
+import 'dart:math' as math;
+
+import 'package:dio/dio.dart';
+import 'package:flutter/material.dart';
+
+import '../../core/api_client.dart';
+import '../../core/theme/aurora_theme.dart';
+import '../../models/device.dart';
+import '../widgets/aurora_shimmer.dart';
+import '../widgets/glass_card.dart';
+
+/// Which configured provider a model row came from, in the user's words.
+const healthProviderLabels = <String, String>{
+  'primary_background': '后台',
+  'primary': '主模型',
+  'oneapi_fallback': '备用',
+};
+
+/// Outcome of the last profile draft generation, in the user's words.
+const healthProfileRunLabels = <String, String>{
+  'updated': '已生成新草稿',
+  'same_as_published': '和已发布的一致',
+  'no_input': '输入不够，没有生成',
+  'llm_failed': 'AI 没有返回可用内容',
+  'no_llm': '没有配置 AI',
+  'user_editing': '有未发布的手改草稿，跳过',
+  'error': '出错',
+};
+
+/// Share of calls that got an answer, as a whole percent; null with no calls.
+int? healthSuccessPercent(Map<String, dynamic> calls) {
+  final total = (calls['total'] as num?)?.toInt() ?? 0;
+  if (total == 0) return null;
+  final answered = ((calls['ok'] as num?) ?? 0) + ((calls['fallback'] as num?) ?? 0);
+  return (answered * 100 / total).floor();
+}
+
+String healthLatency(num? ms) {
+  if (ms == null) return '—';
+  return ms >= 1000 ? '${(ms / 1000).toStringAsFixed(1)} 秒' : '${ms.round()} 毫秒';
+}
+
+class HealthScreen extends StatefulWidget {
+  const HealthScreen({super.key});
+
+  @override
+  State<HealthScreen> createState() => _HealthScreenState();
+}
+
+class _HealthScreenState extends State<HealthScreen> {
+  final _api = ApiClient();
+  Map<String, dynamic>? _data;
+  String? _error;
+  bool _allErrors = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final data = await _api.getHealthOverview();
+      if (!mounted) return;
+      setState(() {
+        _data = data;
+        _error = null;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      final code = e is DioException ? e.response?.statusCode : null;
+      setState(() => _error = code == 404 ? '服务端版本太旧，还没有健康检查接口。' : '读取失败：${e is DioException ? (e.message ?? e.type.name) : e}');
+    }
+  }
+
+  static String _time(String? iso) {
+    final t = iso == null ? null : DateTime.tryParse(iso)?.toLocal();
+    if (t == null) return '';
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${t.month}-${t.day} ${two(t.hour)}:${two(t.minute)}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final data = _data;
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('系统健康'),
+        actions: [
+          IconButton(icon: const Icon(Icons.refresh, size: 20), tooltip: '刷新', onPressed: _load),
+        ],
+      ),
+      body: data == null && _error == null
+          ? const AuroraListSkeleton(count: 4, itemHeight: 140)
+          : RefreshIndicator(
+              onRefresh: _load,
+              color: AuroraColors.accent,
+              child: LayoutBuilder(
+                builder: (context, constraints) => ListView(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: math.max(16, (constraints.maxWidth - 880) / 2),
+                    vertical: 12,
+                  ),
+                  children: [
+                    if (_error != null) _note(_error!, AuroraColors.danger),
+                    if (data != null) ...[
+                      _buildStatus(data),
+                      const SizedBox(height: 14),
+                      _buildAi((data['ai'] as Map).cast<String, dynamic>()),
+                      const SizedBox(height: 14),
+                      _buildDreaming((data['dreaming'] as Map).cast<String, dynamic>()),
+                      const SizedBox(height: 14),
+                      _buildProfile((data['profile'] as Map).cast<String, dynamic>()),
+                      const SizedBox(height: 14),
+                      _buildPipeline((data['pipeline'] as Map).cast<String, dynamic>()),
+                      const SizedBox(height: 24),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+    );
+  }
+
+  // ---- building blocks ----
+
+  Widget _note(String text, Color color) => Container(
+        margin: const EdgeInsets.only(bottom: 14),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: color.withValues(alpha: 0.2)),
+        ),
+        child: Text(text, style: TextStyle(fontSize: 13, color: color, height: 1.45)),
+      );
+
+  Widget _section(String title, {String? trailing, required List<Widget> children}) => GlassCard(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(title,
+                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AuroraColors.fg1)),
+                ),
+                if (trailing != null) Text(trailing, style: const TextStyle(fontSize: 12, color: AuroraColors.fg3)),
+              ],
+            ),
+            const SizedBox(height: 12),
+            ...children,
+          ],
+        ),
+      );
+
+  Widget _metric(String label, String value, {Color color = AuroraColors.fg1}) => Expanded(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(value,
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w600,
+                  color: color,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                )),
+            const SizedBox(height: 2),
+            Text(label, style: const TextStyle(fontSize: 12, color: AuroraColors.fg3)),
+          ],
+        ),
+      );
+
+  Widget _row(String left, String right, {Color rightColor = AuroraColors.fg2, Widget? leading, String? sub}) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (leading != null) ...[Padding(padding: const EdgeInsets.only(top: 5), child: leading), const SizedBox(width: 8)],
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(left, style: const TextStyle(fontSize: 13.5, color: AuroraColors.fgBody)),
+                  if (sub != null)
+                    Text(sub,
+                        style: const TextStyle(
+                          fontSize: 11.5,
+                          color: AuroraColors.fg3,
+                          fontFamily: 'monospace',
+                          fontFamilyFallback: AuroraTheme.monospaceFontFamilyFallback,
+                        )),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            Text(right, style: TextStyle(fontSize: 12.5, color: rightColor)),
+          ],
+        ),
+      );
+
+  Widget _dot(Color color) => Container(
+        width: 6,
+        height: 6,
+        decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+      );
+
+  Widget _divider() => const Padding(
+        padding: EdgeInsets.symmetric(vertical: 8),
+        child: Divider(height: 1, thickness: 1, color: AuroraColors.chip),
+      );
+
+  Widget _subhead(String text) => Padding(
+        padding: const EdgeInsets.only(bottom: 4),
+        child: Text(text,
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 0.5, color: AuroraColors.fg3)),
+      );
+
+  // ---- sections ----
+
+  Widget _buildStatus(Map<String, dynamic> data) {
+    final level = data['level'] as String? ?? 'ok';
+    final issues = ((data['issues'] as List?) ?? const []).cast<Map>();
+    final devices = (data['devices'] as Map?) ?? const {};
+    final (color, title) = switch (level) {
+      'error' => (AuroraColors.danger, '有问题需要处理'),
+      'warn' => (AuroraColors.warn, '有 ${issues.length} 处需要留意'),
+      _ => (AuroraColors.success, '一切正常'),
+    };
+
+    return GlassCard(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 10,
+                height: 10,
+                decoration: BoxDecoration(
+                  color: color,
+                  shape: BoxShape.circle,
+                  boxShadow: [BoxShadow(color: color.withValues(alpha: 0.18), spreadRadius: 4)],
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(title,
+                    style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: AuroraColors.fg1)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Padding(
+            padding: const EdgeInsets.only(left: 22),
+            child: Text(
+              '${devices['total'] ?? 0} 台设备 · ${devices['online'] ?? 0} 台在线 · 更新于 ${_time(data['generated_at'] as String?)}',
+              style: const TextStyle(fontSize: 12, color: AuroraColors.fg3),
+            ),
+          ),
+          if (issues.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            for (final issue in issues)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.only(top: 1),
+                      child: Icon(
+                        issue['level'] == 'error' ? Icons.error_outline_rounded : Icons.warning_amber_rounded,
+                        size: 16,
+                        color: issue['level'] == 'error' ? AuroraColors.danger : AuroraColors.warn,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(issue['text'].toString(),
+                          style: const TextStyle(fontSize: 13.5, color: AuroraColors.fgBody, height: 1.45)),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAi(Map<String, dynamic> ai) {
+    final calls = ((ai['calls'] as Map?) ?? const {}).cast<String, dynamic>();
+    final hourly = ((ai['hourly'] as List?) ?? const []).cast<Map>();
+    final models = ((ai['models'] as List?) ?? const []).cast<Map>();
+    final reasons = ((ai['reasons'] as List?) ?? const []).cast<Map>();
+    final recent = ((ai['recent_errors'] as List?) ?? const []).cast<Map>();
+    final percent = healthSuccessPercent(calls);
+    final failed = (calls['failed'] as num?)?.toInt() ?? 0;
+
+    return _section('AI 调用', trailing: '最近 24 小时', children: [
+      if (ai['available'] == false) _note('读不到调用统计（Redis 不可用）。', AuroraColors.warn),
+      Row(
+        children: [
+          _metric('总调用', '${calls['total'] ?? 0}'),
+          _metric('成功率', percent == null ? '—' : '$percent%',
+              color: percent == null || percent >= 95 ? AuroraColors.fg1 : AuroraColors.warn),
+          _metric('靠备用完成', '${calls['fallback'] ?? 0}'),
+          _metric('失败', '$failed', color: failed > 0 ? AuroraColors.danger : AuroraColors.fg1),
+        ],
+      ),
+      if (hourly.isNotEmpty) ...[
+        const SizedBox(height: 14),
+        _HourlyBars(hourly: hourly),
+      ],
+      if (models.isNotEmpty) ...[
+        _divider(),
+        _subhead('按模型'),
+        for (final m in models)
+          _row(
+            '${healthProviderLabels[m['provider']] ?? m['provider']} · ${m['model']}',
+            '成功 ${m['ok']} · 失败 ${m['failed']} · ${healthLatency(m['avg_latency_ms'] as num?)}',
+            rightColor: (m['failed'] as num? ?? 0) > 0 ? AuroraColors.warn : AuroraColors.fg2,
+          ),
+      ],
+      if (reasons.isNotEmpty) ...[
+        _divider(),
+        _subhead('没答上的原因'),
+        const SizedBox(height: 2),
+        Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          children: [
+            for (final r in reasons)
+              Container(
+                height: 24,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                decoration: BoxDecoration(color: AuroraColors.chip, borderRadius: BorderRadius.circular(6)),
+                child: Center(
+                  widthFactor: 1,
+                  child: Text('${r['label']} × ${r['count']}',
+                      style: const TextStyle(fontSize: 12, color: AuroraColors.fg2)),
+                ),
+              ),
+          ],
+        ),
+      ],
+      if (recent.isNotEmpty) ...[
+        _divider(),
+        _subhead('最近的失败'),
+        for (final e in (_allErrors ? recent : recent.take(4)))
+          _row(
+            '${e['label']} · ${e['model']}',
+            _time(e['at'] as String?),
+            leading: _dot(e['fatal'] == true ? AuroraColors.danger : AuroraColors.warn),
+            sub: (e['detail'] as String?)?.isNotEmpty == true ? e['detail'].toString() : null,
+          ),
+        if (recent.length > 4)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton(
+              onPressed: () => setState(() => _allErrors = !_allErrors),
+              child: Text(_allErrors ? '收起' : '显示全部 ${recent.length} 条'),
+            ),
+          ),
+      ],
+    ]);
+  }
+
+  Widget _buildDreaming(Map<String, dynamic> dreaming) {
+    final journals = ((dreaming['journals'] as List?) ?? const []).cast<Map>();
+    final run = (dreaming['last_run'] as Map?)?.cast<String, dynamic>();
+
+    return _section('做梦学习', trailing: '每晚 03:00', children: [
+      if (run != null)
+        _row(
+          '上次夜间运行 ${_time(run['at'] as String?)}',
+          run['ok'] == false ? '失败' : '成功',
+          rightColor: run['ok'] == false ? AuroraColors.danger : AuroraColors.success,
+          sub: run['ok'] == false
+              ? run['error']?.toString()
+              : '画像草稿：${healthProfileRunLabels[run['profile_status']] ?? run['profile_status'] ?? '—'}',
+        ),
+      if (run != null && journals.isNotEmpty) _divider(),
+      if (journals.isEmpty)
+        const Text('还没有做梦记录。', style: TextStyle(fontSize: 13.5, color: AuroraColors.fg3))
+      else ...[
+        _subhead('最近的记录'),
+        for (final j in journals)
+          _row(
+            j['date'].toString(),
+            [
+              '扫描 ${j['scanned']}',
+              '晋升 ${j['promoted']}',
+              if ((j['relations'] as num? ?? 0) > 0) '关联 ${j['relations']}',
+              if (j['voice'] != null) '原话 ${j['voice']}',
+            ].join(' · '),
+            rightColor: (j['promoted'] as num? ?? 0) > 0 ? AuroraColors.fgBody : AuroraColors.fg3,
+          ),
+      ],
+    ]);
+  }
+
+  Widget _buildProfile(Map<String, dynamic> profile) {
+    final published = (profile['published'] as Map?)?.cast<String, dynamic>();
+    final draft = (profile['draft'] as Map?)?.cast<String, dynamic>();
+    final run = (profile['last_run'] as Map?)?.cast<String, dynamic>();
+    final devices = ((profile['devices'] as List?) ?? const []).cast<Map>();
+    final runFailed = run != null && (run['status'] == 'llm_failed' || run['status'] == 'error');
+
+    return _section('常驻画像', children: [
+      _row(
+        '已发布',
+        published == null ? '还没有' : 'v${published['version']} · ${_time(published['published_at'] as String?)}',
+        rightColor: published == null ? AuroraColors.warn : AuroraColors.fg2,
+      ),
+      _row('待审草稿', draft == null ? '无' : '${_time(draft['updated_at'] as String?)} 生成'),
+      if (run != null)
+        _row(
+          '上次手动生成',
+          '${healthProfileRunLabels[run['status']] ?? run['status']} · ${_time(run['at'] as String?)}',
+          rightColor: runFailed ? AuroraColors.danger : AuroraColors.fg2,
+          sub: run['error']?.toString(),
+        ),
+      if (devices.isNotEmpty) ...[
+        _divider(),
+        _subhead('写入设备'),
+        for (final d in devices)
+          _row(
+            splitDeviceName(d['name'].toString()).$1,
+            (d['errors'] as List).isNotEmpty
+                ? '出错：${(d['errors'] as List).join('、')}'
+                : d['synced'] == true
+                    ? '已同步 v${d['version']}'
+                    : (published == null ? '等待发布' : '待同步'),
+            leading: _dot(d['online'] == true ? AuroraColors.success : AuroraColors.fg4),
+            rightColor: (d['errors'] as List).isNotEmpty
+                ? AuroraColors.danger
+                : d['synced'] == true
+                    ? AuroraColors.success
+                    : AuroraColors.fg3,
+          ),
+      ],
+    ]);
+  }
+
+  Widget _buildPipeline(Map<String, dynamic> pipeline) {
+    final embedding = (pipeline['embedding_failed'] as num?)?.toInt() ?? 0;
+    final knowledge = (pipeline['knowledge_failed'] as num?)?.toInt() ?? 0;
+    return _section('数据管道', trailing: '每 15 分钟自动重试', children: [
+      Row(
+        children: [
+          _metric('向量化失败', '$embedding', color: embedding > 0 ? AuroraColors.warn : AuroraColors.fg1),
+          _metric('图谱抽取失败', '$knowledge', color: knowledge > 0 ? AuroraColors.warn : AuroraColors.fg1),
+        ],
+      ),
+      const SizedBox(height: 8),
+      const Text('失败的文档会自动重试，最多 5 次；超过次数的会一直留在这里，直到手动处理。',
+          style: TextStyle(fontSize: 12, color: AuroraColors.fg3, height: 1.45)),
+    ]);
+  }
+}
+
+/// 24 hourly bars: answered calls in a quiet tone, failures stacked in red on top.
+class _HourlyBars extends StatelessWidget {
+  final List<Map> hourly;
+
+  const _HourlyBars({required this.hourly});
+
+  @override
+  Widget build(BuildContext context) {
+    int n(Map h, String k) => (h[k] as num?)?.toInt() ?? 0;
+    final peak = hourly.fold<int>(0, (m, h) => math.max(m, n(h, 'ok') + n(h, 'fallback') + n(h, 'failed')));
+    const height = 44.0;
+    const usable = height - 2; // leaves room for the 2 px minimum on stacked bars
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SizedBox(
+          height: height,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              for (final h in hourly)
+                Expanded(
+                  child: Tooltip(
+                    message: '${DateTime.tryParse(h['hour'].toString())?.toLocal().hour ?? ''} 点：'
+                        '成功 ${n(h, 'ok') + n(h, 'fallback')}，失败 ${n(h, 'failed')}',
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 1.5),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          if (n(h, 'failed') > 0)
+                            Container(
+                              height: math.max(2, usable * n(h, 'failed') / math.max(peak, 1)),
+                              decoration: const BoxDecoration(
+                                color: AuroraColors.danger,
+                                borderRadius: BorderRadius.vertical(top: Radius.circular(2)),
+                              ),
+                            ),
+                          Container(
+                            height: peak == 0
+                                ? 2
+                                : math.max(2, usable * (n(h, 'ok') + n(h, 'fallback')) / peak),
+                            decoration: BoxDecoration(
+                              color: AuroraColors.accent.withValues(alpha: peak == 0 ? 0.15 : 0.45),
+                              borderRadius: n(h, 'failed') > 0
+                                  ? null
+                                  : const BorderRadius.vertical(top: Radius.circular(2)),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 4),
+        const Row(
+          children: [
+            Text('24 小时前', style: TextStyle(fontSize: 11, color: AuroraColors.fg4)),
+            Spacer(),
+            Text('现在', style: TextStyle(fontSize: 11, color: AuroraColors.fg4)),
+          ],
+        ),
+      ],
+    );
+  }
+}

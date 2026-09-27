@@ -470,12 +470,20 @@ class ApiClient {
   }
 
   /// barkUrl: "" clears it, null leaves it unchanged.
-  Future<Map<String, dynamic>> saveNotifySettings({String? barkUrl, bool? notifyRisky, bool? notifyTaskDone}) async {
+  Future<Map<String, dynamic>> saveNotifySettings(
+      {String? barkUrl, bool? notifyRisky, bool? notifyTaskDone, bool? notifyHealth}) async {
     final response = await _dio.put('/api/notify/settings', data: {
       if (barkUrl != null) 'bark_url': barkUrl,
       if (notifyRisky != null) 'notify_risky': notifyRisky,
       if (notifyTaskDone != null) 'notify_task_done': notifyTaskDone,
+      if (notifyHealth != null) 'notify_health': notifyHealth,
     });
+    return response.data as Map<String, dynamic>;
+  }
+
+  /// AI call stats, dreaming, profile sync and pipeline backlog, plus the problems found.
+  Future<Map<String, dynamic>> getHealthOverview() async {
+    final response = await _dio.get('/api/health/overview');
     return response.data as Map<String, dynamic>;
   }
 
