@@ -8,6 +8,38 @@ import '../widgets/app_markdown.dart';
 import '../widgets/aurora_shimmer.dart';
 import '../widgets/aurora_empty_state.dart';
 import 'persona_tab.dart';
+import 'skills_tab.dart';
+
+/// Short label for a memory that is no longer handed to AIs, or null while in force.
+String? memoryStatusLabel(String? status) => switch (status) {
+      'dormant' => '沉睡',
+      'superseded' => '已取代',
+      _ => null,
+    };
+
+/// Where a memory came from, in the user's words.
+String memorySourceLabel(String? source, {bool short = false}) => switch (source) {
+      'dreaming' => short ? '🌙 梦境' : '🌙 梦境萃取',
+      'bootstrap' => short ? '🌟 自举' : '🌟 知识自举',
+      'outcome' => short ? '🧭 复盘' : '🧭 会话复盘',
+      'agent' || 'agent_task' => short ? '🤖 Agent' : '🤖 Agent 记录',
+      'mcp' => short ? '🔌 AI 工具' : '🔌 AI 工具记录',
+      _ => '✍️ 手动',
+    };
+
+/// The tree without leaves that are no longer in force (and folders left empty by that).
+List<Map<String, dynamic>> pruneInactiveMemories(List<Map<String, dynamic>> nodes) {
+  final out = <Map<String, dynamic>>[];
+  for (final node in nodes) {
+    if (node['is_folder'] == true) {
+      final kids = pruneInactiveMemories(((node['children'] as List?) ?? const []).cast<Map<String, dynamic>>());
+      if (kids.isNotEmpty) out.add({...node, 'children': kids});
+    } else if (memoryStatusLabel(node['status'] as String?) == null) {
+      out.add(node);
+    }
+  }
+  return out;
+}
 
 class MemoryScreen extends StatefulWidget {
   const MemoryScreen({super.key});
@@ -34,6 +66,7 @@ class _MemoryScreenState extends State<MemoryScreen> with SingleTickerProviderSt
   final Set<String> _expandedTreePaths = {};
   String? _coreError;
   String? _selectedCategory;
+  bool _showInactive = false;
   final _treeFilterController = TextEditingController();
   String _treeFilterQuery = '';
 
@@ -47,7 +80,7 @@ class _MemoryScreenState extends State<MemoryScreen> with SingleTickerProviderSt
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this);
+    _tabController = TabController(length: 5, vsync: this);
     _tabController.addListener(() {
       if (_tabController.indexIsChanging) return;
       if (_tabController.index == 1 && _coreMemories.isEmpty && !_isCoreLoading) {
@@ -807,7 +840,7 @@ class _MemoryScreenState extends State<MemoryScreen> with SingleTickerProviderSt
               borderRadius: BorderRadius.circular(10),
             ),
             child: LayoutBuilder(builder: (context, constraints) {
-              // Phones get the short labels so all four fit without scrolling.
+              // Phones get the short labels so all five fit without scrolling.
               final compact = constraints.maxWidth < 640;
               return TabBar(
                 controller: _tabController,
@@ -829,6 +862,7 @@ class _MemoryScreenState extends State<MemoryScreen> with SingleTickerProviderSt
                   _segment(compact, Icons.account_tree_rounded, '长期核心准则', '准则', _coreMemories.length),
                   _segment(compact, Icons.auto_awesome_rounded, '做梦与认知分层', '做梦', _dreamJournals.length),
                   _segment(compact, Icons.badge_outlined, '常驻画像', '画像', 0),
+                  _segment(compact, Icons.auto_fix_high_rounded, '技能', '技能', 0),
                 ],
               );
             }),
@@ -842,6 +876,7 @@ class _MemoryScreenState extends State<MemoryScreen> with SingleTickerProviderSt
           _buildCoreMemoryTab(),
           _buildDreamingTab(),
           const PersonaTab(),
+          const SkillsTab(),
         ],
       ),
     );
@@ -1232,6 +1267,17 @@ class _MemoryScreenState extends State<MemoryScreen> with SingleTickerProviderSt
                     _buildModernCategoryPill('rules', '工程铁律', Icons.shield_outlined, const Color(0xFFF59E0B)),
                     _buildModernCategoryPill('tools', '工具中台', Icons.construction_rounded, const Color(0xFFFB923C)),
                     _buildModernCategoryPill('preference', '开发偏好', Icons.psychology_outlined, const Color(0xFFA855F7)),
+                    _buildModernCategoryPill('pitfall', '踩过的坑', Icons.report_problem_outlined, const Color(0xFFEF4444)),
+                    Padding(
+                      padding: const EdgeInsets.only(left: 4),
+                      child: FilterChip(
+                        label: Text('显示不再生效的（$_inactiveCount）', style: const TextStyle(fontSize: 12)),
+                        selected: _showInactive,
+                        onSelected: (v) => setState(() => _showInactive = v),
+                        visualDensity: VisualDensity.compact,
+                        tooltip: '沉睡：很久没被用到；已取代：有更新的说法。它们不会再交给 AI，但都保留着，可以唤醒。',
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -1489,6 +1535,8 @@ class _MemoryScreenState extends State<MemoryScreen> with SingleTickerProviderSt
       case 'tools':
       case 'tool':
         return const Color(0xFFFB923C);
+      case 'pitfall':
+        return const Color(0xFFEF4444);
       default:
         return AuroraColors.accent;
     }
@@ -1500,11 +1548,15 @@ class _MemoryScreenState extends State<MemoryScreen> with SingleTickerProviderSt
     if (path.startsWith('/preference')) return Icons.psychology_outlined;
     if (path.startsWith('/project')) return Icons.rocket_launch_rounded;
     if (path.startsWith('/tools') || path.startsWith('/tool')) return Icons.construction_rounded;
+    if (path.startsWith('/pitfall')) return Icons.report_problem_outlined;
     return Icons.folder_rounded;
   }
 
   Widget _buildDirectoryTreeView() {
-    final effectiveTree = _filterTreeNodes(_coreMemoryTree, _treeFilterQuery);
+    final effectiveTree = _filterTreeNodes(
+      _showInactive ? _coreMemoryTree : pruneInactiveMemories(_coreMemoryTree.cast<Map<String, dynamic>>()),
+      _treeFilterQuery,
+    );
 
     if (effectiveTree.isEmpty) {
       return Center(
@@ -1892,12 +1944,14 @@ class _MemoryScreenState extends State<MemoryScreen> with SingleTickerProviderSt
                                       borderRadius: BorderRadius.circular(4),
                                     ),
                                     child: Text(
-                                      source == 'dreaming'
-                                          ? '🌙 梦境'
-                                          : (source == 'bootstrap' ? '🌟 自举' : '✍️ 手动'),
+                                      memorySourceLabel(source, short: true),
                                       style: const TextStyle(fontSize: 9.5, color: AuroraColors.fg3),
                                     ),
                                   ),
+                                  if (memoryStatusLabel(node['status'] as String?) != null) ...[
+                                    const SizedBox(width: 6),
+                                    _statusBadge(node),
+                                  ],
                                   const SizedBox(width: 6),
                                   Text(
                                     '${(confidence * 100).toInt()}% 置信',
@@ -1955,6 +2009,16 @@ class _MemoryScreenState extends State<MemoryScreen> with SingleTickerProviderSt
                                     },
                                   ),
                                   const SizedBox(width: 4),
+                                  if (memoryStatusLabel(node['status'] as String?) != null) ...[
+                                    IconButton(
+                                      icon: const Icon(Icons.restore_rounded, size: 14, color: AuroraColors.accent),
+                                      tooltip: '唤醒：重新交给 AI',
+                                      padding: EdgeInsets.zero,
+                                      constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+                                      onPressed: () => _reviveMemory(node['id'].toString()),
+                                    ),
+                                    const SizedBox(width: 4),
+                                  ],
                                   IconButton(
                                     icon: const Icon(Icons.edit_outlined, size: 14, color: AuroraColors.fg3),
                                     tooltip: '编辑',
@@ -2138,8 +2202,45 @@ class _MemoryScreenState extends State<MemoryScreen> with SingleTickerProviderSt
     );
   }
 
+  int get _inactiveCount =>
+      _coreMemories.where((m) => memoryStatusLabel((m as Map)['status'] as String?) != null).length;
+
+  Future<void> _reviveMemory(String id) async {
+    try {
+      await ApiClient().reviveCoreMemory(id);
+      await _loadCoreMemories();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('已唤醒，重新交给 AI'), behavior: SnackBarBehavior.floating),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('唤醒失败：$e'), behavior: SnackBarBehavior.floating),
+        );
+      }
+    }
+  }
+
+  Widget _statusBadge(Map mem) {
+    final label = memoryStatusLabel(mem['status'] as String?)!;
+    final reason = (mem['status_reason'] ?? '').toString();
+    return Tooltip(
+      message: reason.isEmpty ? label : reason,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+        decoration: BoxDecoration(color: AuroraColors.warnSoft, borderRadius: BorderRadius.circular(4)),
+        child: Text(label, style: const TextStyle(fontSize: 10, color: AuroraColors.warnText, fontWeight: FontWeight.w600)),
+      ),
+    );
+  }
+
   Widget _buildFlatListView() {
-    if (_coreMemories.isEmpty) {
+    final visible = _showInactive
+        ? _coreMemories
+        : _coreMemories.where((m) => memoryStatusLabel((m as Map)['status'] as String?) == null).toList();
+    if (visible.isEmpty) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -2166,9 +2267,10 @@ class _MemoryScreenState extends State<MemoryScreen> with SingleTickerProviderSt
       color: AuroraColors.accent,
       child: ListView.builder(
         padding: const EdgeInsets.all(16),
-        itemCount: _coreMemories.length,
+        itemCount: visible.length,
         itemBuilder: (context, index) {
-          final mem = _coreMemories[index] as Map<String, dynamic>;
+          final mem = visible[index] as Map<String, dynamic>;
+          final inactive = memoryStatusLabel(mem['status'] as String?) != null;
           final cat = mem['category']?.toString() ?? 'general';
           final key = mem['key']?.toString() ?? '';
           final content = mem['content']?.toString() ?? '';
@@ -2220,25 +2322,28 @@ class _MemoryScreenState extends State<MemoryScreen> with SingleTickerProviderSt
                             borderRadius: BorderRadius.circular(4),
                           ),
                           child: Text(
-                            source == 'dreaming'
-                                ? '🌙 梦境萃取'
-                                : (source == 'bootstrap' ? '🌟 知识自举' : '✍️ 手动'),
+                            memorySourceLabel(source),
                             style: const TextStyle(fontSize: 10, color: AuroraColors.fg3),
                           ),
                         ),
+                        if (inactive) ...[const SizedBox(width: 6), _statusBadge(mem)],
                         PopupMenuButton<String>(
                           icon: const Icon(Icons.more_vert, size: 18, color: AuroraColors.fg3),
                           color: AuroraColors.surfaceSolid,
                           onSelected: (action) {
                             if (action == 'edit') {
                               _showAddOrEditMemoryDialog(existing: mem);
+                            } else if (action == 'revive') {
+                              _reviveMemory(mem['id'].toString());
                             } else if (action == 'delete') {
                               _deleteMemory(mem['id'].toString());
                             }
                           },
-                          itemBuilder: (ctx) => const [
-                            PopupMenuItem(value: 'edit', child: Text('编辑')),
-                            PopupMenuItem(value: 'delete', child: Text('遗忘/删除', style: TextStyle(color: AuroraColors.danger))),
+                          itemBuilder: (ctx) => [
+                            if (inactive) const PopupMenuItem(value: 'revive', child: Text('唤醒')),
+                            const PopupMenuItem(value: 'edit', child: Text('编辑')),
+                            const PopupMenuItem(
+                                value: 'delete', child: Text('遗忘/删除', style: TextStyle(color: AuroraColors.danger))),
                           ],
                         ),
                       ],
@@ -2248,18 +2353,24 @@ class _MemoryScreenState extends State<MemoryScreen> with SingleTickerProviderSt
                       content,
                       maxLines: 3,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 13,
-                        color: AuroraColors.fg1,
+                        color: inactive ? AuroraColors.fg3 : AuroraColors.fg1,
                         height: 1.45,
                       ),
                     ),
+                    if (inactive && (mem['status_reason'] ?? '').toString().isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Text(mem['status_reason'].toString(),
+                            style: const TextStyle(fontSize: 11.5, color: AuroraColors.warnText, height: 1.4)),
+                      ),
                     const SizedBox(height: 8),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text(
-                          '置信度: ${(confidence * 100).toInt()}%',
+                          '置信度: ${(confidence * 100).toInt()}% · 被用到 ${mem['recall_count'] ?? 0} 次',
                           style: const TextStyle(fontSize: 11, color: AuroraColors.fg3),
                         ),
                         Text(

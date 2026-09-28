@@ -223,6 +223,11 @@ class ApiClient {
     await _dio.delete('/api/memory/core/$id');
   }
 
+  /// Put a dormant or superseded memory back in force.
+  Future<void> reviveCoreMemory(String id) async {
+    await _dio.post('/api/memory/core/$id/revive');
+  }
+
   Future<Map<String, dynamic>> getDreamJournals({int limit = 20, int offset = 0}) async {
     final response = await _dio.get(
       '/api/memory/dreams',
@@ -471,13 +476,19 @@ class ApiClient {
 
   /// barkUrl: "" clears it, null leaves it unchanged.
   Future<Map<String, dynamic>> saveNotifySettings(
-      {String? barkUrl, bool? notifyRisky, bool? notifyTaskDone, bool? notifyHealth, bool? notifyLearning}) async {
+      {String? barkUrl,
+      bool? notifyRisky,
+      bool? notifyTaskDone,
+      bool? notifyHealth,
+      bool? notifyLearning,
+      bool? notifyTodo}) async {
     final response = await _dio.put('/api/notify/settings', data: {
       if (barkUrl != null) 'bark_url': barkUrl,
       if (notifyRisky != null) 'notify_risky': notifyRisky,
       if (notifyTaskDone != null) 'notify_task_done': notifyTaskDone,
       if (notifyHealth != null) 'notify_health': notifyHealth,
       if (notifyLearning != null) 'notify_learning': notifyLearning,
+      if (notifyTodo != null) 'notify_todo': notifyTodo,
     });
     return response.data as Map<String, dynamic>;
   }
@@ -505,6 +516,79 @@ class ApiClient {
 
   Future<void> sendTestNotification() async {
     await _dio.post('/api/notify/test');
+  }
+
+  // --- Session reviews & retrieval evaluation ---
+
+  /// Recent session reviews, 7-day stats, and the state of a "review now" job.
+  Future<Map<String, dynamic>> getReviews() async {
+    final response = await _dio.get('/api/learning/reviews');
+    return response.data as Map<String, dynamic>;
+  }
+
+  /// Review finished sessions now; runs in the background, poll getReviews()['job'].
+  Future<Map<String, dynamic>> startReview() async {
+    final response = await _dio.post('/api/learning/review');
+    return response.data as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> getEvals() async {
+    final response = await _dio.get('/api/learning/evals');
+    return response.data as Map<String, dynamic>;
+  }
+
+  /// Score retrieval now; rebuild first generates a new question set (next version).
+  Future<Map<String, dynamic>> runEval({bool rebuild = false}) async {
+    final response = await _dio.post('/api/learning/evals/run', queryParameters: {'rebuild': rebuild});
+    return response.data as Map<String, dynamic>;
+  }
+
+  // --- Skills ---
+
+  /// {drafts, published, archived, counts, devices}
+  Future<Map<String, dynamic>> getSkills() async {
+    final response = await _dio.get('/api/skills');
+    return response.data as Map<String, dynamic>;
+  }
+
+  /// edits: title / description / body / slug / project. Editing a published skill ships a new version.
+  Future<Map<String, dynamic>> editSkill(String id, Map<String, dynamic> edits) async {
+    final response = await _dio.put('/api/skills/$id', data: edits);
+    return response.data as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> publishSkill(String id, {Map<String, dynamic>? edits}) async {
+    final response = await _dio.post('/api/skills/$id/publish', data: edits ?? const {});
+    return response.data as Map<String, dynamic>;
+  }
+
+  /// action: dismiss | retire | restore | update/apply | update/discard
+  Future<void> skillAction(String id, String action) async {
+    await _dio.post('/api/skills/$id/$action');
+  }
+
+  // --- Todos ---
+
+  /// {open, closed, counts}
+  Future<Map<String, dynamic>> getTodos() async {
+    final response = await _dio.get('/api/todos');
+    return response.data as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> addTodo(String title, {String? detail, String? due, String? project}) async {
+    final response = await _dio.post('/api/todos', data: {
+      'title': title,
+      if (detail != null) 'detail': detail,
+      if (due != null) 'due': due,
+      if (project != null) 'project': project,
+    });
+    return response.data as Map<String, dynamic>;
+  }
+
+  /// fields: title / detail / project / due ("" clears) / status (open | done | dropped)
+  Future<Map<String, dynamic>> updateTodo(String id, Map<String, dynamic> fields) async {
+    final response = await _dio.put('/api/todos/$id', data: fields);
+    return response.data as Map<String, dynamic>;
   }
 
   // --- Resident profile (persona) ---

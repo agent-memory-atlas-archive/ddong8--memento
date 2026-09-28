@@ -7,6 +7,7 @@ import 'models/tool_discovery.dart';
 import 'services/file_watcher_service.dart';
 import 'services/ingest_client.dart';
 import 'services/profile_inject_service.dart';
+import 'services/skill_inject_service.dart';
 import 'services/ws_task_client.dart';
 
 class CollectorStatus {
@@ -59,6 +60,8 @@ class CollectorController {
   Timer? _profileSyncTimer;
   Map<String, String>? _lastProfileReport;
   bool _profileSyncing = false;
+  Map<String, String>? _lastSkillReport;
+  bool _skillSyncing = false;
 
   bool _isRunning = false;
   bool _isOnline = false;
@@ -149,8 +152,12 @@ class CollectorController {
 
     // 7. Resident profile: keep enabled tools' instruction files in step with
     //    the published profile, and clean up tools switched off in the app.
-    unawaited(_syncProfile());
-    _profileSyncTimer = Timer.periodic(profileSyncInterval, (_) => _syncProfile());
+    //    Published skills go into the same tools' skills folders.
+    unawaited(_syncProfile().then((_) => _syncSkills()));
+    _profileSyncTimer = Timer.periodic(profileSyncInterval, (_) async {
+      await _syncProfile();
+      await _syncSkills();
+    });
 
     _addLog('Memento Collector is running.');
   }
@@ -179,6 +186,34 @@ class CollectorController {
       _addLog('Profile sync skipped: $e');
     } finally {
       _profileSyncing = false;
+    }
+  }
+
+  Future<void> _syncSkills() async {
+    final client = _ingestClient;
+    if (client == null || _skillSyncing) return;
+    _skillSyncing = true;
+    try {
+      final data = await client.fetchSkillInjection();
+      if (data == null) return; // older server, or offline
+      final results = await applySkillInjection(
+        skills: ((data['skills'] as List?) ?? const [])
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList(),
+        targets: ((data['targets'] as List?) ?? const []).map((e) => e.toString()).toList(),
+      );
+      results.forEach((what, outcome) {
+        if (outcome != 'unchanged') _addLog('Skill $what: $outcome');
+      });
+      if (!_sameReport(results, _lastSkillReport)) {
+        await client.reportSkillInjection(results);
+        _lastSkillReport = results;
+      }
+    } catch (e) {
+      _addLog('Skill sync skipped: $e');
+    } finally {
+      _skillSyncing = false;
     }
   }
 

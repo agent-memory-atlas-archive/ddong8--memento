@@ -153,7 +153,7 @@ class _ShellScreenState extends ConsumerState<ShellScreen> with WidgetsBindingOb
       'activeIcon': Icons.important_devices,
     },
     {
-      'label': '工作总结',
+      'label': '日报待办',
       'icon': Icons.calendar_today_outlined,
       'activeIcon': Icons.calendar_today,
     },

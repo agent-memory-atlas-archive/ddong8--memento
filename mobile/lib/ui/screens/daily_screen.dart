@@ -6,6 +6,7 @@ import '../widgets/glass_card.dart';
 import '../widgets/app_markdown.dart';
 import '../widgets/aurora_shimmer.dart';
 import '../widgets/aurora_empty_state.dart';
+import '../widgets/todo_panel.dart';
 
 class DailyScreen extends StatefulWidget {
   const DailyScreen({super.key});
@@ -15,6 +16,7 @@ class DailyScreen extends StatefulWidget {
 }
 
 class _DailyScreenState extends State<DailyScreen> {
+  final _todos = GlobalKey<TodoPanelState>();
   bool _isLoading = true;
   List<DailyDate> _dates = [];
   String? _error;
@@ -82,7 +84,7 @@ class _DailyScreenState extends State<DailyScreen> {
                         width: 36,
                         height: 4,
                         decoration: BoxDecoration(
-                          color: AuroraColors.fg3.withOpacity(0.4),
+                          color: AuroraColors.fg3.withValues(alpha: 0.4),
                           borderRadius: BorderRadius.circular(2),
                         ),
                       ),
@@ -154,93 +156,83 @@ class _DailyScreenState extends State<DailyScreen> {
     );
   }
 
+  Future<void> _refresh() async {
+    await Future.wait([_loadDates(), _todos.currentState?.reload() ?? Future.value()]);
+  }
+
+  Widget _dateCard(DailyDate item) => Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        child: GlassCard(
+          padding: const EdgeInsets.all(16),
+          onTap: () => _showDailyDetail(item.date),
+          child: Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: AuroraColors.accentSoft,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.calendar_month, color: AuroraColors.accent, size: 22),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      item.date,
+                      style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AuroraColors.fg1),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '收录 ${item.documentCount} 条开发记录',
+                      style: const TextStyle(fontSize: 12, color: AuroraColors.fg3),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right, color: AuroraColors.fg3, size: 20),
+            ],
+          ),
+        ),
+      );
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('工作总结'),
+        title: const Text('日报与待办'),
       ),
       body: RefreshIndicator(
-        onRefresh: _loadDates,
+        onRefresh: _refresh,
         color: AuroraColors.accent,
-        child: _isLoading
-            ? const AuroraListSkeleton(count: 4)
-            : _error != null
-                ? Center(child: Text(_error!, style: const TextStyle(color: AuroraColors.danger)))
-                : _dates.isEmpty
-                    ? ListView(
-                        physics: const AlwaysScrollableScrollPhysics(),
-                        children: [
-                          const SizedBox(height: 48),
-                          AuroraEmptyState(
-                            icon: Icons.auto_stories_rounded,
-                            title: '暂无工作总结记录',
-                            description: '系统将在每日感知代码编写与提炼成果，晚间自动归纳并生成全量每日研发总结。',
-                            actionLabel: '刷新列表',
-                            onAction: _loadDates,
-                          ),
-                        ],
-                      )
-                    : ListView.builder(
-                        padding: const EdgeInsets.all(16),
-                        itemCount: _dates.length,
-                        itemBuilder: (context, index) {
-                          final item = _dates[index];
-                          return Container(
-                            margin: const EdgeInsets.only(bottom: 12),
-                            child: GlassCard(
-                              padding: const EdgeInsets.all(16),
-                              onTap: () => _showDailyDetail(item.date),
-                              child: Row(
-                                children: [
-                                  Container(
-                                    width: 40,
-                                    height: 40,
-                                    decoration: BoxDecoration(
-                                      color: AuroraColors.accentSoft,
-                                      borderRadius: BorderRadius.circular(10),
-                                    ),
-                                    child: const Icon(
-                                      Icons.calendar_month,
-                                      color: AuroraColors.accent,
-                                      size: 22,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 14),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          item.date,
-                                          style: const TextStyle(
-                                            fontSize: 15,
-                                            fontWeight: FontWeight.bold,
-                                            color: AuroraColors.fg1,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 4),
-                                        Text(
-                                          '收录 ${item.documentCount} 条开发记录',
-                                          style: const TextStyle(
-                                            fontSize: 12,
-                                            color: AuroraColors.fg3,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  const Icon(
-                                    Icons.chevron_right,
-                                    color: AuroraColors.fg3,
-                                    size: 20,
-                                  ),
-                                ],
-                              ),
-                            ),
-                          );
-                        },
-                      ),
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.all(16),
+          children: [
+            TodoPanel(key: _todos),
+            const SizedBox(height: 14),
+            if (_isLoading)
+              const SizedBox(height: 360, child: AuroraListSkeleton(count: 4))
+            else if (_error != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 32),
+                child: Center(child: Text(_error!, style: const TextStyle(color: AuroraColors.danger))),
+              )
+            else if (_dates.isEmpty)
+              AuroraEmptyState(
+                icon: Icons.auto_stories_rounded,
+                title: '暂无工作总结记录',
+                description: '系统将在每日感知代码编写与提炼成果，晚间自动归纳并生成全量每日研发总结。',
+                actionLabel: '刷新列表',
+                onAction: _loadDates,
+              )
+            else
+              for (final item in _dates) _dateCard(item),
+          ],
+        ),
       ),
     );
   }

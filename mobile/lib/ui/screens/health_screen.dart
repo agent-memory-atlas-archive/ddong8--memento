@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:dio/dio.dart';
@@ -48,6 +49,9 @@ const healthTopicStatusLabels = <String, String>{
   'dismissed': '已忽略',
 };
 
+/// A 0-1 ratio as a whole percent, or "—".
+String healthPercent(num? ratio) => ratio == null ? '—' : '${(ratio * 100).round()}%';
+
 String healthLatency(num? ms) {
   if (ms == null) return '—';
   return ms >= 1000 ? '${(ms / 1000).toStringAsFixed(1)} 秒' : '${ms.round()} 毫秒';
@@ -65,6 +69,38 @@ class _HealthScreenState extends State<HealthScreen> {
   Map<String, dynamic>? _data;
   String? _error;
   bool _allErrors = false;
+  Map<String, dynamic>? _evalJob;
+  Timer? _evalPoll;
+  bool _showMisses = false;
+
+  @override
+  void dispose() {
+    _evalPoll?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _runEval({bool rebuild = false}) async {
+    try {
+      final job = await _api.runEval(rebuild: rebuild);
+      setState(() => _evalJob = job);
+      _evalPoll?.cancel();
+      _evalPoll = Timer.periodic(const Duration(seconds: 5), (_) async {
+        try {
+          final evals = await _api.getEvals();
+          if (!mounted) return;
+          final job = evals['job'] as Map<String, dynamic>?;
+          setState(() => _evalJob = job);
+          if (job?['status'] != 'running') {
+            _evalPoll?.cancel();
+            _evalPoll = null;
+            await _load();
+          }
+        } catch (_) {}
+      });
+    } catch (e) {
+      if (mounted) setState(() => _error = '启动评测失败：${e is DioException ? (e.message ?? e.type.name) : e}');
+    }
+  }
 
   @override
   void initState() {
@@ -120,8 +156,16 @@ class _HealthScreenState extends State<HealthScreen> {
                     if (data != null) ...[
                       _buildStatus(data),
                       const SizedBox(height: 14),
+                      if (data['evolution'] is Map) ...[
+                        _buildEvolution((data['evolution'] as Map).cast<String, dynamic>()),
+                        const SizedBox(height: 14),
+                      ],
                       if (data['learning'] is Map) ...[
                         _buildLearning((data['learning'] as Map).cast<String, dynamic>()),
+                        const SizedBox(height: 14),
+                      ],
+                      if (data['evolution'] is Map && (data['evolution'] as Map)['eval'] is Map) ...[
+                        _buildEval(((data['evolution'] as Map)['eval'] as Map).cast<String, dynamic>()),
                         const SizedBox(height: 14),
                       ],
                       _buildAi((data['ai'] as Map).cast<String, dynamic>()),
@@ -312,6 +356,149 @@ class _HealthScreenState extends State<HealthScreen> {
         ],
       ),
     );
+  }
+
+  Widget _buildEvolution(Map<String, dynamic> evo) {
+    Map<String, dynamic> m(String k) => (evo[k] as Map?)?.cast<String, dynamic>() ?? const {};
+    final skills = m('skills');
+    final reviews = m('reviews');
+    final todos = m('todos');
+    final memory = m('memory');
+    final agent = (reviews['agent_tasks'] as Map?)?.cast<String, dynamic>() ?? const {};
+    final outcomes = (reviews['outcomes'] as Map?)?.cast<String, dynamic>() ?? const {};
+    final sessions = (reviews['sessions'] as num?)?.toInt() ?? 0;
+    final done = (outcomes['done'] as num?)?.toInt() ?? 0;
+    final repeats = (reviews['pitfall_repeats'] as num?)?.toInt() ?? 0;
+    final overdue = (todos['overdue'] as num?)?.toInt() ?? 0;
+    final reviewRun = evo['review_run'] as Map?;
+    final lifecycleRun = evo['lifecycle_run'] as Map?;
+    final reconciled = (lifecycleRun?['reconcile'] as Map?)?['superseded'];
+    final dormant = lifecycleRun?['dormant'];
+
+    return _section('自我进化', trailing: '最近 7 天', children: [
+      Row(children: [
+        _metric('已发布技能', '${skills['published'] ?? 0}'),
+        _metric('待确认技能', '${skills['draft'] ?? 0}',
+            color: (skills['draft'] as num? ?? 0) > 0 ? AuroraColors.accent : AuroraColors.fg1),
+        _metric('记下的坑', '${reviews['pitfalls_total'] ?? 0}'),
+        _metric('又踩老坑', '$repeats', color: repeats > 0 ? AuroraColors.danger : AuroraColors.fg1),
+      ]),
+      const SizedBox(height: 12),
+      Row(children: [
+        _metric('复盘会话', '$sessions'),
+        _metric('做成的', sessions == 0 ? '—' : '${(done * 100 / sessions).round()}%'),
+        _metric('Agent 成功率', healthPercent(agent['success_rate'] as num?)),
+        _metric('待办 · 逾期', '${todos['open'] ?? 0} · $overdue',
+            color: overdue > 0 ? AuroraColors.danger : AuroraColors.fg1),
+      ]),
+      const SizedBox(height: 8),
+      const Text(
+        '每晚复盘结束的会话：做成的流程变成技能，查明原因的失败记成坑，没做完的事进待办。'
+        '"又踩老坑"应该越来越少——不少说明 AI 动手前没查规矩（检查 MCP 是否接好）。',
+        style: TextStyle(fontSize: 12, color: AuroraColors.fg3, height: 1.5),
+      ),
+      _divider(),
+      _subhead('记忆新陈代谢'),
+      _row('生效中', '${memory['active'] ?? 0} 条',
+          sub: '7 天内被 AI 用到 ${memory['recalled_recent'] ?? 0} 条', subMono: false),
+      _row('沉睡', '${memory['dormant'] ?? 0} 条', sub: '60 天没被用到的自动总结，不再交给 AI，可在「准则」里唤醒', subMono: false),
+      _row('已取代', '${memory['superseded'] ?? 0} 条',
+          sub: '和新记忆重复或被新说法推翻；7 天内 ${memory['superseded_recent'] ?? 0} 条', subMono: false),
+      if (reviewRun != null || lifecycleRun != null) ...[
+        _divider(),
+        if (reviewRun != null)
+          _row('上次复盘', _time(reviewRun['at'] as String?),
+              sub: (reviewRun['sessions'] is Map && (reviewRun['sessions'] as Map)['error'] == null)
+                  ? '${(reviewRun['sessions'] as Map)['reviewed'] ?? 0} 个会话'
+                  : '出错：${(reviewRun['sessions'] as Map?)?['error'] ?? ''}',
+              subMono: false),
+        if (lifecycleRun != null)
+          _row('上次整理记忆', _time(lifecycleRun['at'] as String?),
+              sub: '取代 ${reconciled ?? 0} 条 · 转为沉睡 ${dormant is num ? dormant : 0} 条', subMono: false),
+      ],
+    ]);
+  }
+
+  Widget _buildEval(Map<String, dynamic> eval) {
+    final latest = (eval['latest'] as Map?)?.cast<String, dynamic>();
+    final trend = ((eval['trend'] as List?) ?? const []).cast<Map>();
+    final running = _evalJob?['status'] == 'running' || (eval['job'] as Map?)?['status'] == 'running';
+    final metrics = (latest?['metrics'] as Map?)?.cast<String, dynamic>() ?? const {};
+    Map<String, dynamic> ch(String k) => (metrics[k] as Map?)?.cast<String, dynamic>() ?? const {};
+    final hybrid = ch('hybrid');
+    final misses = ((metrics['misses'] as List?) ?? const []).cast<Map>();
+    final regression = eval['regression'] as Map?;
+    final jobError = _evalJob?['status'] == 'error' ? _evalJob!['error'] : null;
+
+    final buttons = Wrap(
+      alignment: WrapAlignment.end,
+      spacing: 8,
+      children: [
+        TextButton(
+          onPressed: running ? null : () => _runEval(rebuild: true),
+          child: const Text('重建评测集'),
+        ),
+        FilledButton.tonal(
+          onPressed: running ? null : () => _runEval(),
+          child: running
+              ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
+              : const Text('立即评测'),
+        ),
+      ],
+    );
+
+    return _section('检索评测', trailing: latest == null ? '每周一 04:40' : '评测集 v${latest['set_version']} · ${latest['cases']} 题',
+        children: [
+          if (latest == null) ...[
+            const Text(
+              '从你的资料里生成一套固定的问题，每周用问 AI 时同一套检索逻辑作答，看能不能找回正确的那篇。'
+              '改检索、换模型之后分数变化一目了然。第一次运行会先生成题目，需要几分钟。',
+              style: TextStyle(fontSize: 12.5, color: AuroraColors.fg3, height: 1.55),
+            ),
+          ] else ...[
+            Row(children: [
+              _metric('前 5 条命中', healthPercent(hybrid['hit5'] as num?),
+                  color: regression != null ? AuroraColors.danger : AuroraColors.fg1),
+              _metric('第 1 条就对', healthPercent(hybrid['hit1'] as num?)),
+              _metric('MRR', (hybrid['mrr'] as num?)?.toStringAsFixed(2) ?? '—'),
+              _metric('关键词 / 语义', '${healthPercent(ch('keyword')['hit5'] as num?)} / ${healthPercent(ch('semantic')['hit5'] as num?)}'),
+            ]),
+            const SizedBox(height: 8),
+            Text(
+              '上次评测 ${_time(latest['created_at'] as String?)}'
+              '${(metrics['semantic_unavailable'] as num? ?? 0) > 0 ? ' · ${metrics['semantic_unavailable']} 题向量服务没响应' : ''}'
+              '${eval['stale'] == true ? ' · 超过 10 天没评测' : ''}',
+              style: const TextStyle(fontSize: 12, color: AuroraColors.fg3),
+            ),
+            if (trend.length > 1) ...[
+              const SizedBox(height: 10),
+              _EvalTrend(trend: trend),
+            ],
+            if (misses.isNotEmpty) ...[
+              _divider(),
+              InkWell(
+                onTap: () => setState(() => _showMisses = !_showMisses),
+                child: Row(children: [
+                  Expanded(child: _subhead('没找回来的问题（${misses.length}）')),
+                  Icon(_showMisses ? Icons.expand_less_rounded : Icons.expand_more_rounded, size: 18, color: AuroraColors.fg3),
+                ]),
+              ),
+              if (_showMisses)
+                for (final miss in misses)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 3),
+                    child: Text('· ${miss['query']}', style: const TextStyle(fontSize: 12.5, color: AuroraColors.fg2)),
+                  ),
+            ],
+          ],
+          if (jobError != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text('评测出错：$jobError', style: const TextStyle(fontSize: 12, color: AuroraColors.danger)),
+            ),
+          const SizedBox(height: 8),
+          buttons,
+        ]);
   }
 
   Widget _buildLearning(Map<String, dynamic> learning) {
@@ -675,5 +862,44 @@ class _WeeklyRepeatBars extends StatelessWidget {
     if (end == null) return '';
     final start = end.subtract(const Duration(days: 7));
     return '${start.month}/${start.day}–${end.month}/${end.day}';
+  }
+}
+
+
+/// Hit@5 per evaluation run, oldest first; a new question set starts a new colour.
+class _EvalTrend extends StatelessWidget {
+  final List<Map> trend;
+
+  const _EvalTrend({required this.trend});
+
+  @override
+  Widget build(BuildContext context) {
+    final latestSet = trend.last['set_version'];
+    return SizedBox(
+      height: 56,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          for (final t in trend)
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 2),
+                child: Tooltip(
+                  message: 'v${t['set_version']} · ${healthPercent(t['hit5'] as num?)}',
+                  child: Container(
+                    height: 4 + 48 * ((t['hit5'] as num?)?.toDouble() ?? 0),
+                    decoration: BoxDecoration(
+                      color: t['set_version'] == latestSet
+                          ? AuroraColors.accent.withValues(alpha: 0.75)
+                          : AuroraColors.fg4.withValues(alpha: 0.5),
+                      borderRadius: BorderRadius.circular(3),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
   }
 }

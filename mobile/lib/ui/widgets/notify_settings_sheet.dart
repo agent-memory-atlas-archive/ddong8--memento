@@ -89,9 +89,13 @@ class _NotifySettingsSheetState extends State<_NotifySettingsSheet> {
         _show(url.isEmpty ? '已清除推送地址' : '已保存，可以点「发送测试通知」确认一下');
       });
 
-  Future<void> _toggle({bool? risky, bool? taskDone, bool? health, bool? learning}) => _run(() async {
+  Future<void> _toggle({bool? risky, bool? taskDone, bool? health, bool? learning, bool? todo}) => _run(() async {
         final s = await _api.saveNotifySettings(
-            notifyRisky: risky, notifyTaskDone: taskDone, notifyHealth: health, notifyLearning: learning);
+            notifyRisky: risky,
+            notifyTaskDone: taskDone,
+            notifyHealth: health,
+            notifyLearning: learning,
+            notifyTodo: todo);
         setState(() => _settings = s);
       });
 
@@ -193,8 +197,16 @@ class _NotifySettingsSheetState extends State<_NotifySettingsSheet> {
                 contentPadding: EdgeInsets.zero,
                 value: s['notify_learning'] != false,
                 onChanged: _busy ? null : (v) => _toggle(learning: v),
-                title: const Text('学到新规矩', style: TextStyle(fontSize: 14, color: AuroraColors.fg1)),
-                subtitle: const Text('你纠正 AI 后，Memento 学到新规矩等你确认时推送（1 小时内最多一条）',
+                title: const Text('学到新东西', style: TextStyle(fontSize: 14, color: AuroraColors.fg1)),
+                subtitle: const Text('学到新规矩（1 小时内最多一条），或夜间复盘总结出新技能、踩坑时推送',
+                    style: TextStyle(fontSize: 12, color: AuroraColors.fg3)),
+              ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                value: s['notify_todo'] != false,
+                onChanged: _busy ? null : (v) => _toggle(todo: v),
+                title: const Text('待办提醒', style: TextStyle(fontSize: 14, color: AuroraColors.fg1)),
+                subtitle: const Text('每天 9 点推送今天到期和已经逾期的待办',
                     style: TextStyle(fontSize: 12, color: AuroraColors.fg3)),
               ),
             ],
