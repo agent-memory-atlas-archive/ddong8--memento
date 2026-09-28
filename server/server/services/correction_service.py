@@ -228,6 +228,7 @@ async def learn_from_corrections(db: AsyncSession, user: User) -> dict[str, Any]
             UserMemory.user_id == user.id,
             UserMemory.category.in_(("preference", "rule", "rules")),
             UserMemory.is_folder.is_(False),
+            UserMemory.status == "active",
         ).order_by(UserMemory.updated_at.desc()).limit(KNOWN_LIMIT)
     )).scalars().all() if m.id not in linked]
 

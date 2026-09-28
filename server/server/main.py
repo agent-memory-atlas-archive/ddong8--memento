@@ -8,7 +8,7 @@ from collections.abc import AsyncGenerator
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .api import admin, ask, auth, conversations, daily, dashboard, data_io, devices, documents, events, health, hierarchy, ingest, install_bootstrap, learning, memory, notify, profile, projects, public, search, share, tools, updates
+from .api import admin, ask, auth, conversations, daily, dashboard, data_io, devices, documents, events, health, hierarchy, ingest, install_bootstrap, learning, memory, notify, profile, projects, public, search, share, skills, todos, tools, updates
 # Aliased: `server.api.tasks` (remote device task queue) is a different module
 # from the `server.tasks` package (Celery jobs). Importing it bare here would
 # read as the latter.
@@ -50,6 +50,8 @@ def _run_migrations(conn) -> None:
         conn.execute(text("ALTER TABLE machines ADD COLUMN profile_targets JSONB NOT NULL DEFAULT '[]'"))
     if "profile_status" not in machine_cols:
         conn.execute(text("ALTER TABLE machines ADD COLUMN profile_status JSONB NOT NULL DEFAULT '{}'"))
+    if "skill_status" not in machine_cols:
+        conn.execute(text("ALTER TABLE machines ADD COLUMN skill_status JSONB NOT NULL DEFAULT '{}'"))
 
     # User.collector_token
     user_cols = {c["name"] for c in insp.get_columns("users")}
@@ -234,6 +236,15 @@ def _run_migrations(conn) -> None:
         conn.execute(text("ALTER TABLE user_memories ADD COLUMN IF NOT EXISTS is_folder BOOLEAN DEFAULT FALSE"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_user_memory_parent ON user_memories (user_id, parent_id)"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_user_memory_tree_path ON user_memories (user_id, tree_path)"))
+    # Memory lifecycle. Outside the branch above: its CREATE TABLE predates these columns.
+    conn.execute(text("ALTER TABLE user_memories ADD COLUMN IF NOT EXISTS recall_count INTEGER NOT NULL DEFAULT 0"))
+    conn.execute(text("ALTER TABLE user_memories ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'active'"))
+    conn.execute(text("ALTER TABLE user_memories ADD COLUMN IF NOT EXISTS status_reason TEXT"))
+    conn.execute(text(
+        "ALTER TABLE user_memories ADD COLUMN IF NOT EXISTS superseded_by UUID "
+        "REFERENCES user_memories(id) ON DELETE SET NULL"
+    ))
+    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_user_memory_status ON user_memories (user_id, status)"))
 
     # Dream journals (DREAMS.md)
     if "dream_journals" not in tables:
@@ -402,6 +413,8 @@ app.include_router(profile.router)
 app.include_router(notify.router)
 app.include_router(health.router)
 app.include_router(learning.router)
+app.include_router(skills.router)
+app.include_router(todos.router)
 app.include_router(install_bootstrap.router)
 app.include_router(public.router)
 app.include_router(share.router)

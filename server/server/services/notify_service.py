@@ -113,7 +113,8 @@ async def notify_user(
 
     kind: "risky" (agent did something dangerous) | "task_done" (task finished
     while nobody was watching) | "health" (background AI jobs or nightly
-    dreaming are failing) | "learning" (new corrections waiting to be confirmed).
+    dreaming are failing) | "learning" (new corrections, skills or pitfalls learned) |
+    "todo" (todos due today or overdue).
     """
     if not user_id:
         return False
@@ -122,7 +123,9 @@ async def notify_user(
     prefs = (user.notify_settings or {}) if user else {}
     if not prefs.get("bark_url"):
         return False
-    toggle = {"risky": "notify_risky", "health": "notify_health", "learning": "notify_learning"}.get(kind, "notify_task_done")
+    toggle = {
+        "risky": "notify_risky", "health": "notify_health", "learning": "notify_learning", "todo": "notify_todo",
+    }.get(kind, "notify_task_done")
     if not prefs.get(toggle, True):
         return False
     level = "timeSensitive" if kind == "risky" else "active"

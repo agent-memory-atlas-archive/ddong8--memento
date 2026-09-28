@@ -20,6 +20,7 @@ class NotifySettingsBody(BaseModel):
     notify_task_done: bool | None = None
     notify_health: bool | None = None
     notify_learning: bool | None = None
+    notify_todo: bool | None = None
 
 
 def _settings_out(user: User) -> dict:
@@ -31,6 +32,7 @@ def _settings_out(user: User) -> dict:
         "notify_task_done": prefs.get("notify_task_done", True),
         "notify_health": prefs.get("notify_health", True),
         "notify_learning": prefs.get("notify_learning", True),
+        "notify_todo": prefs.get("notify_todo", True),
     }
 
 
@@ -65,6 +67,8 @@ async def update_settings(
         prefs["notify_health"] = body.notify_health
     if body.notify_learning is not None:
         prefs["notify_learning"] = body.notify_learning
+    if body.notify_todo is not None:
+        prefs["notify_todo"] = body.notify_todo
     user.notify_settings = prefs
     await db.commit()
     return _settings_out(user)

@@ -142,4 +142,35 @@ celery_app.conf.beat_schedule = {
         "task": "server.tasks.learning_tasks.learn_corrections",
         "schedule": crontab(minute="*/10"),
     },
+    # Every 10 min, offset from corrections — "later" talk becomes todos, "done" talk closes them.
+    "learn-todos": {
+        "task": "server.tasks.learning_tasks.learn_todos",
+        "schedule": crontab(minute="4,14,24,34,44,54"),
+    },
+    # 02:20 — review sessions that finished (skills, pitfalls, todos) before 03:00 dreaming.
+    "review-sessions": {
+        "task": "server.tasks.learning_tasks.review_sessions",
+        "schedule": crontab(hour=2, minute=20),
+    },
+    # 04:10 — after dreaming: merge duplicate memories, retire contradicted ones, let unused ones sleep.
+    "memory-lifecycle": {
+        "task": "server.tasks.learning_tasks.memory_lifecycle",
+        "schedule": crontab(hour=4, minute=10),
+    },
+    # 09:05 — push todos due today or overdue.
+    "remind-todos": {
+        "task": "server.tasks.learning_tasks.remind_todos",
+        "schedule": crontab(hour=9, minute=5),
+    },
+    # Daily 04:25 — full-text index for any document still without one. Commits per
+    # batch, so a big backlog is worked off over a few nights; a no-op once caught up.
+    "tsvector-backfill": {
+        "task": "server.tasks.tsvector_backfill.backfill_content_tsv",
+        "schedule": crontab(hour=4, minute=25),
+    },
+    # Monday 04:40 — score retrieval against the frozen question set.
+    "evaluate-retrieval": {
+        "task": "server.tasks.learning_tasks.evaluate_retrieval",
+        "schedule": crontab(hour=4, minute=40, day_of_week=1),
+    },
 }

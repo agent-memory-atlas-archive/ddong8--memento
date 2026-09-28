@@ -115,7 +115,105 @@ TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_memory",
+            "description": "在用户同步到服务端的历史资料（各 AI 工具的对话、笔记、计划）里检索。回答依赖过去的决定、配置、排障经过时先查。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "自然语言检索词"},
+                    "days": {"type": "integer", "description": "只查最近 N 天，可选"},
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "check_rules",
+            "description": "关键操作（部署、发版、数据库迁移、删除/改数据、git push、改配置、重启服务）之前调用：返回用户的铁律、以前在这类操作上踩过的坑、可以直接照做的技能。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "description": "要做的操作，如 deploy / release / db_migration / 删除数据"},
+                    "project": {"type": "string", "description": "项目名，可选"},
+                    "detail": {"type": "string", "description": "具体要做什么，可选，用于匹配相关的坑"},
+                },
+                "required": ["action"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "use_skill",
+            "description": "取出一个已发布技能的完整步骤（技能是用户环境里验证过的做法）。名称见系统提示里的技能列表，也可以用描述去匹配。",
+            "parameters": {
+                "type": "object",
+                "properties": {"name": {"type": "string", "description": "技能名（slug）或要做的事"}},
+                "required": ["name"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "remember_pitfall",
+            "description": "操作失败、查明了原因并解决之后，把这个坑记下来，以后同类操作前会提醒。没查明原因的不要记。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string", "description": "一句话概括"},
+                    "symptom": {"type": "string", "description": "报错或现象，保留关键原文"},
+                    "cause": {"type": "string", "description": "根因"},
+                    "fix": {"type": "string", "description": "怎么解决的"},
+                    "project": {"type": "string", "description": "项目名，可选"},
+                },
+                "required": ["title", "symptom", "fix"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "add_todo",
+            "description": "把用户说以后再做、要记下来的事记成待办（到期会推送提醒）。当前就要做的事不要记。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string", "description": "动宾短语，说清做什么"},
+                    "detail": {"type": "string"},
+                    "due": {"type": "string", "description": "截止日期 YYYY-MM-DD，可选"},
+                    "project": {"type": "string"},
+                },
+                "required": ["title"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_todos",
+            "description": "列出用户还没做完的待办。",
+            "parameters": {
+                "type": "object",
+                "properties": {"project": {"type": "string", "description": "只看某个项目，可选"}},
+            },
+        },
+    },
 ]
+
+MEMORY_TOOLS = {"search_memory", "check_rules", "use_skill", "remember_pitfall", "add_todo", "list_todos"}
+
+ORCHESTRATOR_MEMORY = """【记忆工具】（不需要设备，随时可用）
+- search_memory：答案依赖用户过去的决定、配置、排障经过时，先检索历史资料。
+- check_rules：部署、发版、数据库迁移、删除或改数据、git push、改配置、重启服务之前必须先调用，照着返回的铁律和踩坑提醒做。
+- use_skill：下面「可用技能」里有对应做法时，先取出技能按步骤执行，不要自己重新摸索。
+- remember_pitfall：操作失败、查明原因并解决后记下来。
+- add_todo / list_todos：用户说"以后再弄 / 记一下 / 明天做"时记成待办；问还有什么没做时查待办。"""
 
 def normalize_device_name(name: str | None) -> str:
     """Strip platform suffixes like ' (Darwin)', ' (Windows)', ' (Linux)'."""
@@ -698,7 +796,83 @@ async def _load_alerts(task_id: str) -> list:
         return []
 
 
+async def _tool_memory(db: AsyncSession, user: User, name: str, args: dict) -> dict:
+    """The memory tools: plain reads and writes, no device involved."""
+    from .guidance_service import guidance_for, render_guidance, score, terms_for
+    from .retrospective_service import save_pitfall
+    from .skill_service import render_skill_md
+    from .todo_service import add_todo, open_todos, parse_due, todo_out
+
+    if name == "search_memory":
+        from ..api.ask import _retrieve
+
+        query = str(args.get("query") or "").strip()
+        if not query:
+            return {"error": "query is required"}
+        days = args.get("days")
+        sources = await _retrieve(db, user, query, None, int(days) if isinstance(days, (int, float)) and days > 0 else None)
+        return {"results": [
+            {"title": s["title"], "tool": s["tool_id"], "path": s["relative_path"], "synced_at": s["synced_at"],
+             "excerpt": (s["excerpt"] or "")[:700]}
+            for s in sources[:5]
+        ]}
+    if name == "check_rules":
+        g = await guidance_for(db, user, str(args.get("action") or ""), args.get("project"), args.get("detail"))
+        return {"guidance": render_guidance(g)}
+    if name == "use_skill":
+        from ..db.models import Skill
+
+        wanted = str(args.get("name") or "").strip().lower()
+        skills = (await db.execute(
+            select(Skill).where(Skill.user_id == user.id, Skill.status == "published")
+        )).scalars().all()
+        exact = next((s for s in skills if s.slug == wanted), None)
+        if exact is None:
+            terms = terms_for(wanted)
+            ranked = sorted(skills, key=lambda s: score(f"{s.slug} {s.title} {s.description}", terms), reverse=True)
+            exact = ranked[0] if ranked and score(f"{ranked[0].slug} {ranked[0].title} {ranked[0].description}", terms) else None
+        if exact is None:
+            return {"error": "没有匹配的技能", "available": [s.slug for s in skills]}
+        return {"skill": render_skill_md(exact)}
+    if name == "remember_pitfall":
+        mem = await save_pitfall(db, user, args, None, "agent")
+        await db.commit()
+        return {"saved": bool(mem), "note": None if mem else "信息不全或已经记过"}
+    if name == "add_todo":
+        try:
+            todo, created = await add_todo(
+                db, user, str(args.get("title") or ""), detail=args.get("detail"), project=args.get("project"),
+                due_at=parse_due(args.get("due")), source="agent",
+            )
+        except ValueError as e:
+            return {"error": str(e)}
+        await db.commit()
+        return {"todo": todo_out(todo), "created": created}
+    if name == "list_todos":
+        todos = await open_todos(db, user)
+        project = str(args.get("project") or "").lower()
+        if project:
+            todos = [t for t in todos if project in (t.project or "").lower()]
+        return {"todos": [todo_out(t) for t in todos[:30]]}
+    return {"error": f"unknown tool: {name}"}
+
+
+async def agent_memory_prompt(db: AsyncSession, user: User) -> str:
+    """The memory-tool rules plus the published skills the agent can pull."""
+    from ..db.models import Skill
+
+    skills = (await db.execute(
+        select(Skill).where(Skill.user_id == user.id, Skill.status == "published")
+        .order_by(Skill.last_seen_at.desc().nulls_last()).limit(20)
+    )).scalars().all()
+    listing = "\n".join(f"- {s.slug}：{s.description[:150]}" for s in skills) or "（还没有）"
+    return f"{ORCHESTRATOR_MEMORY}\n\n【可用技能】\n{listing}"
+
+
 async def _dispatch_tool(db: AsyncSession, user: User, name: str, args: dict):
+    if name in MEMORY_TOOLS:
+        yield {"type": "tool_result", "name": name, "result": await _tool_memory(db, user, name, args)}
+        return
     if name == "list_devices":
         res = await _tool_list_devices(db, user)
         yield {"type": "tool_result", "name": name, "result": res}

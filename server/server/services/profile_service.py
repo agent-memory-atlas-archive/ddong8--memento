@@ -141,6 +141,7 @@ async def _profile_memories(db: AsyncSession, user: User) -> list[UserMemory]:
             UserMemory.user_id == user.id,
             UserMemory.category.in_(("preference", "rule", "rules")),
             UserMemory.is_folder.is_(False),
+            UserMemory.status == "active",
         )
         .order_by(UserMemory.updated_at.desc())
         .limit(120)

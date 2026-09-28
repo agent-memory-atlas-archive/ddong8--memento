@@ -51,7 +51,7 @@ async def _run() -> dict:
 
 @celery_app.task(
     name="server.tasks.tsvector_backfill.backfill_content_tsv",
-    acks_late=True,
+    acks_late=True, time_limit=1800, soft_time_limit=1700,
 )
 def backfill_content_tsv() -> dict:
     try:

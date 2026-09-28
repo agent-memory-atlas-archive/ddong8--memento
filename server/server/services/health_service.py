@@ -16,6 +16,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..db.models import Document, DreamJournal, Machine, User, UserProfile
 from . import ai_health
 from .correction_service import correction_stats
+from .eval_service import eval_summary
+from .memory_lifecycle import lifecycle_counts
+from .retrospective_service import review_stats
+from .skill_service import skill_counts
+from .todo_service import todo_counts
 
 ONLINE_WINDOW = timedelta(seconds=180)  # same as the profile page
 DREAM_STALE = timedelta(hours=30)  # nightly at 03:00, plus slack
@@ -41,6 +46,7 @@ def assess(
     pipeline: dict[str, Any],
     now: datetime,
     learning: dict[str, Any] | None = None,
+    evolution: dict[str, Any] | None = None,
 ) -> list[dict[str, str]]:
     """Problems worth showing, most severe first. Each: {level, area, text}."""
     issues: list[dict[str, str]] = []
@@ -80,6 +86,23 @@ def assess(
     if learning and learning.get("learned_repeat_7d", 0) >= 2:
         add("warn", "learning", f"最近 7 天有 {learning['learned_repeat_7d']} 次纠正的是已经学会的规矩，"
                                 "说明它没传到 AI 那里（画像没发布，或设备没开启写入）")
+
+    if evolution:
+        run = evolution.get("review_run") or {}
+        for part, label in (("sessions", "会话复盘"), ("tasks", "任务失败复盘")):
+            err = (run.get(part) or {}).get("error") if isinstance(run.get(part), dict) else None
+            if err:
+                add("warn", "evolution", f"上次{label}出错：{err[:120]}")
+        reviews = evolution.get("reviews") or {}
+        if reviews.get("pitfall_repeats", 0) >= 3:
+            add("warn", "evolution", f"最近 7 天有 {reviews['pitfall_repeats']} 次又踩了已经记下的坑，"
+                                     "AI 可能没在动手前查规矩（检查 MCP 是否接好）")
+        drop = (evolution.get("eval") or {}).get("regression")
+        if drop:
+            add("warn", "eval", f"检索变差：评测集 v{drop['set_version']} 前 5 命中率从 {drop['was']:.0%} 降到 {drop['now']:.0%}")
+        todos = evolution.get("todos") or {}
+        if todos.get("overdue", 0) >= 5:
+            add("warn", "todo", f"{todos['overdue']} 条待办已经逾期")
 
     if pipeline["knowledge_failed"] >= BACKLOG_WARN:
         add("warn", "pipeline", f"{pipeline['knowledge_failed']} 篇文档知识图谱抽取失败，等待重试")
@@ -173,7 +196,8 @@ async def build_overview(db: AsyncSession, user: User) -> dict[str, Any]:
     pipeline = await _pipeline(db, user)
     devices = await _devices(db, user, now)
     learning = await correction_stats(db, user)
-    issues = assess(ai, last_hour, dreaming, profile, pipeline, now, learning)
+    evolution = await _evolution(db, user)
+    issues = assess(ai, last_hour, dreaming, profile, pipeline, now, learning, evolution)
     level = "error" if any(i["level"] == "error" for i in issues) else ("warn" if issues else "ok")
     return {
         "generated_at": now.isoformat(),
@@ -185,4 +209,18 @@ async def build_overview(db: AsyncSession, user: User) -> dict[str, Any]:
         "pipeline": pipeline,
         "devices": devices,
         "learning": learning,
+        "evolution": evolution,
+    }
+
+
+async def _evolution(db: AsyncSession, user: User) -> dict[str, Any]:
+    """Is Memento getting better at working with the user? Skills, pitfalls, todos, memory upkeep, retrieval."""
+    return {
+        "skills": await skill_counts(db, user),
+        "reviews": await review_stats(db, user),
+        "todos": await todo_counts(db, user),
+        "memory": await lifecycle_counts(db, user),
+        "eval": await eval_summary(db, user),
+        "review_run": await ai_health.get_json(f"review_run:{user.id}"),
+        "lifecycle_run": await ai_health.get_json(f"lifecycle_run:{user.id}"),
     }

@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,6 +17,7 @@ from ..db.models import (
 )
 from ..db.session import get_db
 from ..middleware.auth import get_current_user
+from ..services.memory_lifecycle import touch_recalled
 from ..services.user_filter import user_machine_ids
 
 router = APIRouter(prefix="/api/memory", tags=["memory"])
@@ -611,15 +613,23 @@ class CoreMemoryUpdate(BaseModel):
 @router.get("/core")
 async def get_core_memories(
     category: str | None = None,
+    active_only: bool = False,
+    recall: bool = False,
     db: AsyncSession = Depends(get_db),
     _user: User = Depends(get_current_user),
 ) -> list[dict]:
-    """List current user's core memories (L3)."""
+    """List current user's core memories (L3).
+
+    active_only: leave out dormant and superseded ones (what an AI should see).
+    recall: the caller is handing these to an AI — count it as a use.
+    """
     stmt = (
         select(UserMemory)
         .where(UserMemory.user_id == _user.id)
         .order_by(UserMemory.is_folder.desc(), UserMemory.category, UserMemory.updated_at.desc())
     )
+    if active_only:
+        stmt = stmt.where(UserMemory.status == "active")
     if category:
         if category in ("rule", "rules"):
             stmt = stmt.where(UserMemory.category.in_(["rule", "rules"]))
@@ -630,6 +640,8 @@ async def get_core_memories(
 
     res = await db.execute(stmt)
     memories = res.scalars().all()
+    if recall:
+        await touch_recalled(m.id for m in memories if not m.is_folder)
     return [
         {
             "id": str(m.id),
@@ -641,11 +653,34 @@ async def get_core_memories(
             "source": m.source,
             "tree_path": m.tree_path or f"/{m.category}/{m.key}",
             "is_folder": m.is_folder,
+            "status": m.status,
+            "status_reason": m.status_reason,
+            "superseded_by": str(m.superseded_by) if m.superseded_by else None,
+            "recall_count": m.recall_count,
+            "last_recalled_at": m.last_recalled_at.isoformat() if m.last_recalled_at else None,
             "created_at": m.created_at.isoformat() if m.created_at else None,
             "updated_at": m.updated_at.isoformat() if m.updated_at else None,
         }
         for m in memories
     ]
+
+
+@router.post("/core/{memory_id}/revive")
+async def revive_core_memory(
+    memory_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(get_current_user),
+) -> dict:
+    """Put a dormant or superseded memory back in force."""
+    mem = (await db.execute(
+        select(UserMemory).where(UserMemory.id == memory_id, UserMemory.user_id == _user.id)
+    )).scalar_one_or_none()
+    if not mem:
+        raise HTTPException(status_code=404, detail="not found")
+    mem.status, mem.status_reason, mem.superseded_by = "active", None, None
+    mem.last_recalled_at = datetime.now(timezone.utc)
+    await db.commit()
+    return {"status": "active", "id": str(mem.id)}
 
 
 @router.get("/core/tree")
@@ -745,6 +780,9 @@ async def get_core_memory_tree(
                 "source": m.source,
                 "tree_path": path,
                 "is_folder": False,
+                "status": m.status,
+                "status_reason": m.status_reason,
+                "recall_count": m.recall_count,
                 "created_at": m.created_at.isoformat() if m.created_at else None,
                 "updated_at": m.updated_at.isoformat() if m.updated_at else None,
                 "children": [],

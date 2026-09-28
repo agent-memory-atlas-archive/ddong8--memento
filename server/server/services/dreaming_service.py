@@ -1084,7 +1084,7 @@ async def run_dreaming_pipeline(
     # Fetch existing core memories to prevent redundant generation
     existing_mem_res = await db.execute(
         select(UserMemory)
-        .where(UserMemory.user_id == user.id)
+        .where(UserMemory.user_id == user.id, UserMemory.status == "active")
         .order_by(UserMemory.category, UserMemory.updated_at.desc())
     )
     existing_mems = existing_mem_res.scalars().all()
@@ -1170,6 +1170,12 @@ async def run_dreaming_pipeline(
                 # A nightly guess never overrides what the user wrote or edited by hand.
                 promoted_details.append(f"- ⏸️ 保留手写【{existing.tree_path or tree_path}】，未采纳梦境改写: {content}")
                 continue
+            if existing.status == "superseded":
+                # Replaced by something newer; bringing it back every night would just flap.
+                promoted_details.append(f"- ⏸️ 【{existing.tree_path or tree_path}】已被新的记忆取代，不再恢复")
+                continue
+            if existing.status == "dormant":
+                existing.status, existing.status_reason = "active", None
             existing.content = content
             existing.confidence = max(existing.confidence, confidence)
             existing.source = "dreaming"
@@ -1330,7 +1336,7 @@ async def export_core_memory_markdown(db: AsyncSession, user: User) -> str:
     """Render the user's UserMemory items into a unified MEMORY.md file."""
     res = await db.execute(
         select(UserMemory)
-        .where(UserMemory.user_id == user.id)
+        .where(UserMemory.user_id == user.id, UserMemory.status == "active")
         .order_by(UserMemory.category, UserMemory.key)
     )
     memories = res.scalars().all()
@@ -1797,8 +1803,10 @@ async def bootstrap_memories_from_knowledge_graph(
         )).scalar_one_or_none()
 
         if existing:
-            if existing.source == "manual":
+            if existing.source == "manual" or existing.status == "superseded":
                 continue
+            if existing.status == "dormant":
+                existing.status, existing.status_reason = "active", None
             existing.content = content
             existing.confidence = max(existing.confidence, confidence)
             existing.source = "bootstrap"

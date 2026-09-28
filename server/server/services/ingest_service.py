@@ -885,6 +885,11 @@ async def ingest_file(
         )
         db.add(version)
 
+    # A new document gets its id (a Python-side default) and its row only at
+    # flush; the UPDATE below matched nothing for new documents before this,
+    # leaving every once-synced document out of full-text search.
+    await db.flush()
+
     # Refresh the content_tsv full-text index from the current (possibly
     # delta-appended) content + title. Runs inside the ingest transaction
     # via a bound SQL expression so the tokenized string is passed as a
@@ -896,6 +901,7 @@ async def ingest_file(
         _update(Document)
         .where(Document.id == doc.id)
         .values(content_tsv=_func.to_tsvector("simple", tsv_input))
+        .execution_options(synchronize_session=False)
     )
 
     await db.flush()

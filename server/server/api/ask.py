@@ -35,6 +35,7 @@ from ..middleware.auth import get_current_user
 from ..services.user_filter import user_machine_ids, apply_user_filter, find_machine_by_id_or_hash
 from ..services.ai_provider import get_ai_providers, stream_chat_completion
 from ..services.ask_runs import RunConflict, ask_runs
+from ..services.memory_lifecycle import touch_recalled
 from .search import _semantic_doc_ranks, RRF_K
 
 logger = logging.getLogger("server.ask")
@@ -100,19 +101,26 @@ class AskRequest(BaseModel):
     attachments: list[dict] | None = None
 
 
-async def _retrieve(
-    db: AsyncSession, user: User, q: str, tool: str | None, days: int | None
-) -> list[dict]:
-    """Hybrid retrieval — the same keyword+vector RRF fusion as /api/search."""
-    from ..services.tokenize import tokenize_for_query
+async def hybrid_rank(
+    db: AsyncSession, user: User, q: str, tool: str | None, days: int | None, k: int = TOP_K,
+) -> tuple[list[Document], list[uuid.UUID], list[uuid.UUID], dict]:
+    """Documents for `q`, best first, plus each channel's own order (keyword, semantic)
+    and the semantically matched snippets. The retrieval evaluation scores exactly this."""
+    from ..services.tokenize import tokenize_for_query_any
 
     mids = await user_machine_ids(db, user)
-    tsquery = tokenize_for_query(q)
+    # Questions are natural language: any content word may match, best matches first.
+    # (All-words-must-match with newest-first order returned nothing useful for real
+    # questions; see the retrieval evaluation.)
+    tsquery = tokenize_for_query_any(q)
     term = f"%{q}%"
 
     conds = [Document.title.ilike(term), Document.relative_path.ilike(term)]
+    rank = None
     if tsquery:
-        conds.append(Document.content_tsv.op("@@")(func.to_tsquery("simple", tsquery)))
+        ts = func.to_tsquery("simple", tsquery)
+        conds.append(Document.content_tsv.op("@@")(ts))
+        rank = func.ts_rank(Document.content_tsv, ts, 1)
 
     kw_q = select(Document).where(or_(*conds))
     if tool:
@@ -124,12 +132,13 @@ async def _retrieve(
             Document.synced_at >= datetime.now(timezone.utc) - timedelta(days=days)
         )
     kw_q = apply_user_filter(kw_q, mids, Document.machine_id)
+    order = (rank.desc(), Document.synced_at.desc()) if rank is not None else (Document.synced_at.desc(),)
     kw_docs = (
-        await db.execute(kw_q.order_by(Document.synced_at.desc()).limit(TOP_K))
+        await db.execute(kw_q.order_by(*order).limit(k))
     ).scalars().all()
 
     sem_order, sem_snippets = await _semantic_doc_ranks(
-        db, q, mids, tool, None, days, want=TOP_K
+        db, q, mids, tool, None, days, want=k
     )
 
     kw_rank = {d.id: i for i, d in enumerate(kw_docs)}
@@ -151,7 +160,14 @@ async def _retrieve(
         return score
 
     docs.sort(key=rrf, reverse=True)
+    return docs[:k], [d.id for d in kw_docs], list(sem_order), sem_snippets
 
+
+async def _retrieve(
+    db: AsyncSession, user: User, q: str, tool: str | None, days: int | None
+) -> list[dict]:
+    """Hybrid retrieval — the same keyword+vector RRF fusion as /api/search."""
+    docs, _, _, sem_snippets = await hybrid_rank(db, user, q, tool, days)
     sources = []
     for d in docs[:TOP_K]:
         # Prefer the semantically-matched chunk — it is the passage that
@@ -225,6 +241,7 @@ async def _retrieve_core_memories(
             .where(
                 UserMemory.user_id == user.id,
                 UserMemory.is_folder.is_(False),
+                UserMemory.status == "active",
                 or_(
                     UserMemory.tree_path.ilike(f"%{slug_clean}%"),
                     UserMemory.key.ilike(f"%{slug_clean}%"),
@@ -243,6 +260,7 @@ async def _retrieve_core_memories(
         .where(
             UserMemory.user_id == user.id,
             UserMemory.is_folder.is_(False),
+            UserMemory.status == "active",
             UserMemory.category.in_(["rule", "rules", "preference", "general"]),
         )
         .order_by(UserMemory.confidence.desc(), UserMemory.updated_at.desc())
@@ -261,6 +279,7 @@ async def _retrieve_core_memories(
                 .where(
                     UserMemory.user_id == user.id,
                     UserMemory.is_folder.is_(False),
+                    UserMemory.status == "active",
                     or_(*kw_conds),
                 )
                 .order_by(UserMemory.confidence.desc(), UserMemory.updated_at.desc())
@@ -277,6 +296,7 @@ async def _retrieve_core_memories(
             .where(
                 UserMemory.user_id == user.id,
                 UserMemory.is_folder.is_(False),
+                UserMemory.status == "active",
             )
             .order_by(UserMemory.confidence.desc(), UserMemory.updated_at.desc())
             .limit(remain + 5)
@@ -286,7 +306,9 @@ async def _retrieve_core_memories(
                 break
             _add_mem(m)
 
-    return collected[:limit]
+    chosen = collected[:limit]
+    await touch_recalled(m.id for m in chosen)
+    return chosen
 
 
 ACTION_VERBS = (
@@ -1254,9 +1276,9 @@ async def ask(
     # synced memory isn't enough, or when a device was explicitly selected.
     # Opt-in per request — plain asks stay a single-shot RAG call with no ability to touch any machine.
     if is_agent:
-        from ..services.orchestrator import ORCHESTRATOR_SYSTEM, run_agent_loop
+        from ..services.orchestrator import ORCHESTRATOR_SYSTEM, agent_memory_prompt, run_agent_loop
 
-        system_content = ORCHESTRATOR_SYSTEM
+        system_content = ORCHESTRATOR_SYSTEM + "\n\n" + await agent_memory_prompt(db, _user)
         if core_mems:
             core_snippets = "\n".join(
                 f"- [{m.category}/{m.key}]: {m.content}" for m in core_mems

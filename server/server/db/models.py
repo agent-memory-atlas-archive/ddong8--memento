@@ -47,6 +47,8 @@ class Machine(Base):
     # the collector last reported writing.
     profile_targets: Mapped[list] = mapped_column(JSONB, default=list, server_default="[]")
     profile_status: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}")
+    # What the collector last reported writing into the tools' skills folders.
+    skill_status: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}")
 
     user: Mapped["User | None"] = relationship()
     documents: Mapped[list[Document]] = relationship(back_populates="machine")
@@ -572,11 +574,19 @@ class UserMemory(Base):
     tree_path: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     is_folder: Mapped[bool] = mapped_column(Boolean, default=False)
     last_recalled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    recall_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    # active | dormant (unused for a long time, kept out of retrieval) | superseded
+    # (a newer memory says the same or the opposite). Never deleted, for audit.
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="active", server_default="active")
+    status_reason: Mapped[str | None] = mapped_column(Text)
+    superseded_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("user_memories.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     user: Mapped["User"] = relationship()
-    parent: Mapped["UserMemory | None"] = relationship("UserMemory", remote_side=[id], backref="children")
+    parent: Mapped["UserMemory | None"] = relationship(
+        "UserMemory", remote_side=[id], backref="children", foreign_keys=[parent_id],
+    )
 
     __table_args__ = (
         UniqueConstraint("user_id", "category", "key", name="uq_user_memory_key"),
@@ -691,3 +701,128 @@ class CorrectionEvent(Base):
         UniqueConstraint("user_id", "fingerprint", name="uq_correction_event_fingerprint"),
         Index("idx_correction_event_user_said", "user_id", "said_at"),
     )
+
+
+# ---------------------------------------------------------------------------
+# Session reviews — what each finished session taught (skills, pitfalls, todos)
+# ---------------------------------------------------------------------------
+class SessionReview(Base):
+    """One nightly look back at a session. A session that grew a lot since its
+    review (resumed later) is reviewed again."""
+
+    __tablename__ = "session_reviews"
+
+    document_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("documents.id", ondelete="CASCADE"), primary_key=True,
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    message_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    outcome: Mapped[str] = mapped_column(String(20), nullable=False, default="unknown")  # done | partial | failed | chat | error
+    summary: Mapped[str | None] = mapped_column(Text)
+    # {"skill": slug | None, "pitfalls_new": n, "pitfalls_seen": [memory ids], "todos_new": n, "todos_done": n}
+    result: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}")
+    reviewed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (Index("idx_session_review_user_at", "user_id", "reviewed_at"),)
+
+
+# ---------------------------------------------------------------------------
+# Skills — procedures learned from sessions, shipped to AI tools as SKILL.md
+# ---------------------------------------------------------------------------
+class Skill(Base):
+    """A procedure that got something done in the user's own environment.
+
+    Mined from sessions as a draft; nothing reaches any AI tool until the user
+    publishes it. A later session doing the same thing again adds evidence, and
+    if it changes the steps of a published skill the change waits in
+    pending_update instead of silently rewriting what the user approved.
+    """
+
+    __tablename__ = "skills"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    slug: Mapped[str] = mapped_column(String(64), nullable=False)  # directory and `name:`; a-z 0-9 -
+    title: Mapped[str] = mapped_column(String(120), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)  # when to use it — what the AI matches on
+    body: Mapped[str] = mapped_column(Text, nullable=False)  # markdown steps
+    project: Mapped[str | None] = mapped_column(String(120))
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="draft")  # draft | published | dismissed | retired
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=0)  # bumped on every publish
+    pending_update: Mapped[dict | None] = mapped_column(JSONB)  # {"description", "body", "reason", "at"}
+    evidence: Mapped[list] = mapped_column(JSONB, default=list, server_default="[]")  # [{"doc_id", "title", "tool_id", "at"}]
+    times_seen: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    edited_by_user: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    first_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "slug", name="uq_skill_user_slug"),
+        Index("idx_skill_user_status", "user_id", "status"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Todos — things the user said they'd do later, and whether they got done
+# ---------------------------------------------------------------------------
+class Todo(Base):
+    __tablename__ = "todos"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    detail: Mapped[str | None] = mapped_column(Text)
+    project: Mapped[str | None] = mapped_column(String(120))
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="open")  # open | done | dropped
+    due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    source: Mapped[str] = mapped_column(String(20), nullable=False, default="manual")  # voice | session | manual | mcp | agent
+    evidence: Mapped[str | None] = mapped_column(Text)  # the words it came from
+    source_doc_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("documents.id", ondelete="SET NULL"))
+    # sha1 of the normalized title: the same todo said twice stays one row.
+    fingerprint: Mapped[str] = mapped_column(String(40), nullable=False)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    close_evidence: Mapped[str | None] = mapped_column(Text)
+    reminded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        Index("idx_todo_user_status", "user_id", "status", "due_at"),
+        Index("idx_todo_user_fingerprint", "user_id", "fingerprint"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Retrieval evaluation — a frozen question set per version, and each run's scores
+# ---------------------------------------------------------------------------
+class EvalCase(Base):
+    __tablename__ = "eval_cases"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    set_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    query: Mapped[str] = mapped_column(Text, nullable=False)
+    expected_doc_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("documents.id", ondelete="CASCADE"), nullable=False)
+    kind: Mapped[str] = mapped_column(String(20), nullable=False, default="synthetic")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (Index("idx_eval_case_user_set", "user_id", "set_version"),)
+
+
+class EvalRun(Base):
+    __tablename__ = "eval_runs"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    set_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    cases: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # {"hybrid": {"hit1", "hit5", "hit10", "mrr"}, "keyword": {...}, "semantic": {...}}
+    metrics: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}")
+    config: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}")
+    trigger: Mapped[str] = mapped_column(String(20), nullable=False, default="scheduled")  # scheduled | manual
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (Index("idx_eval_run_user_at", "user_id", "created_at"),)
