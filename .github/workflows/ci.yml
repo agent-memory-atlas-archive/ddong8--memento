@@ -79,7 +79,7 @@ jobs:
         run: twine check dist/*
 
   web:
-    name: ts · core + daemon + desktop + web
+    name: ts · core + daemon + mcp + desktop + web
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -106,9 +106,15 @@ jobs:
           npm run typecheck -w @memento/daemon
           npm run test -w @memento/daemon
 
+      - name: mcp · typecheck & test
+        run: |
+          npm run typecheck -w @memento/mcp
+          npm run test -w @memento/mcp
+
       - name: desktop · typecheck & bundle
         run: |
           npm run build -w @memento/daemon
+          npm run build -w @memento/mcp
           npm run typecheck -w @memento/desktop
           node apps/desktop/scripts/build.mjs
 

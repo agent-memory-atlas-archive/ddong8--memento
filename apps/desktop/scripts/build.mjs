@@ -38,5 +38,14 @@ await build({
   banner: { js: "import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);" },
 });
 
+// The MCP server AI tools start (see src/mcp-entry.ts).
+await build({
+  ...common,
+  entryPoints: [join(root, "src/mcp-entry.ts")],
+  outfile: join(dist, "mcp.mjs"),
+  format: "esm",
+  banner: { js: "import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);" },
+});
+
 cpSync(join(root, "../../packages/daemon/assets"), join(root, "assets"), { recursive: true });
 cpSync(join(root, "static"), join(dist, "static"), { recursive: true });

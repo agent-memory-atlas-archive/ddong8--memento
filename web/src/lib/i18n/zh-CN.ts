@@ -998,6 +998,13 @@ const zhCN = {
   },
 
   collector: {
+    mcpTitle: "给 AI 工具接上记忆（MCP）",
+    mcpHint: "桌面端自带 Memento 的 MCP 服务，用这台设备的登录状态访问你的记忆、规矩、技能和待办。复制下面对应的配置即可；已经配过旧版（Python）的可以直接替换。",
+    mcpClaude: "Claude Code（在终端运行）",
+    mcpCodex: "Codex（加到 ~/.codex/config.toml）",
+    mcpJson: "其他工具（Gemini CLI、Cursor 等的 mcpServers 配置）",
+    copy: "复制",
+    copied: "已复制",
     title: "本机采集",
     subtitle: "这台电脑上的采集守护进程：会话同步、派活执行、画像和技能写入。",
     desktopOnly: "本机采集由 Memento 桌面端负责，只在桌面端里显示。下载安装后登录，会自动在后台采集并接收派活。",

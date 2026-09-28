@@ -16,9 +16,34 @@ export interface DaemonState {
   status: DaemonStatus | null;
 }
 
+export interface DesktopInfo {
+  version: string;
+  platform: string;
+  openAtLogin: boolean;
+  packaged: boolean;
+  /** How AI tools start the MCP server bundled with the app. */
+  mcp?: { command: string; args: string[]; env: Record<string, string> };
+}
+
+/** Ready-to-paste MCP setup for the common AI tools. */
+export function mcpSnippets(mcp: NonNullable<DesktopInfo["mcp"]>): { claude: string; codex: string; json: string } {
+  const q = (v: string) => JSON.stringify(v);
+  const envFlags = Object.entries(mcp.env).map(([k, v]) => `-e ${k}=${v}`).join(" ");
+  return {
+    claude: `claude mcp add memento-memory -s user ${envFlags} -- ${[mcp.command, ...mcp.args].map(q).join(" ")}`,
+    codex: [
+      "[mcp_servers.memento-memory]",
+      `command = ${q(mcp.command)}`,
+      `args = [${mcp.args.map(q).join(", ")}]`,
+      `env = { ${Object.entries(mcp.env).map(([k, v]) => `${k} = ${q(v)}`).join(", ")} }`,
+    ].join("\n"),
+    json: JSON.stringify({ mcpServers: { "memento-memory": { command: mcp.command, args: mcp.args, env: mcp.env } } }, null, 2),
+  };
+}
+
 export interface MementoDesktop {
   isDesktop: true;
-  info(): Promise<{ version: string; platform: string; openAtLogin: boolean; packaged: boolean }>;
+  info(): Promise<DesktopInfo>;
   setOpenAtLogin(on: boolean): Promise<boolean>;
   checkForUpdates(): Promise<void>;
   daemon: {

@@ -7,13 +7,14 @@
   "homepage": "https://mem.ihasy.com",
   "main": "dist/main.cjs",
   "scripts": {
-    "build": "npm run build -w @memento/daemon && node scripts/build.mjs",
+    "build": "npm run build -w @memento/daemon && npm run build -w @memento/mcp && node scripts/build.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "start": "npm run build && electron .",
     "dist": "npm run build && electron-builder --publish never"
   },
   "devDependencies": {
     "@memento/daemon": "*",
+    "@memento/mcp": "*",
     "@types/node": "^22.10.0",
     "electron": "44.4.5",
     "electron-builder": "^26.15.3",

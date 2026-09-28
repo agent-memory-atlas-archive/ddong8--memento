@@ -1,6 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, shell, Tray } from "electron";
 import { autoUpdater } from "electron-updater";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 
 import { loadConfig, saveConfig, type CollectorConfig } from "@memento/daemon";
 
@@ -259,6 +259,12 @@ function setupIpc(): void {
     platform: process.platform,
     openAtLogin: app.getLoginItemSettings().openAtLogin,
     packaged: app.isPackaged,
+    // How AI tools start the bundled MCP server: this app's binary as Node.
+    mcp: {
+      command: process.execPath,
+      args: [join(__dirname, "mcp.mjs").replace(`app.asar${sep}`, `app.asar.unpacked${sep}`)],
+      env: { ELECTRON_RUN_AS_NODE: "1" },
+    },
   }));
   ipcMain.handle("app:set-open-at-login", (_e, on: unknown) => {
     app.setLoginItemSettings({ openAtLogin: on === true, args: [HIDDEN_ARG] });

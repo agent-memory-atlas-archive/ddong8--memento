@@ -8,9 +8,10 @@ files:
   - dist/**
   - assets/**
   - package.json
-# The daemon runs in a utility process and reads its assets from disk.
+# The daemon (utility process) and the MCP server (started by AI tools) run from disk.
 asarUnpack:
   - dist/daemon.mjs
+  - dist/mcp.mjs
   - assets/**
 publish:
   provider: github

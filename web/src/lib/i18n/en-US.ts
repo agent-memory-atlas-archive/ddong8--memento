@@ -984,6 +984,13 @@ const enUS: Translations = {
   },
 
   collector: {
+    mcpTitle: "Give your AI tools memory (MCP)",
+    mcpHint: "The desktop app includes Memento's MCP server; it uses this device's sign-in to reach your memories, rules, skills and todos. Copy the setup for your tool; it can replace an older (Python) setup.",
+    mcpClaude: "Claude Code (run in a terminal)",
+    mcpCodex: "Codex (add to ~/.codex/config.toml)",
+    mcpJson: "Other tools (mcpServers for Gemini CLI, Cursor, ...)",
+    copy: "Copy",
+    copied: "Copied",
     title: "This computer",
     subtitle: "The collector daemon on this computer: session sync, dispatched tasks, profile and skills.",
     desktopOnly: "Collection on this computer is handled by the Memento desktop app and shown only there. Install it and sign in; it collects in the background and takes dispatched tasks.",

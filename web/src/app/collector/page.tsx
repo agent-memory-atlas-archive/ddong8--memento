@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { desktop, type DaemonState, type MementoDesktop } from "@/lib/desktop";
+import { desktop, mcpSnippets, type DaemonState, type DesktopInfo, type MementoDesktop } from "@/lib/desktop";
 import { fmt, useI18n } from "@/lib/i18n";
 import { Btn, Chip, Glass, TopBar } from "@/components/aurora/primitives";
 import { BrandMark } from "@/components/aurora/BrandMark";
@@ -15,7 +15,8 @@ export default function CollectorPage() {
   const [bridge, setBridge] = useState<MementoDesktop | null | undefined>(undefined);
   const [state, setState] = useState<DaemonState | null>(null);
   const [logs, setLogs] = useState<string[]>([]);
-  const [info, setInfo] = useState<{ version: string; openAtLogin: boolean; packaged: boolean } | null>(null);
+  const [info, setInfo] = useState<DesktopInfo | null>(null);
+  const [copied, setCopied] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const logRef = useRef<HTMLPreElement>(null);
@@ -153,6 +154,57 @@ export default function CollectorPage() {
               {c.checkUpdates}
             </Btn>
           )}
+        </Glass>
+      )}
+
+      {info?.mcp && (
+        <Glass padding="clamp(14px, 3vw, 20px)" radius={18} style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 14, fontWeight: 600, color: "var(--aurora-fg1)" }}>{c.mcpTitle}</div>
+          <p style={{ margin: "4px 0 10px", fontSize: 12.5, color: "var(--aurora-fg3)", lineHeight: 1.55 }}>{c.mcpHint}</p>
+          {(() => {
+            const snippets = mcpSnippets(info.mcp);
+            const items: { key: keyof typeof snippets; label: string }[] = [
+              { key: "claude", label: c.mcpClaude },
+              { key: "codex", label: c.mcpCodex },
+              { key: "json", label: c.mcpJson },
+            ];
+            return items.map(({ key, label }) => (
+              <div key={key} style={{ marginTop: 10 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                  <span style={{ flex: 1, fontSize: 12.5, color: "var(--aurora-fg2)" }}>{label}</span>
+                  <Btn
+                    variant="ghost"
+                    size="sm"
+                    icon={copied === key ? "check" : "copy"}
+                    onClick={() => {
+                      navigator.clipboard?.writeText(snippets[key]).then(() => {
+                        setCopied(key);
+                        setTimeout(() => setCopied(null), 1500);
+                      });
+                    }}
+                  >
+                    {copied === key ? c.copied : c.copy}
+                  </Btn>
+                </div>
+                <pre
+                  style={{
+                    margin: 0,
+                    padding: 10,
+                    borderRadius: 8,
+                    fontSize: 11.5,
+                    lineHeight: 1.5,
+                    background: "var(--aurora-surface-mute)",
+                    color: "var(--aurora-fg2)",
+                    fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+                    whiteSpace: "pre-wrap",
+                    overflowWrap: "anywhere",
+                  }}
+                >
+                  {snippets[key]}
+                </pre>
+              </div>
+            ));
+          })()}
         </Glass>
       )}
 
