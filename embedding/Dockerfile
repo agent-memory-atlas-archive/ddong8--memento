@@ -38,8 +38,6 @@ RUN pip install ${PIP_INDEX_URL:+--index-url $PIP_INDEX_URL} \
     --extra-index-url https://download.pytorch.org/whl/cpu \
     "torch>=2.6" "sentence-transformers>=3.0" "modelscope>=1.20"
 
-COPY embedding_server.py .
-
 # Multi-source model fetch — mirrors scripts/install_lib/embedding_host.py
 # so users on either side of the GFW get a working source.
 #   1. ModelScope — best from inside CN, no HF rate limits
@@ -80,6 +78,9 @@ if load_path is None:
 with open('/app/.model_path', 'w') as f:
     f.write(load_path)
 PY
+
+# Copied after the model download so a code change doesn't re-download 1.3 GB.
+COPY embedding_server.py .
 
 HEALTHCHECK --interval=15s --timeout=5s --start-period=60s --retries=4 \
   CMD curl -fsS http://localhost:8002/health || exit 1

@@ -15,6 +15,7 @@ import logging
 import os
 import sys
 import threading
+from contextlib import contextmanager
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from socketserver import ThreadingMixIn
 
@@ -22,9 +23,48 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
 logger = logging.getLogger("embedding_server")
 
 _model = None
-# PyTorch MPS backend is NOT thread-safe — concurrent encode() calls segfault.
-# Serialize all inference with this lock.
-_model_lock = threading.Lock()
+# PyTorch MPS backend is NOT thread-safe — concurrent encode() calls segfault,
+# so inference is serialized. Bulk requests go a few texts at a time and a
+# short request (a search query) goes ahead of the next slice, instead of
+# waiting behind a whole ingest batch.
+URGENT_MAX_TEXTS = 2
+URGENT_MAX_CHARS = 2000
+BULK_SLICE = 1
+
+
+class _Gate:
+    """One encode at a time; urgent callers go before waiting bulk slices."""
+
+    def __init__(self) -> None:
+        self._cond = threading.Condition()
+        self._busy = False
+        self._urgent_waiting = 0
+
+    @contextmanager
+    def hold(self, urgent: bool):
+        with self._cond:
+            if urgent:
+                self._urgent_waiting += 1
+            try:
+                while self._busy or (not urgent and self._urgent_waiting):
+                    self._cond.wait()
+            finally:
+                if urgent:
+                    self._urgent_waiting -= 1
+            self._busy = True
+        try:
+            yield
+        finally:
+            with self._cond:
+                self._busy = False
+                self._cond.notify_all()
+
+
+_gate = _Gate()
+
+
+def is_urgent(texts: list[str]) -> bool:
+    return len(texts) <= URGENT_MAX_TEXTS and sum(len(t) for t in texts) <= URGENT_MAX_CHARS
 
 # BGE-M3 supports up to 8192 tokens. Roughly cap text at 32000 chars (~8k tokens).
 MAX_TEXT_CHARS = 32000
@@ -71,9 +111,14 @@ class Handler(BaseHTTPRequestHandler):
             # Defensive: clip oversized inputs to avoid tokenizer / MPS crashes
             texts = [(t or "")[:MAX_TEXT_CHARS] for t in texts]
 
-            with _model_lock:
-                embeddings = _model.encode(texts, normalize_embeddings=True, show_progress_bar=False)
-            self._json_response({"embeddings": [e.tolist() for e in embeddings]})
+            urgent = is_urgent(texts)
+            step = len(texts) if urgent else BULK_SLICE
+            out: list[list[float]] = []
+            for i in range(0, len(texts), step):
+                with _gate.hold(urgent):
+                    vectors = _model.encode(texts[i:i + step], normalize_embeddings=True, show_progress_bar=False)
+                out.extend(v.tolist() for v in vectors)
+            self._json_response({"embeddings": out})
         except Exception as e:
             logger.error("Error: %s", e)
             self.send_error(500, str(e))

@@ -15,10 +15,67 @@ import logging
 import os
 import sys
 import socket
-from http.server import HTTPServer, BaseHTTPRequestHandler
+import threading
+from contextlib import contextmanager
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+# A search query (one short text) used to wait behind whole ingest batches
+# (10 chunks x 2000 chars, ~25 s on CPU). Now bulk requests are encoded a few
+# texts at a time and a short request goes ahead of the next slice, so a
+# query waits for at most one slice. Encoding stays one-at-a-time: parallel
+# encodes on CPU only fight over the same cores.
+URGENT_MAX_TEXTS = 2
+URGENT_MAX_CHARS = 2000
+BULK_SLICE = 1
 
 
-class DualStackHTTPServer(HTTPServer):
+class _Gate:
+    """One encode at a time; urgent callers go before waiting bulk slices."""
+
+    def __init__(self) -> None:
+        self._cond = threading.Condition()
+        self._busy = False
+        self._urgent_waiting = 0
+
+    @contextmanager
+    def hold(self, urgent: bool):
+        with self._cond:
+            if urgent:
+                self._urgent_waiting += 1
+            try:
+                while self._busy or (not urgent and self._urgent_waiting):
+                    self._cond.wait()
+            finally:
+                if urgent:
+                    self._urgent_waiting -= 1
+            self._busy = True
+        try:
+            yield
+        finally:
+            with self._cond:
+                self._busy = False
+                self._cond.notify_all()
+
+
+_gate = _Gate()
+
+
+def is_urgent(texts: list[str]) -> bool:
+    return len(texts) <= URGENT_MAX_TEXTS and sum(len(t) for t in texts) <= URGENT_MAX_CHARS
+
+
+def encode(texts: list[str]) -> list[list[float]]:
+    urgent = is_urgent(texts)
+    step = len(texts) if urgent else BULK_SLICE
+    out: list[list[float]] = []
+    for i in range(0, len(texts), step):
+        with _gate.hold(urgent):
+            vectors = _model.encode(texts[i:i + step], normalize_embeddings=True, show_progress_bar=False)
+        out.extend(v.tolist() for v in vectors)
+    return out
+
+
+class DualStackHTTPServer(ThreadingHTTPServer):
     """Listen on both IPv4 and IPv6. Without this, the default HTTPServer
     binds AF_INET only, but docker DNS for a service alias returns AAAA
     records first — clients that follow RFC 6555 happy-eyeballs spend
@@ -26,6 +83,7 @@ class DualStackHTTPServer(HTTPServer):
     Binding to `::` with IPV6_V6ONLY=0 means the same socket accepts
     both v4 and v6 traffic, no client-side workaround needed."""
     address_family = socket.AF_INET6
+    daemon_threads = True
 
     def server_bind(self):
         self.socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
@@ -58,8 +116,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._json_response({"embeddings": []})
                 return
 
-            embeddings = _model.encode(texts, normalize_embeddings=True, show_progress_bar=False)
-            self._json_response({"embeddings": [e.tolist() for e in embeddings]})
+            self._json_response({"embeddings": encode(texts)})
         except Exception as e:
             logger.error("Error: %s", e)
             self.send_error(500, str(e))
