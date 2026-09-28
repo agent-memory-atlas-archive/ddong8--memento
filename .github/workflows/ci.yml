@@ -79,7 +79,7 @@ jobs:
         run: twine check dist/*
 
   web:
-    name: ts · core + web
+    name: ts · core + daemon + web
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -97,6 +97,11 @@ jobs:
         run: |
           npm run typecheck -w @memento/core
           npm run test -w @memento/core
+
+      - name: daemon · typecheck & test
+        run: |
+          npm run typecheck -w @memento/daemon
+          npm run test -w @memento/daemon
 
       - name: web · typecheck & build
         run: |

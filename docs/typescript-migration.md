@@ -26,12 +26,13 @@ server、embedding       Python，不动
 
 ### 阶段 2：守护进程 + Electron 桌面端
 守护进程（移植 Flutter 里的采集端，约 6 千行 Dart）：
-- [ ] 配置与设备注册（沿用 `~/.memento/collector.json`，老用户无感切换）
-- [ ] 工具发现、文件监听、脱敏、增量上传
-- [ ] 画像注入、技能注入
-- [ ] 派活执行：Claude stream-json / Codex --json 结构化事件、中途插话、独立分支、危险操作 hook
-- [ ] P2P 媒体服务、开机自启
-- [ ] 本机接口：给桌面端界面查看状态、日志、控制采集
+- [x] 配置与设备注册（沿用 `~/.memento/collector.json`，老用户无感切换）
+- [x] 工具发现、文件监听、脱敏、增量上传
+- [x] 画像注入、技能注入
+- [x] 派活执行：Claude stream-json / Codex --json 结构化事件、中途插话、独立分支、危险操作 hook
+- [x] P2P 媒体服务、开机自启（`memento-daemon install-service`：launchd / systemd / Windows 启动项）
+- [x] 本机接口：给桌面端界面查看状态、日志、控制采集（`~/.memento/daemon.json` 里是端口和令牌）
+- [x] 与 Flutter 版共存：守护进程写 `~/.memento/collector.pid`，Flutter 桌面版看到它就不再启动自带采集
 
 网页端补齐 Flutter 版已有、网页没有的功能：
 - [ ] 系统健康、学习效果
@@ -64,3 +65,5 @@ Electron 桌面端：
 |---|---|---|
 | 2026-09-28 | — | 定下方案 |
 | 2026-09-28 | 1 | workspaces + @memento/core（9 个测试）；网页镜像按新方式在本地模拟构建并启动验证 |
+| 2026-09-29 | 1 | 修正：上一次提交漏了大部分文件；根 lockfile 以网页原 lockfile 为底重建，补齐 linux 原生包（lightningcss、tailwind oxide） |
+| 2026-09-29 | 2 | @memento/daemon：采集端全部移植（42 个测试，含假 Claude 端到端：结构化步骤、中途插话、worktree）；对本地模拟服务器冒烟通过 |

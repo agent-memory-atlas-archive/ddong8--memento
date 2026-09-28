@@ -1,0 +1,192 @@
+import { EventEmitter } from "node:events";
+import { hostname } from "node:os";
+
+import { loadConfig, saveConfig, type CollectorConfig } from "./config.js";
+import { discoverAll, toolReport, type DiscoveredTool } from "./discovery.js";
+import { IngestClient } from "./ingest.js";
+import { applyProfileInjection, PROFILE_SYNC_MS } from "./profile-inject.js";
+import { applySkillInjection } from "./skill-inject.js";
+import { FileWatcher } from "./watcher.js";
+import { WsTaskClient } from "./ws-client.js";
+
+export interface DaemonStatus {
+  running: boolean;
+  online: boolean;
+  deviceName: string;
+  deviceId: string;
+  serverUrl: string;
+  tools: Record<string, Record<string, unknown>>;
+  runningTasks: string[];
+  startedAt: string | null;
+}
+
+const COMMAND_POLL_MS = 30_000;
+const LOG_LIMIT = 200;
+
+const sameReport = (a: Record<string, string>, b: Record<string, string> | undefined) =>
+  !!b && Object.keys(a).length === Object.keys(b).length && Object.entries(a).every(([k, v]) => b[k] === v);
+
+/**
+ * The daemon's lifecycle: registers the device, reports its tools, watches their
+ * session files, keeps the task socket up, polls control commands, and keeps
+ * the resident profile and skills in each enabled tool.
+ *
+ * Emits "status" (DaemonStatus) and "log" (line) for the desktop app and local API.
+ */
+export class Daemon extends EventEmitter {
+  private config: CollectorConfig | undefined;
+  private ingest: IngestClient | undefined;
+  private watcher: FileWatcher | undefined;
+  private ws: WsTaskClient | undefined;
+  private timers: NodeJS.Timeout[] = [];
+  private tools: Record<string, DiscoveredTool> = {};
+  private online = false;
+  private running = false;
+  private startedAt: Date | undefined;
+  private readonly logs: string[] = [];
+  private lastProfileReport: Record<string, string> | undefined;
+  private lastSkillReport: Record<string, string> | undefined;
+  private syncing = false;
+
+  get status(): DaemonStatus {
+    return {
+      running: this.running,
+      online: this.online,
+      deviceName: this.config?.deviceName ?? hostname(),
+      deviceId: this.config?.deviceId ?? "unknown",
+      serverUrl: this.config?.serverUrl ?? "",
+      tools: Object.fromEntries(Object.entries(this.tools).map(([k, t]) => [k, toolReport(t)])),
+      runningTasks: this.ws?.runner.runningTaskIds ?? [],
+      startedAt: this.startedAt?.toISOString() ?? null,
+    };
+  }
+
+  get recentLogs(): readonly string[] {
+    return this.logs;
+  }
+
+  log = (message: string): void => {
+    const line = `[${new Date().toISOString().slice(11, 19)}] ${message}`;
+    this.logs.push(line);
+    if (this.logs.length > LOG_LIMIT) this.logs.shift();
+    this.emit("log", line);
+  };
+
+  private notify(): void {
+    this.emit("status", this.status);
+  }
+
+  async start(configOverride?: CollectorConfig): Promise<void> {
+    if (this.running) return;
+    this.log("Starting Memento daemon (Node)...");
+    let config = configOverride ?? (await loadConfig());
+    if (!config.token) throw new Error("没有 collector token：先在应用里登录，或设置 MEMENTO_SERVER_TOKEN");
+    this.config = config;
+    this.running = true;
+    this.startedAt = new Date();
+    this.notify();
+
+    const ingest = new IngestClient(config, this.log);
+    this.ingest = ingest;
+
+    this.log(`Discovering installed AI tools on ${config.deviceName}...`);
+    this.tools = await discoverAll();
+    this.log(`Discovered ${Object.keys(this.tools).length} tools: ${Object.keys(this.tools).join(", ")}`);
+
+    this.log(`Connecting to server ${config.serverUrl}...`);
+    const key = await ingest.sendHeartbeat();
+    if (key && key !== config.remoteExecKey) {
+      config = { ...config, remoteExecKey: key };
+      this.config = config;
+      ingest.updateConfig(config);
+      await saveConfig(config).catch(() => {});
+      this.log("Enrolled for remote execution (key verified)");
+    }
+    await ingest.reportDiscovery(this.tools);
+
+    this.watcher = new FileWatcher(config, ingest, this.log);
+    void this.watcher.start(this.tools);
+
+    this.ws = new WsTaskClient(config, this.log, (online) => {
+      this.online = online;
+      this.notify();
+    });
+    void this.ws.start();
+
+    // Control commands over HTTP, the secondary channel.
+    this.timers.push(setInterval(() => void this.pollCommands(), COMMAND_POLL_MS));
+    // The resident profile and published skills, kept in each enabled tool.
+    void this.syncProfileAndSkills();
+    this.timers.push(setInterval(() => void this.syncProfileAndSkills(), PROFILE_SYNC_MS));
+
+    this.log("Memento daemon is running.");
+    this.notify();
+  }
+
+  async stop(): Promise<void> {
+    if (!this.running) return;
+    this.log("Stopping Memento daemon...");
+    for (const t of this.timers) clearInterval(t);
+    this.timers = [];
+    await this.watcher?.dispose();
+    this.watcher = undefined;
+    this.ws?.dispose();
+    this.ws = undefined;
+    this.ingest = undefined;
+    this.running = false;
+    this.online = false;
+    this.notify();
+    this.log("Daemon stopped.");
+  }
+
+  /** Discover tools again and tell the server (after installing a tool, say). */
+  async rediscover(): Promise<void> {
+    this.tools = await discoverAll();
+    await this.ingest?.reportDiscovery(this.tools);
+    this.notify();
+  }
+
+  async resync(): Promise<void> {
+    await this.watcher?.resync();
+  }
+
+  private async pollCommands(): Promise<void> {
+    const commands = (await this.ingest?.pollCommands()) ?? [];
+    for (const cmd of commands) {
+      const action = String(cmd.action ?? "");
+      this.log(`Server command: ${action}`);
+      if (action === "resync") await this.watcher?.resync();
+      else if (action === "rediscover") await this.rediscover();
+    }
+  }
+
+  async syncProfileAndSkills(): Promise<void> {
+    const ingest = this.ingest;
+    if (!ingest || this.syncing) return;
+    this.syncing = true;
+    try {
+      const profile = await ingest.fetchProfileInjection();
+      if (profile) {
+        const results = await applyProfileInjection({ version: profile.version, block: profile.block, targets: profile.targets ?? [] });
+        for (const [tool, outcome] of Object.entries(results)) if (outcome !== "unchanged") this.log(`Profile ${tool}: ${outcome}`);
+        if (!sameReport(results, this.lastProfileReport)) {
+          await ingest.reportProfileInjection(profile.version, results);
+          this.lastProfileReport = results;
+        }
+      }
+      const skills = await ingest.fetchSkillInjection();
+      if (skills) {
+        const results = await applySkillInjection({ skills: skills.skills ?? [], targets: skills.targets ?? [] });
+        for (const [what, outcome] of Object.entries(results)) if (outcome !== "unchanged") this.log(`Skill ${what}: ${outcome}`);
+        if (!sameReport(results, this.lastSkillReport)) {
+          await ingest.reportSkillInjection(results);
+          this.lastSkillReport = results;
+        }
+      }
+    } catch (e) {
+      this.log(`Profile/skill sync skipped: ${e instanceof Error ? e.message : e}`);
+    } finally {
+      this.syncing = false;
+    }
+  }
+}
