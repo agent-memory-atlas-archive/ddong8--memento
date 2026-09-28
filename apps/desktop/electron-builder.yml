@@ -41,6 +41,8 @@ nsis:
   perMachine: false
   shortcutName: Memento Desktop
 linux:
+  # The default comes from the npm name (@memento/desktop), which isn't a valid file name.
+  executableName: memento-desktop
   target:
     - target: AppImage
       arch: [x64]
