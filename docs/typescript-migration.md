@@ -53,9 +53,11 @@ Electron 桌面端：
 - [ ] 直连数据库模式（自建/本地开发用）暂留 Python 版，收尾时再决定是否保留
 
 ### 阶段 4：Expo 手机端
-- [ ] 提问（含任务卡片）、记忆库、设备、日报待办、系统健康、推送设置
-- [ ] 复用 `@memento/core`
-- [ ] iOS 仍由本机 Xcode 构建；Android 由 CI 构建
+- [x] 提问（流式、断线续接、任务卡片：过程时间线/中途插话/停止、独立分支开关、设备与模式选择、对话记录）、记忆（搜索、长期准则、待确认纠正）、设备、日报待办、我的（系统健康、Bark 推送、账号）
+- [x] 复用 `@memento/core`（AskStream、任务事件合并与文案）；Expo SDK 57 的全局 fetch 支持流式响应
+- [x] Android 由 CI 构建 APK（`expo prebuild` + Gradle，随 v* tag 发布）；iOS 需要本机 Xcode：**先在终端运行 `sudo xcodebuild -license` 同意许可**，再 `cd apps/mobile && npx expo run:ios --configuration Release`
+- [x] 图标统一用网页的 Memento 标志（`scripts/brand-icons.mjs` 生成；Flutter 版用的是 Flutter 默认图标）
+- [ ] 真机/模拟器上走一遍（本机没有模拟器和 Android SDK，目前只验证了类型检查和两端 JS 打包）
 
 ### 收尾
 - [ ] 清理不再使用的代码（旧 Python 采集器等，删除前逐个确认）
@@ -68,6 +70,7 @@ Electron 桌面端：
 | 2026-09-28 | — | 定下方案 |
 | 2026-09-28 | 1 | workspaces + @memento/core（9 个测试）；网页镜像按新方式在本地模拟构建并启动验证 |
 | 2026-09-29 | 1 | 修正：上一次提交漏了大部分文件；根 lockfile 以网页原 lockfile 为底重建，补齐 linux 原生包（lightningcss、tailwind oxide） |
+| 2026-09-29 | 4 | apps/mobile（Expo SDK 57）：expo-doctor 21/21 通过，Android/iOS JS 打包通过；整个仓库只保留一份 React 19.2.3 |
 | 2026-09-29 | 3 | @memento/mcp：6 个测试（含内存传输的 MCP 客户端、令牌轮换、按前缀关待办）；stdio 对线上只读调用验证通过 |
 | 2026-09-29 | 2 | Electron 桌面端 apps/desktop：本机打包 mac 版并冒烟通过（守护进程、上传、任务、退出清理） |
 | 2026-09-29 | 2 | 网页端补齐 Flutter 独有功能：健康、技能、纠正、待办、推送、做梦、任务时间线/插话/独立分支 |

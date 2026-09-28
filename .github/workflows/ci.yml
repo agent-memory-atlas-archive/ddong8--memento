@@ -79,7 +79,7 @@ jobs:
         run: twine check dist/*
 
   web:
-    name: ts · core + daemon + mcp + desktop + web
+    name: ts · core + daemon + mcp + desktop + mobile + web
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -117,6 +117,13 @@ jobs:
           npm run build -w @memento/mcp
           npm run typecheck -w @memento/desktop
           node apps/desktop/scripts/build.mjs
+
+      - name: mobile · typecheck & bundle
+        working-directory: apps/mobile
+        run: |
+          npm run build -w @memento/core
+          npx tsc --noEmit
+          npx expo export --platform android --output-dir /tmp/mobile-export
 
       - name: web · typecheck & build
         run: |

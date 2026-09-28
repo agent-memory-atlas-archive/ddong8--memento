@@ -346,6 +346,96 @@ jobs:
           ls -la electron
           gh release upload "$TAG" electron/* --clobber --repo "${{ github.repository }}"
 
+  # Expo mobile app (apps/mobile): Android APK built here. It's signed with the
+  # React Native template's debug keystore (the same on every build, so
+  # sideloaded updates install over each other); iOS is built locally in Xcode.
+  build-android:
+    name: Build Android (Expo)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install
+        run: npm ci --workspace @memento/mobile --workspace @memento/core --include-workspace-root
+
+      - name: Version from tag
+        shell: bash
+        run: |
+          VERSION="${{ github.event.inputs.tag_name }}"
+          if [ -z "$VERSION" ] && [[ "${{ github.ref }}" == refs/tags/v* ]]; then VERSION="${{ github.ref_name }}"; fi
+          VERSION="${VERSION#v}"
+          if [ -z "$VERSION" ]; then
+            VERSION=$(grep '^version:' mobile/pubspec.yaml | sed 's/version: //' | cut -d'+' -f1 | tr -d ' ')
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: Stamp version
+        working-directory: apps/mobile
+        run: |
+          node -e '
+            const fs = require("fs");
+            const v = process.env.VERSION;
+            const [a, b, c] = v.split(".").map((n) => parseInt(n, 10) || 0);
+            const cfg = JSON.parse(fs.readFileSync("app.json", "utf8"));
+            cfg.expo.version = v;
+            cfg.expo.android = { ...cfg.expo.android, versionCode: a * 10000 + b * 100 + c };
+            fs.writeFileSync("app.json", JSON.stringify(cfg, null, 2));
+          '
+
+      - name: Build shared package
+        run: npm run build -w @memento/core
+
+      - name: Generate the Android project
+        working-directory: apps/mobile
+        run: npx expo prebuild --platform android --no-install
+
+      - name: Gradle assembleRelease
+        working-directory: apps/mobile/android
+        run: ./gradlew app:assembleRelease --no-daemon
+
+      - name: Collect APK
+        run: |
+          mkdir -p out
+          cp apps/mobile/android/app/build/outputs/apk/release/app-release.apk "out/Memento-Mobile-${VERSION}-android.apk"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-apk
+          path: out/*.apk
+          if-no-files-found: error
+          retention-days: 2
+
+  publish-android:
+    name: Add the Android APK to the release
+    needs: [publish-release, build-android]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: android-apk
+          path: apk
+
+      - name: Upload to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ github.event.inputs.tag_name }}"
+          if [ -z "$TAG" ]; then TAG="${GITHUB_REF#refs/tags/}"; fi
+          gh release upload "$TAG" apk/*.apk --clobber --repo "${{ github.repository }}"
+
   publish-release:
     name: Publish GitHub Release
     needs: [build-macos, build-windows, build-linux]
