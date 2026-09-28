@@ -37,6 +37,20 @@ void main() {
     });
   });
 
+  test('scope labels', () {
+    expect(personaScopeLabel('project:chembook'), '只在「chembook」项目里');
+    expect(personaScopeLabel('device:DESKTOP-KR9IPP4'), '只在「DESKTOP-KR9IPP4」这台设备上');
+    expect(personaScopeLabel('global'), isNull);
+    expect(personaScopeLabel(null), isNull);
+    expect(personaSectionCaption('项目：chembook'), isNotNull);
+    expect(personaSectionCaption('铁律'), isNull);
+  });
+
+  test('scoped sections parse as their own groups', () {
+    final s = personaSections('### 沟通\n- 用中文回复\n\n## 项目：chembook\n- 结构式带手性');
+    expect(s.map((e) => e.title), ['沟通', '项目：chembook']);
+  });
+
   group('target state', () {
     PersonaTargetState? state(bool enabled, String? result, {int? reported = 2, int? published = 2}) =>
         personaTargetState(enabled: enabled, result: result, reportedVersion: reported, publishedVersion: published);

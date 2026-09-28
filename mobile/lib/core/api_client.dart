@@ -500,8 +500,12 @@ class ApiClient {
   }
 
   /// Remembers the correction and adds it to the published profile. statement: the user's edit.
-  Future<void> acceptCorrection(String id, {String? statement}) async {
-    await _dio.post('/api/learning/corrections/$id/accept', data: {if (statement != null) 'statement': statement});
+  /// general: widen a rule learned in one project / on one device to apply everywhere.
+  Future<void> acceptCorrection(String id, {String? statement, bool general = false}) async {
+    await _dio.post('/api/learning/corrections/$id/accept', data: {
+      if (statement != null) 'statement': statement,
+      if (general) 'general': true,
+    });
   }
 
   Future<void> dismissCorrection(String id) async {

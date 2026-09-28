@@ -64,6 +64,25 @@ List<({String title, List<String> items})> personaSections(String content) {
   return sections.where((s) => s.items.isNotEmpty).toList();
 }
 
+/// "project:chembook" -> "只在「chembook」项目里"; null for a general rule.
+String? personaScopeLabel(String? scope) {
+  final parts = (scope ?? 'global').split(':');
+  if (parts.length < 2 || parts[1].isEmpty) return null;
+  final name = parts.sublist(1).join(':');
+  return switch (parts[0]) {
+    'project' => '只在「$name」项目里',
+    'device' => '只在「$name」这台设备上',
+    _ => null,
+  };
+}
+
+/// What a "项目：…" / "设备：…" section of the profile means, in one line.
+String? personaSectionCaption(String title) {
+  if (title.startsWith('项目：') || title.startsWith('项目:')) return '只写进有这个项目的设备，并注明它的目录，其他项目里不会用到';
+  if (title.startsWith('设备：') || title.startsWith('设备:')) return '只写进这台设备';
+  return null;
+}
+
 enum PersonaTargetState { pending, written, upToDate, skipped, waiting, error }
 
 /// What to show on a device's tool toggle, or null for a tool that is off and clean.
@@ -136,14 +155,14 @@ class _PersonaTabState extends State<PersonaTab> with AutomaticKeepAliveClientMi
     }
   }
 
-  Future<void> _decide(Map<String, dynamic> topic, {required bool accept, String? statement}) async {
+  Future<void> _decide(Map<String, dynamic> topic, {required bool accept, String? statement, bool general = false}) async {
     setState(() {
       _busyTopic = topic['id'] as String;
       _notice = null;
     });
     try {
       if (accept) {
-        await _api.acceptCorrection(topic['id'] as String, statement: statement);
+        await _api.acceptCorrection(topic['id'] as String, statement: statement, general: general);
         _notice = '已采纳：写进了常驻画像，各工具下次同步（5 分钟内）就会用上。';
       } else {
         await _api.dismissCorrection(topic['id'] as String);
@@ -158,26 +177,44 @@ class _PersonaTabState extends State<PersonaTab> with AutomaticKeepAliveClientMi
 
   Future<void> _editAndAccept(Map<String, dynamic> topic) async {
     final controller = TextEditingController(text: topic['statement'] as String);
+    final scopeLabel = personaScopeLabel(topic['scope'] as String?);
+    var general = false;
     final edited = await showDialog<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AuroraColors.surfaceSolid,
-        title: const Text('改一下再采纳', style: TextStyle(fontSize: 16)),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          maxLines: 3,
-          minLines: 1,
-          decoration: const InputDecoration(hintText: '写成对 AI 说的一句话，如「始终用中文回复」'),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialog) => AlertDialog(
+          backgroundColor: AuroraColors.surfaceSolid,
+          title: const Text('改一下再采纳', style: TextStyle(fontSize: 16)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: controller,
+                autofocus: true,
+                maxLines: 3,
+                minLines: 1,
+                decoration: const InputDecoration(hintText: '写成对 AI 说的一句话，如「始终用中文回复」'),
+              ),
+              if (scopeLabel != null)
+                CheckboxListTile(
+                  contentPadding: EdgeInsets.zero,
+                  controlAffinity: ListTileControlAffinity.leading,
+                  value: general,
+                  onChanged: (v) => setDialog(() => general = v ?? false),
+                  title: const Text('改成通用，所有项目都适用', style: TextStyle(fontSize: 13.5)),
+                  subtitle: Text('现在是$scopeLabel', style: const TextStyle(fontSize: 12, color: AuroraColors.fg3)),
+                ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+            FilledButton(onPressed: () => Navigator.pop(ctx, controller.text.trim()), child: const Text('采纳')),
+          ],
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, controller.text.trim()), child: const Text('采纳')),
-        ],
       ),
     );
     controller.dispose();
-    if (edited != null && edited.isNotEmpty) await _decide(topic, accept: true, statement: edited);
+    if (edited != null && edited.isNotEmpty) await _decide(topic, accept: true, statement: edited, general: general);
   }
 
   String _describe(Object e) {
@@ -358,7 +395,8 @@ class _PersonaTabState extends State<PersonaTab> with AutomaticKeepAliveClientMi
           [
             times > 1 ? '你说过 $times 次' : '你说过 1 次',
             if (topic['last_at'] != null) '最近 ${_formatTime(topic['last_at'] as String?)}',
-            '放进「${topic['heading'] ?? '铁律'}」',
+            personaScopeLabel(topic['scope'] as String?) ?? '放进「${topic['heading'] ?? '铁律'}」',
+
           ].join(' · '),
           style: TextStyle(fontSize: 12, color: times > 1 ? AuroraColors.warnText : AuroraColors.fg3),
         ),
@@ -435,8 +473,15 @@ class _PersonaTabState extends State<PersonaTab> with AutomaticKeepAliveClientMi
           if (section.title.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(bottom: 5),
-              child: Text(
-                section.title,
+              child: Text.rich(
+                TextSpan(children: [
+                  TextSpan(text: section.title),
+                  if (personaSectionCaption(section.title) != null)
+                    TextSpan(
+                      text: '  ${personaSectionCaption(section.title)}',
+                      style: const TextStyle(fontWeight: FontWeight.w400, letterSpacing: 0, color: AuroraColors.fg4),
+                    ),
+                ]),
                 style: const TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
