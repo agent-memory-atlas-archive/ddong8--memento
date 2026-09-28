@@ -91,6 +91,9 @@ class AskRequest(BaseModel):
     session_id: str | None = None
     # Force fork mode instead of resume when continuing conversation
     fork: bool | None = None
+    # Run the agent in its own git worktree and branch, so parallel tasks on one
+    # repository don't step on each other.
+    worktree: bool | None = None
     # Smart sliding-window hierarchical context compaction
     compact_mode: bool | None = None
     # Optional execution timeout override in seconds (up to 3600)
@@ -886,6 +889,7 @@ async def _direct_agent_stream(
     timeout_seconds: int | None = None,
     images: list[str] | None = None,
     attachments: list[dict] | None = None,
+    worktree: bool = False,
 ):
     """Directly dispatch an agent/shell task to the user's online device without LLM intermediate step."""
     from ..services.orchestrator import _tool_run_on_device, is_likely_long_running_task
@@ -919,6 +923,8 @@ async def _direct_agent_stream(
         args["project_id"] = project_id
     if fork is not None:
         args["fork"] = fork
+    if worktree and action == "agent":
+        args["worktree"] = True
 
     orig_session_id = session_id
     if compact_mode and session_id and action == "agent":
@@ -1056,6 +1062,8 @@ async def _direct_agent_stream(
                     yield f"data: {json.dumps({'type': 'task_progress', 'task_id': evt.get('task_id'), 'tool_call_id': call_id, 'device_name': evt.get('device_name'), 'status': evt.get('status')}, ensure_ascii=False)}\n\n"
                 elif etype == "task_alert":
                     yield f"data: {json.dumps({'type': 'task_alert', 'task_id': evt.get('task_id'), 'tool_call_id': call_id, 'device_name': evt.get('device_name'), 'alert': evt.get('alert')}, ensure_ascii=False)}\n\n"
+                elif etype == "task_event":
+                    yield f"data: {json.dumps({'type': 'task_event', 'task_id': evt.get('task_id'), 'tool_call_id': call_id, 'event': evt.get('event')}, ensure_ascii=False)}\n\n"
                 elif etype == "tool_result":
                     result_dict = evt.get("result") or {}
                     if result_dict.get("device_name"):
@@ -1214,6 +1222,7 @@ async def ask(
                     timeout_seconds=body.timeout_seconds,
                     images=body.images,
                     attachments=body.attachments,
+                    worktree=bool(body.worktree),
                 ))
 
     if not get_ai_providers():

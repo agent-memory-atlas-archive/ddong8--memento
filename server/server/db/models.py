@@ -520,6 +520,8 @@ class DeviceTask(Base):
     error: Mapped[str | None] = mapped_column(Text)
     # Risky operations the agent performed while running this task (see risk_policy).
     alerts: Mapped[list] = mapped_column(JSONB, default=list, server_default="[]")
+    # Steps of a structured agent run: tool calls, file changes, steers, worktree, usage.
+    events: Mapped[list] = mapped_column(JSONB, default=list, server_default="[]")
 
     # Seconds the collector may spend before killing the process.
     timeout_seconds: Mapped[int] = mapped_column(Integer, default=300)

@@ -152,6 +152,15 @@ class DeviceConnectionManager:
             except asyncio.QueueFull:
                 pass
 
+    def push_event(self, task_id: str, event: dict[str, Any]) -> None:
+        """One step of a structured agent run (tool call, file change, usage, steer)."""
+        q = self._task_queues.get(task_id)
+        if q:
+            try:
+                q.put_nowait({"type": "task_event", "task_id": task_id, "event": event})
+            except asyncio.QueueFull:
+                pass
+
     def push_progress(self, task_id: str, status: str) -> None:
         q = self._task_queues.get(task_id)
         if q:

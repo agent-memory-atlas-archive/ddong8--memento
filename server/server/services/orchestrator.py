@@ -58,6 +58,7 @@ TASK_POLL_INTERVAL = 1.5
 # Trim tool output before it goes back into the prompt — a 100k-char build log
 # would blow the context and bury the signal.
 MAX_TOOL_OUTPUT = 6000
+MAX_TASK_EVENTS = 400  # step events kept per task (tool calls, file changes, usage)
 # A device that hasn't checked in for this long is reported as likely offline,
 # so the model can pick a different machine instead of waiting on a dead one.
 OFFLINE_AFTER_SECONDS = 180
@@ -363,7 +364,7 @@ async def _await_task_stream(
                 if itype == "task_chunk":
                     yield item
                     continue
-                elif itype in ("task_progress", "task_alert"):
+                elif itype in ("task_progress", "task_alert", "task_event"):
                     yield item
                     continue
                 elif itype == "task_finished":
@@ -543,6 +544,8 @@ async def _tool_run_on_device(db: AsyncSession, user: User, args: dict, *, class
                 payload["fork"] = args["fork"]
             if args.get("system_prompt_append"):
                 payload["system_prompt_append"] = args["system_prompt_append"]
+            if args.get("worktree"):
+                payload["worktree"] = True
         raw_cwd = (args.get("cwd") or "").strip()
         proj_id_val = args.get("project_id") or payload.get("project_id")
         resolved_cwd = raw_cwd
@@ -731,6 +734,7 @@ async def _tool_run_on_device(db: AsyncSession, user: User, args: dict, *, class
                     "error": done_ws.get("error"),
                     "session_id": ext_sid,
                     "alerts": await _load_alerts(task_id_str),
+                    "events": (done_ws.get("events") or [])[:MAX_TASK_EVENTS],
                 },
             }
             return
@@ -773,6 +777,7 @@ async def _tool_run_on_device(db: AsyncSession, user: User, args: dict, *, class
                 "error": done_task.error,
                 "session_id": task_sid,
                 "alerts": done_task.alerts or [],
+                "events": (done_task.events or [])[:MAX_TASK_EVENTS],
             },
         }
     except Exception as e:
@@ -1084,7 +1089,11 @@ async def run_agent_loop(
             convo.append({
                 "role": "tool",
                 "tool_call_id": cid,
-                "content": json.dumps(tool_results_by_id.get(cid) or {}, ensure_ascii=False)[:MAX_TOOL_OUTPUT],
+                # The step-by-step events are for the UI; the model gets the outcome.
+                "content": json.dumps(
+                    {k: v for k, v in (tool_results_by_id.get(cid) or {}).items() if k != "events"},
+                    ensure_ascii=False,
+                )[:MAX_TOOL_OUTPUT],
             })
 
     # Ran out of tool rounds. Always invoke the LLM one final time to synthesize all gathered results into a complete answer!

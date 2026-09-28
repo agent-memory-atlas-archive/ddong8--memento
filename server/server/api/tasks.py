@@ -182,6 +182,7 @@ def _serialize(t: DeviceTask) -> dict:
         "dispatched_at": t.dispatched_at.isoformat() if t.dispatched_at else None,
         "finished_at": t.finished_at.isoformat() if t.finished_at else None,
         "alerts": t.alerts or [],
+        "events": t.events or [],
     }
 
 
@@ -557,6 +558,10 @@ async def device_websocket_endpoint(
                         data.get("stream", "stdout"),
                         data.get("text", ""),
                     )
+            elif msg_type == "agent_event":
+                tid = data.get("task_id")
+                if tid and isinstance(data.get("event"), dict):
+                    ws_manager.push_event(tid, data["event"])
             elif msg_type == "agent_tool_use":
                 # Classified and pushed off the receive loop: a slow push must
                 # never stall chunk streaming.
@@ -580,6 +585,8 @@ async def device_websocket_endpoint(
                                 t.stdout = (data.get("stdout") or "")[:MAX_OUTPUT_CHARS] or None
                                 t.stderr = (data.get("stderr") or "")[:MAX_OUTPUT_CHARS] or None
                                 t.error = data.get("error")
+                                if isinstance(data.get("events"), list):
+                                    t.events = data["events"][:400]
                                 t.finished_at = datetime.now(timezone.utc)
                                 await db.commit()
                     except Exception as e:

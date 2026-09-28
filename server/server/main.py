@@ -69,6 +69,9 @@ def _run_migrations(conn) -> None:
         task_cols = {c["name"] for c in insp.get_columns("device_tasks")}
         if "alerts" not in task_cols:
             conn.execute(text("ALTER TABLE device_tasks ADD COLUMN alerts JSONB NOT NULL DEFAULT '[]'"))
+        # DeviceTask.events — steps of a structured agent run, for the task timeline.
+        if "events" not in task_cols:
+            conn.execute(text("ALTER TABLE device_tasks ADD COLUMN events JSONB NOT NULL DEFAULT '[]'"))
 
     # User.notify_settings — phone push (Bark) preferences.
     if "notify_settings" not in user_cols:
