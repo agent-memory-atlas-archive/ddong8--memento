@@ -6,9 +6,12 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "prebuild": "npm run build -w @memento/core",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@memento/core": "*",
     "@tanstack/react-virtual": "^3.13.23",
     "date-fns": "^4.1.0",
     "next": "16.2.2",

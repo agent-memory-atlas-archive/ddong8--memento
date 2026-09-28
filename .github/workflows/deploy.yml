@@ -23,6 +23,9 @@ on:
       - "server/**"
       - "mcp_server/**"
       - "web/**"
+      - "packages/**"
+      - "package.json"
+      - "package-lock.json"
       - "data/updates/**"
       - ".github/workflows/deploy.yml"
   workflow_dispatch:
@@ -71,11 +74,11 @@ jobs:
           cache-from: type=gha,scope=server
           cache-to: type=gha,mode=max,scope=server
 
-      # ── web(context=web)──
+      # ── web(context=仓库根:npm workspace,依赖 packages/core)──
       - name: Build & push web
         uses: docker/build-push-action@v6
         with:
-          context: web
+          context: .
           file: web/Dockerfile
           push: true
           tags: |

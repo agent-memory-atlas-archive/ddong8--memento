@@ -1,0 +1,30 @@
+{
+  "name": "@memento/core",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Types, API client and ask stream shared by Memento's web, desktop and mobile clients",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "gen:api": "node scripts/gen-api.mjs"
+  },
+  "dependencies": {
+    "openapi-fetch": "^0.14.0"
+  },
+  "devDependencies": {
+    "openapi-typescript": "^7.9.1",
+    "typescript": "^5.9.0",
+    "vitest": "^3.2.4"
+  }
+}

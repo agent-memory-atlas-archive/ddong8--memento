@@ -1,0 +1,18 @@
+{
+  "name": "memento",
+  "private": true,
+  "description": "Memento monorepo: shared TypeScript packages, web, desktop and mobile clients",
+  "workspaces": [
+    "packages/*",
+    "web"
+  ],
+  "scripts": {
+    "gen:api": "npm run gen:api -w @memento/core",
+    "build:core": "npm run build -w @memento/core",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

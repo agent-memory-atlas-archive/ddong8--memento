@@ -79,11 +79,8 @@ jobs:
         run: twine check dist/*
 
   web:
-    name: web · Next.js build
+    name: ts · core + web
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: web
     steps:
       - uses: actions/checkout@v4
 
@@ -91,11 +88,19 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: web/package-lock.json
+          cache-dependency-path: package-lock.json
 
+      # npm workspace at the repo root: packages/*, web
       - run: npm ci
 
-      - name: Build
-        run: npm run build
+      - name: core · typecheck & test
+        run: |
+          npm run typecheck -w @memento/core
+          npm run test -w @memento/core
+
+      - name: web · typecheck & build
+        run: |
+          npm run build -w web
+          npm run typecheck -w web
       # Note: separate `npm run lint` 被 next.config 的 eslint.ignoreDuringBuilds
       # 一并绕过; React 19 hook 新规则产生的 18 个报错需单独整治后再恢复 lint gate。

@@ -20,3 +20,9 @@ tauri-collector
 .DS_Store
 .pytest_cache
 .ruff_cache
+# TS workspace (web image context is the repo root too): build output and the
+# Flutter / Electron apps aren't part of any server-side image.
+packages/*/node_modules
+packages/*/dist
+apps
+mobile
