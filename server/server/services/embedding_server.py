@@ -60,11 +60,54 @@ class _Gate:
                 self._cond.notify_all()
 
 
+class _Turns:
+    """First come, first served across bulk requests: a bulk request keeps its
+    turn for all of its slices (so concurrent ingest batches finish one after
+    another, as before, instead of all crawling along together and timing
+    out), while urgent requests still slip in between slices via _Gate."""
+
+    def __init__(self) -> None:
+        self._cond = threading.Condition()
+        self._next_ticket = 0
+        self._serving = 0
+
+    @contextmanager
+    def turn(self):
+        with self._cond:
+            ticket = self._next_ticket
+            self._next_ticket += 1
+            while ticket != self._serving:
+                self._cond.wait()
+        try:
+            yield
+        finally:
+            with self._cond:
+                self._serving += 1
+                self._cond.notify_all()
+
+
 _gate = _Gate()
+_turns = _Turns()
 
 
 def is_urgent(texts: list[str]) -> bool:
     return len(texts) <= URGENT_MAX_TEXTS and sum(len(t) for t in texts) <= URGENT_MAX_CHARS
+
+
+def _encode_slices(texts: list[str], step: int, urgent: bool) -> list[list[float]]:
+    out: list[list[float]] = []
+    for i in range(0, len(texts), step):
+        with _gate.hold(urgent):
+            vectors = _model.encode(texts[i:i + step], normalize_embeddings=True, show_progress_bar=False)
+        out.extend(v.tolist() for v in vectors)
+    return out
+
+
+def encode(texts: list[str]) -> list[list[float]]:
+    if is_urgent(texts):
+        return _encode_slices(texts, len(texts), urgent=True)
+    with _turns.turn():
+        return _encode_slices(texts, BULK_SLICE, urgent=False)
 
 # BGE-M3 supports up to 8192 tokens. Roughly cap text at 32000 chars (~8k tokens).
 MAX_TEXT_CHARS = 32000
@@ -111,14 +154,7 @@ class Handler(BaseHTTPRequestHandler):
             # Defensive: clip oversized inputs to avoid tokenizer / MPS crashes
             texts = [(t or "")[:MAX_TEXT_CHARS] for t in texts]
 
-            urgent = is_urgent(texts)
-            step = len(texts) if urgent else BULK_SLICE
-            out: list[list[float]] = []
-            for i in range(0, len(texts), step):
-                with _gate.hold(urgent):
-                    vectors = _model.encode(texts[i:i + step], normalize_embeddings=True, show_progress_bar=False)
-                out.extend(v.tolist() for v in vectors)
-            self._json_response({"embeddings": out})
+            self._json_response({"embeddings": encode(texts)})
         except Exception as e:
             logger.error("Error: %s", e)
             self.send_error(500, str(e))
