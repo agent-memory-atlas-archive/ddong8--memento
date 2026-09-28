@@ -39,12 +39,13 @@ server、embedding       Python，不动
 - [x] 纠正学习（画像页「刚学到的」）、技能（`/skills`）、待办（日报页）
 - [x] 任务过程时间线、中途插话、独立分支开关（问答页）
 - [x] 推送设置（个人页）、做梦分层与梦境日记、唤醒沉睡记忆（记忆页「做梦」）
-- [ ] 本机采集页（只在桌面端显示，通过守护进程）
+- [x] 本机采集页 `/collector`（只在桌面端显示，通过预加载桥访问守护进程）
 
 Electron 桌面端：
-- [ ] 主进程拉起守护进程、托盘、预加载桥（界面访问本机能力）
-- [ ] 自动更新（GitHub Releases）、CI 打包 macOS / Windows / Linux
-- [ ] 从 Flutter 桌面版迁移的提示与说明
+- [x] 主进程在 utilityProcess 里跑守护进程、托盘、预加载桥（`window.mementoDesktop`）
+- [x] 登录互通：设备已有 collector token 时窗口自动登录（token-exchange → /auth/handoff）；在窗口里登录后自动取 collector token 启动采集
+- [x] 自动更新（electron-updater，GitHub Releases）、CI 打包 macOS（dmg/zip，ad-hoc 签名固定 designated requirement）/ Windows（NSIS）/ Linux（AppImage），与 Flutter 版同一个 tag 发布
+- [x] 与 Flutter 桌面版共存：检测到旧版在运行就不启动第二份采集（`MEMENTO_DAEMON_FORCE=1` 可强制）；过渡期应用名为「Memento Desktop」
 
 ### 阶段 3：MCP 服务改 TS
 - [ ] 用官方 TS MCP SDK 移植 `mcp_server`（约 2 千行 Python）
@@ -66,5 +67,6 @@ Electron 桌面端：
 | 2026-09-28 | — | 定下方案 |
 | 2026-09-28 | 1 | workspaces + @memento/core（9 个测试）；网页镜像按新方式在本地模拟构建并启动验证 |
 | 2026-09-29 | 1 | 修正：上一次提交漏了大部分文件；根 lockfile 以网页原 lockfile 为底重建，补齐 linux 原生包（lightningcss、tailwind oxide） |
+| 2026-09-29 | 2 | Electron 桌面端 apps/desktop：本机打包 mac 版并冒烟通过（守护进程、上传、任务、退出清理） |
 | 2026-09-29 | 2 | 网页端补齐 Flutter 独有功能：健康、技能、纠正、待办、推送、做梦、任务时间线/插话/独立分支 |
 | 2026-09-29 | 2 | @memento/daemon：采集端全部移植（42 个测试，含假 Claude 端到端：结构化步骤、中途插话、worktree）；对本地模拟服务器冒烟通过 |

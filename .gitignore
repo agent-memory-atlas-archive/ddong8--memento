@@ -62,3 +62,7 @@ data/updates/*.exe
 packages/core/openapi.json
 packages/*/dist/
 node_modules/
+apps/desktop/dist/
+apps/desktop/release/
+apps/desktop/assets/
+!apps/desktop/build/

@@ -2,25 +2,29 @@
 import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import { acquirePidFile, installService, isServiceInstalled, runningCollectorPid, uninstallService } from "./autostart.js";
+import { acquirePidFile, flutterAppRunning, installService, isServiceInstalled, runningCollectorPid, uninstallService } from "./autostart.js";
 import { loadConfig, saveConfig } from "./config.js";
 import { Daemon } from "./daemon.js";
 import { LocalApi, readLocalApiInfo } from "./local-api.js";
 
 const USAGE = `memento-daemon <command>
 
-  run                 运行守护进程（默认）
+  run [--force]       运行守护进程（默认）；--force 即使旧版桌面端在运行也启动
   status              查看正在运行的守护进程状态
   login <token> [url] 保存 collector token（和服务器地址）
   install-service     登录时自动启动（macOS launchd / Linux systemd / Windows 启动项）
   uninstall-service   取消自动启动
 `;
 
-async function run(): Promise<void> {
+async function run(force = false): Promise<void> {
   const other = await runningCollectorPid();
   if (other) {
     console.error(`另一个 Memento 采集进程已在运行 (pid ${other})，退出。`);
     process.exit(1);
+  }
+  if (!force && !process.env.MEMENTO_DAEMON_FORCE && (await flutterAppRunning())) {
+    console.error("旧版 Memento 桌面端正在运行，它自带采集；为避免重复上传不再启动。退出旧版后重试，或加 --force。");
+    process.exit(3);
   }
   await acquirePidFile();
   const daemon = new Daemon();
@@ -75,7 +79,7 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
   const [cmd = "run", ...rest] = argv;
   switch (cmd) {
     case "run":
-      return run();
+      return run(rest.includes("--force"));
     case "status":
       return status();
     case "login":
@@ -100,8 +104,10 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
   }
 }
 
-// Run when executed directly (also through the npm bin symlink), not when imported.
+// Run when executed directly (also through the npm bin symlink), not when imported
+// or bundled into a host that calls main() itself.
 const invoked = (() => {
+  if (process.env.MEMENTO_DAEMON_EMBEDDED) return false;
   try {
     return !!process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url));
   } catch {

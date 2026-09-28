@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Memento</title>
+<style>
+  :root { color-scheme: light dark; --bg: #f7f7fb; --fg: #1d1b26; --muted: #6b6880; --accent: #7c3aed; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #0b0b12; --fg: #ecebf5; --muted: #9a97ad; } }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: var(--bg); color: var(--fg);
+         font: 14px/1.6 -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", sans-serif; -webkit-app-region: drag; }
+  main { max-width: 420px; padding: 24px; text-align: center; }
+  h1 { font-size: 20px; margin: 0 0 8px; }
+  p { color: var(--muted); margin: 0 0 20px; }
+  code { font-size: 12.5px; }
+  button { -webkit-app-region: no-drag; border: 0; border-radius: 10px; padding: 9px 20px; font-size: 14px;
+           background: var(--accent); color: #fff; cursor: pointer; }
+</style>
+</head>
+<body>
+<main>
+  <h1>连不上 Memento 服务</h1>
+  <p>检查网络后重试。本机采集照常在后台运行，恢复连接后会自动补传。<br><code id="server"></code></p>
+  <button id="retry">重试</button>
+</main>
+<script>
+  const server = new URLSearchParams(location.search).get("server") || "https://mem.ihasy.com";
+  document.getElementById("server").textContent = server;
+  document.getElementById("retry").onclick = () => { location.href = server.replace(/\/+$/, "") + "/ask"; };
+</script>
+</body>
+</html>

@@ -10,7 +10,8 @@ import { homeDir } from "./config.js";
  * Antigravity has no headless CLI of its own; tasks go through a small Python
  * runner (assets/agy_cli.py) that talks to the running app's language server.
  */
-const RUNNER_ASSET = fileURLToPath(new URL("../assets/agy_cli.py", import.meta.url));
+/** Where the runner ships: next to the daemon's code, or MEMENTO_AGY_RUNNER (bundled apps). */
+const runnerAsset = () => process.env.MEMENTO_AGY_RUNNER || fileURLToPath(new URL("../assets/agy_cli.py", import.meta.url));
 /** A runner older than these features gets rewritten. */
 const RUNNER_MARKERS = [
   "_auto_discover_antigravity_ls",
@@ -37,7 +38,7 @@ export async function ensureAgyCliInstalled(home = homeDir()): Promise<void> {
     const script = join(dir, "agy_cli.py");
     const current = await readFile(script, "utf8").catch(() => "");
     if (!RUNNER_MARKERS.every((m) => current.includes(m))) {
-      await writeFile(script, await readFile(RUNNER_ASSET, "utf8"));
+      await writeFile(script, await readFile(runnerAsset(), "utf8"));
       if (process.platform !== "win32") await chmod(script, 0o755);
     }
     if (process.platform === "win32") {

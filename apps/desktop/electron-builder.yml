@@ -1,0 +1,48 @@
+appId: com.ihasy.memento.desktop
+productName: Memento Desktop
+artifactName: Memento-Desktop-${version}-${os}-${arch}.${ext}
+directories:
+  output: release
+  buildResources: build
+files:
+  - dist/**
+  - assets/**
+  - package.json
+# The daemon runs in a utility process and reads its assets from disk.
+asarUnpack:
+  - dist/daemon.mjs
+  - assets/**
+publish:
+  provider: github
+  owner: ddong8
+  repo: memento
+mac:
+  category: public.app-category.developer-tools
+  target:
+    - target: dmg
+      arch: [arm64]
+    - target: zip
+      arch: [arm64]
+  icon: build/icon.png
+  # No Developer ID yet: ad-hoc signed in CI with a stable designated
+  # requirement (afterSign), so auto-updates keep the same identity.
+  identity: null
+  hardenedRuntime: false
+  extendInfo:
+    LSUIElement: false
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  icon: build/icon.ico
+nsis:
+  oneClick: true
+  perMachine: false
+  shortcutName: Memento Desktop
+linux:
+  target:
+    - target: AppImage
+      arch: [x64]
+  icon: build/icon.png
+  category: Development
+afterSign: scripts/after-sign.cjs

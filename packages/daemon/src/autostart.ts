@@ -33,6 +33,48 @@ export async function runningCollectorPid(home = homeDir()): Promise<number | un
   }
 }
 
+/** Process list lines that are the Flutter Memento app (whose built-in collector writes no pid file). */
+export function flutterAppPids(psOutput: string, platform: NodeJS.Platform = process.platform): number[] {
+  const pids: number[] = [];
+  for (const raw of psOutput.split("\n")) {
+    const line = raw.trim();
+    const m = /^(\d+)\s+(.*)$/.exec(line);
+    if (!m) continue;
+    const cmd = m[2]!;
+    const hit =
+      platform === "darwin"
+        ? /\/Memento\.app\/Contents\/MacOS\/Memento$/.test(cmd)
+        : platform === "win32"
+          ? /(^|\\)memento\.exe$/i.test(cmd)
+          : /(^|\/)memento$/.test(cmd);
+    if (hit) pids.push(Number(m[1]));
+  }
+  return pids;
+}
+
+/** Whether the Flutter desktop app is running (it collects in-process unless it sees our pid file). */
+export async function flutterAppRunning(): Promise<boolean> {
+  const list = await new Promise<string>((resolve) => {
+    if (process.platform === "win32") {
+      execFile("tasklist", ["/FO", "CSV", "/NH"], { windowsHide: true }, (err, stdout) =>
+        resolve(
+          err
+            ? ""
+            : String(stdout)
+                .split("\n")
+                .map((l) => l.split('","'))
+                .filter((c) => c.length > 1)
+                .map((c) => `${c[1]} ${c[0]!.replace(/^"/, "")}`)
+                .join("\n"),
+        ),
+      );
+    } else {
+      execFile("ps", ["-axo", "pid=,comm="], (err, stdout) => resolve(err ? "" : String(stdout)));
+    }
+  });
+  return flutterAppPids(list).length > 0;
+}
+
 /** Claims the pid file; false when another live collector holds it. Released on exit. */
 export async function acquirePidFile(home = homeDir()): Promise<boolean> {
   if (await runningCollectorPid(home)) return false;

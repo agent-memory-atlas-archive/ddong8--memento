@@ -79,7 +79,7 @@ jobs:
         run: twine check dist/*
 
   web:
-    name: ts · core + daemon + web
+    name: ts · core + daemon + desktop + web
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -90,8 +90,11 @@ jobs:
           cache: npm
           cache-dependency-path: package-lock.json
 
-      # npm workspace at the repo root: packages/*, web
+      # npm workspace at the repo root: packages/*, apps/*, web
       - run: npm ci
+        env:
+          # Typechecking the desktop app doesn't need the Electron binary.
+          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
 
       - name: core · typecheck & test
         run: |
@@ -102,6 +105,12 @@ jobs:
         run: |
           npm run typecheck -w @memento/daemon
           npm run test -w @memento/daemon
+
+      - name: desktop · typecheck & bundle
+        run: |
+          npm run build -w @memento/daemon
+          npm run typecheck -w @memento/desktop
+          node apps/desktop/scripts/build.mjs
 
       - name: web · typecheck & build
         run: |

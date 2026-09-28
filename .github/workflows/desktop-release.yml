@@ -1,4 +1,4 @@
-name: Flutter Desktop Release
+name: Desktop Release
 
 on:
   push:
@@ -257,6 +257,94 @@ jobs:
             mobile/build/linux/Memento-linux-x64.tar.gz
             mobile/build/linux/Memento-linux-amd64.deb
           retention-days: 2
+
+  # Electron desktop app (apps/desktop). Kept out of publish-release's needs so a
+  # failure here never holds back the Flutter release; its files are added to
+  # the same GitHub release afterwards (electron-updater reads latest*.yml there).
+  build-electron:
+    name: Build Electron (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS
+            os: macos-latest
+            args: --mac
+          - name: Windows
+            os: windows-latest
+            args: --win
+          - name: Linux
+            os: ubuntu-latest
+            args: --linux
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install
+        run: npm ci --workspace @memento/desktop --workspace @memento/daemon --workspace @memento/core --include-workspace-root
+
+      - name: Version from tag
+        shell: bash
+        run: |
+          VERSION="${{ github.event.inputs.tag_name }}"
+          if [ -z "$VERSION" ] && [[ "${{ github.ref }}" == refs/tags/v* ]]; then VERSION="${{ github.ref_name }}"; fi
+          VERSION="${VERSION#v}"
+          if [ -z "$VERSION" ]; then
+            VERSION=$(grep '^version:' mobile/pubspec.yaml | sed 's/version: //' | cut -d'+' -f1 | tr -d ' ')
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: Build
+        run: npm run build -w @memento/desktop
+
+      - name: Package
+        shell: bash
+        working-directory: apps/desktop
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: npx electron-builder ${{ matrix.args }} --publish never -c.extraMetadata.version="$VERSION"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: electron-${{ matrix.name }}
+          path: |
+            apps/desktop/release/*.dmg
+            apps/desktop/release/*.zip
+            apps/desktop/release/*.exe
+            apps/desktop/release/*.AppImage
+            apps/desktop/release/*.blockmap
+            apps/desktop/release/latest*.yml
+          if-no-files-found: error
+          retention-days: 2
+
+  publish-electron:
+    name: Add Electron builds to the release
+    needs: [publish-release, build-electron]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Electron artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: electron-*
+          merge-multiple: true
+          path: electron
+
+      - name: Upload to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ github.event.inputs.tag_name }}"
+          if [ -z "$TAG" ]; then TAG="${GITHUB_REF#refs/tags/}"; fi
+          ls -la electron
+          gh release upload "$TAG" electron/* --clobber --repo "${{ github.repository }}"
 
   publish-release:
     name: Publish GitHub Release

@@ -4,6 +4,7 @@
   "description": "Memento monorepo: shared TypeScript packages, web, desktop and mobile clients",
   "workspaces": [
     "packages/*",
+    "apps/*",
     "web"
   ],
   "scripts": {

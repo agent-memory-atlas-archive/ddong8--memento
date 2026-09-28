@@ -7,6 +7,7 @@ import { useI18n } from "@/lib/i18n";
 import { useAuth } from "@/lib/auth-context";
 import { getApiBase, authFetch } from "@/lib/api-client";
 import { Icon, ToolGlyph, PlatformGlyph } from "@/components/aurora/Icon";
+import { desktop } from "@/lib/desktop";
 // Read version from package.json so the sidebar footer tracks releases
 // automatically — no more "v0.1.0 forever" when actual builds are 0.2.x.
 import pkg from "../../../package.json";
@@ -26,6 +27,9 @@ export default function Sidebar({ open, onClose }: { open: boolean; onClose: () 
   const { t } = useI18n();
   const { user } = useAuth();
   const [devices, setDevices] = useState<SidebarDevice[]>([]);
+  const [isDesktop, setIsDesktop] = useState(false);
+
+  useEffect(() => setIsDesktop(desktop() !== null), []);
 
   useEffect(() => {
     const token = localStorage.getItem("dr_token");
@@ -68,6 +72,7 @@ export default function Sidebar({ open, onClose }: { open: boolean; onClose: () 
     { href: "/devices", label: t.nav.devices, icon: "devices" },
     { href: "/inbox", label: t.nav.inbox, icon: "inbox" },
     { href: "/health", label: t.nav.health, icon: "activity" },
+    ...(isDesktop ? [{ href: "/collector", label: t.nav.collector, icon: "terminal" as IconName }] : []),
     ...(isAdmin ? [{ href: "/admin", label: t.nav.admin, icon: "lock" as IconName }] : []),
   ];
 
