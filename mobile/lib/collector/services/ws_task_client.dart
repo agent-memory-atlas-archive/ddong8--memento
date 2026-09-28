@@ -6,7 +6,9 @@ import 'package:path/path.dart' as p;
 import '../models/collector_config.dart';
 import '../models/task_message.dart';
 import 'agent_hook_bridge.dart';
+import 'agent_stream.dart';
 import 'p2p_media_server.dart';
+import 'task_worktree.dart';
 
 /// Represents a prepared command line ready to be spawned via Process.start.
 class ResolvedExecution {
@@ -33,6 +35,9 @@ class WsTaskClient {
   P2pMediaServer? _p2pServer;
   final Map<String, Process> _runningTasks = {};
   final Map<String, StringBuffer> _activeStdoutBuffers = {};
+  /// Claude tasks keep stdin open for follow-up instructions until their run ends.
+  final Map<String, IOSink> _steerInputs = {};
+  final Map<String, AgentEventLog> _eventLogs = {};
   AgentHookBridge? _hookBridge;
 
   WsTaskClient({
@@ -169,7 +174,19 @@ class WsTaskClient {
             } else if (type == 'task_input') {
               final taskId = data['task_id']?.toString();
               final input = data['input']?.toString();
-              if (taskId != null && input != null && _runningTasks.containsKey(taskId)) {
+              final steer = taskId == null ? null : _steerInputs[taskId];
+              if (taskId != null && input != null && steer != null) {
+                // A follow-up for a running Claude task: it reads it at the next step.
+                try {
+                  steer.writeln(jsonEncode(_claudeUserMessage(input)));
+                  unawaited(steer.flush());
+                  _emitEvent(taskId, {'kind': 'steer', 'text': input, 'status': 'sent'});
+                } catch (e) {
+                  _emitEvent(taskId, {'kind': 'steer', 'text': input, 'status': 'late'});
+                }
+              } else if (taskId != null && input != null && _steerable(taskId) == false) {
+                _emitEvent(taskId, {'kind': 'steer', 'text': input, 'status': 'unsupported'});
+              } else if (taskId != null && input != null && _runningTasks.containsKey(taskId)) {
                 final proc = _runningTasks[taskId];
                 if (proc != null) {
                   try {
@@ -1382,16 +1399,106 @@ class WsTaskClient {
     return null;
   }
 
+  static Map<String, dynamic> _claudeUserMessage(String text) => {
+        'type': 'user',
+        'message': {'role': 'user', 'content': text},
+      };
+
+  /// Structured agent tasks other than Claude (Codex) can't take follow-ups.
+  bool? _steerable(String taskId) => _eventLogs.containsKey(taskId) ? _steerInputs.containsKey(taskId) : null;
+
+  void _emitEvent(String taskId, Map<String, dynamic> event) {
+    final row = _eventLogs[taskId]?.add(event) ?? {...event, 'at': DateTime.now().toUtc().toIso8601String()};
+    _sendJson({'type': 'agent_event', 'task_id': taskId, 'event': row});
+  }
+
+  /// Wires a started process: the prompt on stdin for Claude's stream-json input
+  /// (stdin then stays open for follow-ups until the run ends), stdout parsed into
+  /// events when [parser] is set, stderr as-is.
+  void _attachProcessIo(
+    Process proc,
+    String taskId, {
+    required StringBuffer stdoutBuf,
+    required StringBuffer stderrBuf,
+    AgentStreamParser? parser,
+    String? stdinPrompt,
+  }) {
+    const decoder = Utf8Decoder(allowMalformed: true);
+    if (stdinPrompt != null && parser is ClaudeStreamParser) {
+      _steerInputs[taskId] = proc.stdin;
+      proc.stdin.writeln(jsonEncode(_claudeUserMessage(stdinPrompt)));
+      unawaited(proc.stdin.flush().catchError((_) {}));
+    } else {
+      unawaited(proc.stdin.close().catchError((_) {}));
+    }
+
+    if (parser == null) {
+      proc.stdout.transform(decoder).listen((chunk) {
+        stdoutBuf.write(chunk);
+        _sendJson(TaskChunk(taskId: taskId, stream: 'stdout', text: chunk).toJson());
+      });
+    } else {
+      proc.stdout.transform(decoder).transform(const LineSplitter()).listen((line) {
+        final events = parser.feed(line);
+        if (events == null) {
+          if (line.trim().isEmpty) return;
+          stdoutBuf.writeln(line);
+          _sendJson(TaskChunk(taskId: taskId, stream: 'stdout', text: '$line\n').toJson());
+          return;
+        }
+        for (final e in events) {
+          if (e['kind'] == 'text') {
+            // What the agent says along the way; the final answer replaces it at the end.
+            final text = '${e['text']}\n\n';
+            stdoutBuf.write(text);
+            _sendJson(TaskChunk(taskId: taskId, stream: 'stdout', text: text).toJson());
+          } else {
+            _emitEvent(taskId, e);
+          }
+        }
+        if (parser is ClaudeStreamParser && parser.finished && (parser.queuedTurns ?? 0) == 0) {
+          final sink = _steerInputs.remove(taskId);
+          if (sink != null) unawaited(sink.close().catchError((_) {}));
+        }
+      });
+    }
+
+    proc.stderr.transform(decoder).listen((chunk) {
+      stderrBuf.write(chunk);
+      _sendJson(TaskChunk(taskId: taskId, stream: 'stderr', text: chunk).toJson());
+    });
+  }
+
+  /// Claude Code in print mode with stream-json in and out: every tool call is an
+  /// event, the prompt goes in on stdin, and follow-ups can be written while it runs.
+  List<String> _claudeArgs({String sessionId = '', String sysAppend = '', String model = '', String? settingsJson}) => [
+        '-p',
+        if (sessionId.isNotEmpty) ...['-r', sessionId],
+        if (sysAppend.isNotEmpty) ...['--append-system-prompt', sysAppend],
+        '--input-format', 'stream-json',
+        '--output-format', 'stream-json',
+        '--verbose',
+        '--dangerously-skip-permissions',
+        if (model.isNotEmpty) ...['--model', model],
+        if (settingsJson != null) ...['--settings', settingsJson],
+      ];
+
   Future<void> _executeTask(TaskDispatch task) async {
     final taskId = task.id;
     final action = task.action;
     final payload = task.payload;
     final cwd = payload['cwd']?.toString().trim();
-    final workingDir = await _resolveWorkingDir(cwd, payload);
+    var workingDir = await _resolveWorkingDir(cwd, payload);
 
     String exe = '';
     List<String> args = [];
     bool isAntigravity = false;
+    // Structured agents (Claude, Codex) report every step through the parser.
+    AgentStreamParser? parser;
+    String? stdinPrompt;
+    String? claudeSettings;
+    TaskWorktree? worktree;
+    Map<String, String>? gitEnv;
 
     if (action == 'shell') {
       final command = payload['command']?.toString() ?? '';
@@ -1444,13 +1551,23 @@ class WsTaskClient {
         return;
       }
       exe = resolvedExe;
+      _eventLogs[taskId] = AgentEventLog();
+
+      // Its own worktree and branch, so parallel tasks on one repository don't collide.
+      if (payload['worktree'] == true && workingDir != null && workingDir.isNotEmpty) {
+        gitEnv = await _buildExecutionEnvironment();
+        final made = await TaskWorktree.create(workingDir, taskId, env: gitEnv);
+        final tree = made.tree;
+        if (tree != null) {
+          worktree = tree;
+          workingDir = tree.workDir;
+          _emitEvent(taskId, {'kind': 'worktree', 'status': 'created', 'branch': tree.branch, 'path': tree.path});
+        } else {
+          _emitEvent(taskId, {'kind': 'worktree', 'status': 'skipped', 'reason': made.reason});
+        }
+      }
 
       if (binary.contains('claude')) {
-        args = ['-p'];
-        if (sessionId.isNotEmpty) args.addAll(['-r', sessionId]);
-        if (sysAppend.isNotEmpty) args.addAll(['--append-system-prompt', sysAppend]);
-        args.addAll(['--output-format', 'text', '--dangerously-skip-permissions']);
-        if (model.isNotEmpty) args.addAll(['--model', model]);
         final settings = <String, dynamic>{};
         if (effort.isNotEmpty) settings['effortLevel'] = effort;
         // Report each tool call to the server, which pushes risky ones to the phone.
@@ -1458,8 +1575,10 @@ class WsTaskClient {
           onToolUse: (tid, use) => _sendJson({'type': 'agent_tool_use', 'task_id': tid, ...use}),
         )).claudeHooks(taskId);
         if (hooks != null) settings['hooks'] = hooks;
-        if (settings.isNotEmpty) args.addAll(['--settings', jsonEncode(settings)]);
-        args.add(prompt);
+        claudeSettings = settings.isNotEmpty ? jsonEncode(settings) : null;
+        args = _claudeArgs(sessionId: sessionId, sysAppend: sysAppend, model: model, settingsJson: claudeSettings);
+        parser = ClaudeStreamParser();
+        stdinPrompt = prompt;
       } else if (binary.contains('codex')) {
         args = [];
         if (workingDir != null && workingDir.isNotEmpty) {
@@ -1476,9 +1595,11 @@ class WsTaskClient {
           args.add(isFork ? 'fork' : 'resume');
         }
         args.addAll([
+          '--json',
           '--dangerously-bypass-approvals-and-sandbox',
           '--skip-git-repo-check',
         ]);
+        parser = CodexStreamParser();
         if (effort.isNotEmpty) args.addAll(['-c', 'model_reasoning_effort="$effort"']);
         if (model.isNotEmpty) args.addAll(['-m', model]);
         if (effectiveSessionId.isNotEmpty) args.add(effectiveSessionId);
@@ -1546,31 +1667,8 @@ class WsTaskClient {
         environment: executionEnv,
       );
       _runningTasks[taskId] = proc;
-      try {
-        await proc.stdin.close();
-      } catch (_) {}
-
-      const decoder = Utf8Decoder(allowMalformed: true);
-
-      // Stream stdout chunks
-      proc.stdout.transform(decoder).listen((chunk) {
-        stdoutBuf.write(chunk);
-        _sendJson(TaskChunk(
-          taskId: taskId,
-          stream: 'stdout',
-          text: chunk,
-        ).toJson());
-      });
-
-      // Stream stderr chunks
-      proc.stderr.transform(decoder).listen((chunk) {
-        stderrBuf.write(chunk);
-        _sendJson(TaskChunk(
-          taskId: taskId,
-          stream: 'stderr',
-          text: chunk,
-        ).toJson());
-      });
+      _attachProcessIo(proc, taskId,
+          stdoutBuf: stdoutBuf, stderrBuf: stderrBuf, parser: parser, stdinPrompt: stdinPrompt);
 
       // Wait for process completion or timeout
       var exitCode = await proc.exitCode.timeout(
@@ -1583,6 +1681,8 @@ class WsTaskClient {
 
       var fullOut = stdoutBuf.toString().trim();
       var fullErr = stderrBuf.toString().trim();
+      // Errors can come on stderr or inside the JSON stream; retries look at both.
+      String errScan() => '$fullErr\n${parser?.errors ?? ''}';
 
       // Reactive retry 0: Antigravity language_server port binding failure
       if (exitCode != 0 &&
@@ -1603,18 +1703,8 @@ class WsTaskClient {
             workingDirectory: workingDir,
             environment: executionEnv,
           );
-          try {
-            await retryProc.stdin.close();
-          } catch (_) {}
           _runningTasks[taskId] = retryProc;
-          retryProc.stdout.transform(decoder).listen((chunk) {
-            stdoutBuf.write(chunk);
-            _sendJson(TaskChunk(taskId: taskId, stream: 'stdout', text: chunk).toJson());
-          });
-          retryProc.stderr.transform(decoder).listen((chunk) {
-            stderrBuf.write(chunk);
-            _sendJson(TaskChunk(taskId: taskId, stream: 'stderr', text: chunk).toJson());
-          });
+          _attachProcessIo(retryProc, taskId, stdoutBuf: stdoutBuf, stderrBuf: stderrBuf);
           exitCode = await retryProc.exitCode.timeout(
             Duration(seconds: task.timeoutSeconds),
             onTimeout: () {
@@ -1633,7 +1723,7 @@ class WsTaskClient {
           (payload['binary']?.toString() ?? '').toLowerCase().contains('codex') &&
           (payload['session_id']?.toString() ?? '').isNotEmpty &&
           payload['fork'] != true &&
-          fullErr.contains('already has an active writer')) {
+          errScan().contains('already has an active writer')) {
         const notice = '\n⚡ [自动重试] 该会话当前正被 ChatGPT 客户端占用锁定，已自动无缝切换为 Fork 分支模式重新执行（完整继承上下文记忆）...\n\n';
         stderrBuf.write(notice);
         _sendJson(TaskChunk(
@@ -1656,9 +1746,11 @@ class WsTaskClient {
         retryArgs.addAll([
           'exec',
           'fork',
+          '--json',
           '--dangerously-bypass-approvals-and-sandbox',
           '--skip-git-repo-check',
         ]);
+        parser = CodexStreamParser();
         if (mEffort.isNotEmpty) retryArgs.addAll(['-c', 'model_reasoning_effort="$mEffort"']);
         if (mModel.isNotEmpty) retryArgs.addAll(['-m', mModel]);
         retryArgs.addAll([cleanSid, pText]);
@@ -1669,17 +1761,8 @@ class WsTaskClient {
           workingDirectory: workingDir,
           environment: executionEnv,
         );
-        await retryProc.stdin.close();
         _runningTasks[taskId] = retryProc;
-
-        retryProc.stdout.transform(decoder).listen((chunk) {
-          stdoutBuf.write(chunk);
-          _sendJson(TaskChunk(taskId: taskId, stream: 'stdout', text: chunk).toJson());
-        });
-        retryProc.stderr.transform(decoder).listen((chunk) {
-          stderrBuf.write(chunk);
-          _sendJson(TaskChunk(taskId: taskId, stream: 'stderr', text: chunk).toJson());
-        });
+        _attachProcessIo(retryProc, taskId, stdoutBuf: stdoutBuf, stderrBuf: stderrBuf, parser: parser);
 
         exitCode = await retryProc.exitCode.timeout(
           Duration(seconds: task.timeoutSeconds),
@@ -1693,22 +1776,22 @@ class WsTaskClient {
       }
 
       // Reactive retry 2: cross-device session missing or corrupted (no rollout found, session not found, etc.)
-      final isSessionNotFound = fullErr.contains('no rollout found') ||
-          fullErr.contains('thread not found') ||
-          fullErr.contains('session not found') ||
-          fullErr.contains('conversation not found') ||
-          (fullErr.contains('conversation') && fullErr.contains('not found')) ||
-          fullErr.contains('Error resuming conversation') ||
-          fullErr.contains('failed to resume') ||
-          fullErr.contains('cannot resume') ||
-          fullErr.contains('unable to resume') ||
-          fullErr.contains('No conversation found') ||
-          fullErr.contains('could not find session') ||
-          fullErr.contains('no recorded session') ||
-          fullErr.contains('unexpected argument') ||
-          fullErr.contains('invalid value') ||
-          fullErr.contains('Usage: codex exec') ||
-          fullErr.contains('Usage: agy');
+      final isSessionNotFound = errScan().contains('no rollout found') ||
+          errScan().contains('thread not found') ||
+          errScan().contains('session not found') ||
+          errScan().contains('conversation not found') ||
+          (errScan().contains('conversation') && errScan().contains('not found')) ||
+          errScan().contains('Error resuming conversation') ||
+          errScan().contains('failed to resume') ||
+          errScan().contains('cannot resume') ||
+          errScan().contains('unable to resume') ||
+          errScan().contains('No conversation found') ||
+          errScan().contains('could not find session') ||
+          errScan().contains('no recorded session') ||
+          errScan().contains('unexpected argument') ||
+          errScan().contains('invalid value') ||
+          errScan().contains('Usage: codex exec') ||
+          errScan().contains('Usage: agy');
 
       if (exitCode != 0 &&
           action != 'shell' &&
@@ -1729,12 +1812,11 @@ class WsTaskClient {
         final sysAppend = payload['system_prompt_append']?.toString() ?? '';
 
         List<String> freshArgs = [];
+        String? freshPrompt;
         if (binary.contains('claude')) {
-          freshArgs = ['-p'];
-          if (sysAppend.isNotEmpty) freshArgs.addAll(['--append-system-prompt', sysAppend]);
-          freshArgs.addAll(['--output-format', 'text', '--dangerously-skip-permissions']);
-          if (mModel.isNotEmpty) freshArgs.addAll(['--model', mModel]);
-          freshArgs.add(pText);
+          freshArgs = _claudeArgs(sysAppend: sysAppend, model: mModel, settingsJson: claudeSettings);
+          parser = ClaudeStreamParser();
+          freshPrompt = pText;
         } else if (binary.contains('codex')) {
           freshArgs = [];
           if (workingDir != null && workingDir.isNotEmpty) {
@@ -1742,9 +1824,11 @@ class WsTaskClient {
           }
           freshArgs.addAll([
             'exec',
+            '--json',
             '--dangerously-bypass-approvals-and-sandbox',
             '--skip-git-repo-check',
           ]);
+          parser = CodexStreamParser();
           if (mEffort.isNotEmpty) freshArgs.addAll(['-c', 'model_reasoning_effort="$mEffort"']);
           if (mModel.isNotEmpty) freshArgs.addAll(['-m', mModel]);
           freshArgs.add(pText);
@@ -1752,6 +1836,7 @@ class WsTaskClient {
           freshArgs = [];
           if (mModel.isNotEmpty) freshArgs.addAll(['--model', mModel]);
           freshArgs.addAll(['-p', pText]);
+          parser = null;
         }
 
         final freshProc = await _startSafeProcess(
@@ -1760,19 +1845,9 @@ class WsTaskClient {
           workingDirectory: workingDir,
           environment: executionEnv,
         );
-        try {
-          await freshProc.stdin.close();
-        } catch (_) {}
         _runningTasks[taskId] = freshProc;
-
-        freshProc.stdout.transform(decoder).listen((chunk) {
-          stdoutBuf.write(chunk);
-          _sendJson(TaskChunk(taskId: taskId, stream: 'stdout', text: chunk).toJson());
-        });
-        freshProc.stderr.transform(decoder).listen((chunk) {
-          stderrBuf.write(chunk);
-          _sendJson(TaskChunk(taskId: taskId, stream: 'stderr', text: chunk).toJson());
-        });
+        _attachProcessIo(freshProc, taskId,
+            stdoutBuf: stdoutBuf, stderrBuf: stderrBuf, parser: parser, stdinPrompt: freshPrompt);
 
         exitCode = await freshProc.exitCode.timeout(
           Duration(seconds: task.timeoutSeconds),
@@ -1794,8 +1869,13 @@ class WsTaskClient {
         fullErr = stderrBuf.toString().trim();
       }
 
+      // A structured run's answer is its final message, not everything said along the way.
+      final answer = parser?.finalText?.trim();
+      if (answer != null && answer.isNotEmpty) fullOut = answer;
+      final streamErrors = parser?.errors.toString().trim() ?? '';
+
       final isTimeout = exitCode == -999;
-      final isPromptTooLong = fullErr.contains('Prompt is too long') || fullOut.contains('Prompt is too long');
+      final isPromptTooLong = errScan().contains('Prompt is too long') || fullOut.contains('Prompt is too long');
 
       final status = isTimeout
           ? 'timeout'
@@ -1803,7 +1883,9 @@ class WsTaskClient {
 
       final errorMsg = isTimeout
           ? 'Task timed out after ${task.timeoutSeconds}s'
-          : (exitCode != 0 ? (fullErr.isNotEmpty ? fullErr : 'Exit code $exitCode') : null);
+          : (exitCode != 0
+              ? (fullErr.isNotEmpty ? fullErr : (streamErrors.isNotEmpty ? streamErrors : 'Exit code $exitCode'))
+              : null);
 
       // Extract session ID from stdout / stderr
       String? extractedSessionId;
@@ -1813,8 +1895,18 @@ class WsTaskClient {
       if (sidMatch != null) {
         extractedSessionId = sidMatch.group(1);
       }
-      final resolvedSessionId = extractedSessionId ??
+      final resolvedSessionId = parser?.sessionId ??
+          extractedSessionId ??
           (payload['session_id']?.toString().isNotEmpty == true ? payload['session_id'].toString() : null);
+
+      final tree = worktree;
+      if (tree != null) {
+        try {
+          _emitEvent(taskId, await tree.finish(env: gitEnv));
+        } catch (e) {
+          _log('Worktree wrap-up failed for $taskId: $e');
+        }
+      }
 
       _sendJson(TaskFinished(
         taskId: taskId,
@@ -1825,6 +1917,7 @@ class WsTaskClient {
         error: errorMsg,
         errorType: isPromptTooLong ? 'prompt_too_long' : null,
         sessionId: resolvedSessionId,
+        events: _eventLogs[taskId]?.events,
       ).toJson());
     } catch (e) {
       _sendJson(TaskFinished(
@@ -1835,6 +1928,9 @@ class WsTaskClient {
       ).toJson());
     } finally {
       _activeStdoutBuffers.remove(taskId);
+      _eventLogs.remove(taskId);
+      final steer = _steerInputs.remove(taskId);
+      if (steer != null) unawaited(steer.close().catchError((_) {}));
       final active = _runningTasks.remove(taskId);
       try {
         await active?.stdin.close();

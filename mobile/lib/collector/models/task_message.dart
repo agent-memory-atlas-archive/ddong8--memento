@@ -52,6 +52,8 @@ class TaskFinished {
   final String? error;
   final String? errorType; // e.g. "prompt_too_long"
   final String? sessionId;
+  /// Steps of a structured agent run (tool calls, follow-ups, worktree, usage).
+  final List<Map<String, dynamic>>? events;
 
   const TaskFinished({
     required this.taskId,
@@ -62,6 +64,7 @@ class TaskFinished {
     this.error,
     this.errorType,
     this.sessionId,
+    this.events,
   });
 
   Map<String, dynamic> toJson() => {
@@ -74,5 +77,6 @@ class TaskFinished {
         if (error != null) 'error': error,
         if (errorType != null) 'error_type': errorType,
         if (sessionId != null) 'session_id': sessionId,
+        if (events != null && events!.isNotEmpty) 'events': events,
       };
 }
