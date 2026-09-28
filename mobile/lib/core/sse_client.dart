@@ -16,6 +16,7 @@ class AskStreamHandlers {
   final void Function(String? taskId, String? toolCallId, String? deviceName, String stream, String text) onTaskChunk;
   final void Function(String? taskId, String? toolCallId, ToolCallResult result) onToolResult;
   final void Function(String? taskId, String? toolCallId, String? deviceName, Map<String, dynamic> alert)? onTaskAlert;
+  final void Function(String? taskId, String? toolCallId, Map<String, dynamic> event)? onTaskEvent;
   final void Function(String text) onThinking;
   final void Function(String text) onDelta;
   final void Function(String error) onError;
@@ -35,6 +36,7 @@ class AskStreamHandlers {
     required this.onTaskChunk,
     required this.onToolResult,
     this.onTaskAlert,
+    this.onTaskEvent,
     required this.onThinking,
     required this.onDelta,
     required this.onError,
@@ -143,6 +145,7 @@ class AskSseClient {
     int? timeoutSeconds,
     List<String>? images,
     List<Map<String, dynamic>>? attachments,
+    bool worktree = false,
     required AskStreamHandlers handlers,
   }) async {
     detach();
@@ -171,6 +174,7 @@ class AskSseClient {
       if (timeoutSeconds != null && timeoutSeconds > 0) 'timeout_seconds': timeoutSeconds,
       if (images != null && images.isNotEmpty) 'images': images,
       if (attachments != null && attachments.isNotEmpty) 'attachments': attachments,
+      if (worktree) 'worktree': true,
     };
 
     try {
@@ -308,6 +312,11 @@ class AskSseClient {
               if (evt['alert'] is Map) {
                 h.onTaskAlert?.call(evt['task_id']?.toString(), evt['tool_call_id']?.toString(),
                     evt['device_name']?.toString(), (evt['alert'] as Map).cast<String, dynamic>());
+              }
+            case 'task_event':
+              if (evt['event'] is Map) {
+                h.onTaskEvent?.call(evt['task_id']?.toString(), evt['tool_call_id']?.toString(),
+                    (evt['event'] as Map).cast<String, dynamic>());
               }
             case 'tool_result':
               h.onToolResult(evt['task_id']?.toString(), evt['tool_call_id']?.toString(),

@@ -5,6 +5,7 @@ import '../../core/theme/aurora_theme.dart';
 import '../../models/ask_turn.dart';
 import 'app_markdown.dart';
 import 'glass_card.dart';
+import 'task_timeline.dart';
 
 class ExecutionCard extends StatefulWidget {
   final ToolCallItem call;
@@ -25,6 +26,35 @@ class _ExecutionCardState extends State<ExecutionCard> {
   bool _copied = false;
   bool _showRawTerminal = false;
   String? _feedbackMsg;
+  final _steer = TextEditingController();
+  bool _steerSending = false;
+  String? _steerNote;
+
+  @override
+  void dispose() {
+    _steer.dispose();
+    super.dispose();
+  }
+
+  /// A follow-up for a running Claude task; it reads it at its next step.
+  Future<void> _sendSteer(String taskId) async {
+    final text = _steer.text.trim();
+    if (text.isEmpty || _steerSending) return;
+    setState(() {
+      _steerSending = true;
+      _steerNote = null;
+    });
+    final ok = await ApiClient().sendTaskInput(taskId, text);
+    if (!mounted) return;
+    setState(() {
+      _steerSending = false;
+      if (ok) {
+        _steer.clear();
+      } else {
+        _steerNote = '没送达：任务可能已经结束，或设备刚断开';
+      }
+    });
+  }
 
   static final RegExp _uuidRegex = RegExp(
     r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
@@ -308,6 +338,16 @@ class _ExecutionCardState extends State<ExecutionCard> {
                       RiskAlertList(alerts: res.alerts),
                       const SizedBox(height: 10),
                     ],
+                    if (res != null && res.events.isNotEmpty) ...[
+                      TaskTimeline(events: res.events, running: isRunning),
+                      const SizedBox(height: 10),
+                    ],
+                    // Only Claude reads follow-ups mid-run, and only collectors that
+                    // stream events (newer ones) keep its input open for them.
+                    if (isRunning && isClaude && res?.taskId != null && res!.events.isNotEmpty) ...[
+                      _steerBox(res.taskId!),
+                      const SizedBox(height: 10),
+                    ],
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 12),
                       decoration: BoxDecoration(
@@ -411,6 +451,57 @@ class _ExecutionCardState extends State<ExecutionCard> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _steerBox(String taskId) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Container(
+          decoration: BoxDecoration(
+            color: AuroraColors.surfaceSolid,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: const Color(0x14FFFFFF)),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _steer,
+                  minLines: 1,
+                  maxLines: 3,
+                  style: const TextStyle(fontSize: 13, color: AuroraColors.fg1),
+                  textInputAction: TextInputAction.send,
+                  onSubmitted: (_) => _sendSteer(taskId),
+                  decoration: const InputDecoration(
+                    hintText: '补充要求，它会在下一步读到…',
+                    hintStyle: TextStyle(fontSize: 13, color: AuroraColors.fg3),
+                    isDense: true,
+                    filled: false,
+                    border: InputBorder.none,
+                    enabledBorder: InputBorder.none,
+                    focusedBorder: InputBorder.none,
+                    contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  ),
+                ),
+              ),
+              IconButton(
+                tooltip: '发给正在运行的任务',
+                onPressed: _steerSending ? null : () => _sendSteer(taskId),
+                icon: _steerSending
+                    ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 1.6))
+                    : const Icon(Icons.send_rounded, size: 17, color: AuroraColors.accent),
+              ),
+            ],
+          ),
+        ),
+        if (_steerNote != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 4, left: 4),
+            child: Text(_steerNote!, style: const TextStyle(fontSize: 12, color: AuroraColors.warnText)),
+          ),
+      ],
     );
   }
 

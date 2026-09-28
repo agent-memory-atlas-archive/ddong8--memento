@@ -105,6 +105,10 @@ class _AskScreenState extends ConsumerState<AskScreen> {
   bool _isConfigCollapsed = true;
   bool _compactMode = false;
   int? _selectedTimeoutSeconds;
+  /// Run agent tasks in their own git worktree and branch.
+  bool _worktreeMode = false;
+
+  bool get _usesWorktree => _worktreeMode && _executionMode != 'ai' && _executionMode != 'shell';
   bool _isUserScrolledUp = false;
   bool _isAutoScrolling = false;
   bool _isWorkspaceRestored = false;
@@ -1537,6 +1541,7 @@ class _AskScreenState extends ConsumerState<AskScreen> {
           compactMode: _compactMode,
           timeoutSeconds: _selectedTimeoutSeconds,
           attachments: attachmentsToSend.isNotEmpty ? attachmentsToSend : null,
+          worktree: _usesWorktree,
         );
 
     _inputController.clear();
@@ -1581,6 +1586,7 @@ class _AskScreenState extends ConsumerState<AskScreen> {
             sessionId: sidToUse,
             compactMode: true,
             timeoutSeconds: _selectedTimeoutSeconds,
+            worktree: _usesWorktree,
           );
       if (Platform.isIOS || Platform.isAndroid) {
         _inputFocusNode.unfocus();
@@ -2412,6 +2418,10 @@ class _AskScreenState extends ConsumerState<AskScreen> {
                       const SizedBox(width: 8),
                       _summaryChip(icon: Icons.timer_outlined, label: '${(_selectedTimeoutSeconds! ~/ 60)}m'),
                     ],
+                    if (_usesWorktree) ...[
+                      const SizedBox(width: 8),
+                      _summaryChip(icon: Icons.call_split_rounded, label: '独立分支'),
+                    ],
                   ],
                 ),
               ),
@@ -2967,6 +2977,39 @@ class _AskScreenState extends ConsumerState<AskScreen> {
                 ],
               ),
             ),
+
+            // Worktree: a branch of its own for agent tasks, so parallel runs don't collide.
+            if (_executionMode != 'ai' && _executionMode != 'shell') ...[
+              const SizedBox(height: 6),
+              InkWell(
+                borderRadius: BorderRadius.circular(6),
+                onTap: () => setState(() => _worktreeMode = !_worktreeMode),
+                child: Row(
+                  children: [
+                    Icon(Icons.call_split_rounded, size: 13, color: _worktreeMode ? AuroraColors.accent : AuroraColors.fg3),
+                    const SizedBox(width: 4),
+                    const Text('独立分支:', style: TextStyle(fontSize: 11, color: AuroraColors.fg3, fontWeight: FontWeight.w500)),
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3.5),
+                      decoration: BoxDecoration(
+                        color: _worktreeMode ? AuroraColors.accentSoft : AuroraColors.chip,
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: _worktreeMode ? AuroraColors.accent : AuroraColors.border),
+                      ),
+                      child: Text(
+                        _worktreeMode ? '开 · 在单独的 git worktree 里改，改完留分支给你合并' : '关 · 直接改当前目录',
+                        style: TextStyle(
+                          fontSize: 10.5,
+                          color: _worktreeMode ? AuroraColors.accent : AuroraColors.fg2,
+                          fontWeight: _worktreeMode ? FontWeight.w600 : FontWeight.normal,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
             // Session selector under the selected project
             if (_selectedProjectId != null && _selectedProjectId!.isNotEmpty) ...[
               const SizedBox(height: 6),

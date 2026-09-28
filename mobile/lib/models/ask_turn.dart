@@ -13,6 +13,8 @@ class ToolCallResult {
   final String? sessionId;
   /// Risky operations the agent performed during this task ({label, detail, tool}).
   final List<Map<String, dynamic>> alerts;
+  /// Steps of a structured agent run: tool calls, follow-ups, worktree, usage.
+  final List<Map<String, dynamic>> events;
 
   ToolCallResult({
     this.taskId,
@@ -28,6 +30,7 @@ class ToolCallResult {
     this.devices,
     this.sessionId,
     this.alerts = const [],
+    this.events = const [],
   });
 
   factory ToolCallResult.fromJson(Map<String, dynamic> json) {
@@ -48,6 +51,10 @@ class ToolCallResult {
           .whereType<Map>()
           .map((a) => a.cast<String, dynamic>())
           .toList(),
+      events: ((json['events'] as List?) ?? const [])
+          .whereType<Map>()
+          .map((e) => e.cast<String, dynamic>())
+          .toList(),
     );
   }
 
@@ -65,6 +72,7 @@ class ToolCallResult {
     List<dynamic>? devices,
     String? sessionId,
     List<Map<String, dynamic>>? alerts,
+    List<Map<String, dynamic>>? events,
   }) {
     return ToolCallResult(
       taskId: taskId ?? this.taskId,
@@ -80,8 +88,22 @@ class ToolCallResult {
       devices: devices ?? this.devices,
       sessionId: sessionId ?? this.sessionId,
       alerts: alerts ?? this.alerts,
+      events: events ?? this.events,
     );
   }
+}
+
+/// A tool step arrives as "running" and again when it's done; keep one row per
+/// tool id, updated in place. Other events are appended.
+List<Map<String, dynamic>> mergeTaskEvent(List<Map<String, dynamic>> events, Map<String, dynamic> event) {
+  final id = event['kind'] == 'tool' ? event['id'] : null;
+  if (id != null) {
+    final i = events.indexWhere((e) => e['kind'] == 'tool' && e['id'] == id);
+    if (i >= 0) {
+      return [...events.sublist(0, i), {...events[i], ...event}, ...events.sublist(i + 1)];
+    }
+  }
+  return [...events, event];
 }
 
 class ToolCallItem {

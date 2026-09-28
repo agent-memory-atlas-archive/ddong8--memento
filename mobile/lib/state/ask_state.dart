@@ -278,6 +278,7 @@ class AskNotifier extends StateNotifier<AskState> {
     bool? compactMode,
     int? timeoutSeconds,
     List<ChatAttachment>? attachments,
+    bool worktree = false,
   }) async {
     final effectiveQuestion = question.trim().isNotEmpty
         ? question.trim()
@@ -339,6 +340,7 @@ class AskNotifier extends StateNotifier<AskState> {
       timeoutSeconds: timeoutSeconds,
       images: imageList.isNotEmpty ? imageList : null,
       attachments: attachmentDataList.isNotEmpty ? attachmentDataList : null,
+      worktree: worktree,
       handlers: _handlers(gen),
     );
   }
@@ -436,6 +438,24 @@ class AskNotifier extends StateNotifier<AskState> {
           return prev.copyWith(toolCalls: calls);
         });
       },
+      onTaskEvent: (taskId, toolCallId, event) {
+        if (!live()) return;
+        _flushPending();
+        _updateLastAssistantSync((prev) {
+          final calls = [...prev.toolCalls];
+          final idx = _findCallIndex(calls, taskId, toolCallId, null);
+          if (idx >= 0) {
+            final prevRes = calls[idx].result ?? ToolCallResult();
+            calls[idx] = calls[idx].copyWith(
+              result: prevRes.copyWith(
+                taskId: taskId ?? prevRes.taskId,
+                events: mergeTaskEvent(prevRes.events, event),
+              ),
+            );
+          }
+          return prev.copyWith(toolCalls: calls);
+        });
+      },
       onToolResult: (taskId, toolCallId, result) {
         if (!live()) return;
         _flushPending();
@@ -443,10 +463,13 @@ class AskNotifier extends StateNotifier<AskState> {
           final calls = [...prev.toolCalls];
           final idx = _findCallIndex(calls, taskId, toolCallId, result.deviceName);
           if (idx >= 0) {
-            // Older servers don't send alerts in the final result; keep the streamed ones.
+            // Older servers don't send alerts or events in the final result; keep the streamed ones.
             final streamed = calls[idx].result?.alerts ?? const <Map<String, dynamic>>[];
+            final streamedEvents = calls[idx].result?.events ?? const <Map<String, dynamic>>[];
+            var merged = result.alerts.isEmpty && streamed.isNotEmpty ? result.copyWith(alerts: streamed) : result;
+            if (merged.events.isEmpty && streamedEvents.isNotEmpty) merged = merged.copyWith(events: streamedEvents);
             calls[idx] = calls[idx].copyWith(
-              result: result.alerts.isEmpty && streamed.isNotEmpty ? result.copyWith(alerts: streamed) : result,
+              result: merged,
             );
           } else if (calls.isNotEmpty) {
             calls[calls.length - 1] =
