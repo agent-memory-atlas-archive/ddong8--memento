@@ -31,6 +31,7 @@ from ..db.models import (
     CorrectionTopic,
     Document,
     Machine,
+    Project,
     User,
     UserMemory,
     UserProfile,
@@ -38,7 +39,17 @@ from ..db.models import (
 from . import ai_health
 from .ai_provider import call_plain_chat
 from .dreaming_service import _CORRECTION_RE, SUBAGENT_PATH_REGEX, _safe_json_loads, clean_user_voice
-from .profile_service import PROFILE_MAX_CHARS, get_draft_profile, get_published_profile, sanitize_profile_content
+from .profile_service import (
+    PROFILE_MAX_CHARS,
+    SCOPED_MAX_CHARS,
+    clean_device_name,
+    get_draft_profile,
+    get_published_profile,
+    join_profile_scopes,
+    norm_scope_name,
+    sanitize_profile_content,
+    split_profile_scopes,
+)
 
 logger = logging.getLogger("server.corrections")
 
@@ -73,6 +84,12 @@ class Said:
     message_id: int
     text: str
     said_at: datetime
+    project: str | None = None
+    device: str | None = None
+
+    @property
+    def where(self) -> str:
+        return " @ ".join(filter(None, [self.project, self.device]))
 
 
 def fingerprint(said: Said) -> str:
@@ -92,12 +109,8 @@ def learned_by(topic: CorrectionTopic, when: datetime) -> bool:
     return topic.status == "accepted" and (topic.accepted_at is None or topic.accepted_at <= when)
 
 
-def add_profile_line(content: str, heading: str, line: str) -> str:
-    """Add "- line" to the "### heading" section, creating the section if it's missing."""
-    bullet = f"- {line}"
-    lines = (content or "").rstrip().split("\n") if (content or "").strip() else []
-    if any(existing.strip() == bullet for existing in lines):
-        return "\n".join(lines)
+def _add_general_line(general: str, heading: str, bullet: str) -> str:
+    lines = general.rstrip().split("\n") if general.strip() else []
     start = next((i for i, existing in enumerate(lines) if existing.strip().lstrip("#").strip() == heading
                   and existing.strip().startswith("#")), None)
     if start is None:
@@ -118,6 +131,51 @@ def add_profile_line(content: str, heading: str, line: str) -> str:
     return "\n".join(lines[:insert_at] + [bullet] + lines[insert_at:])
 
 
+def add_profile_line(content: str, heading: str, line: str) -> str:
+    """Add "- line" under `heading`: a general heading ("铁律") goes in the general part,
+    a scoped one ("项目：chembook", "设备：…") in its own section at the end."""
+    bullet = f"- {line}"
+    if any(existing.strip() == bullet for existing in (content or "").split("\n")):
+        return (content or "").strip()
+    scopes = split_profile_scopes(content or "")
+    scoped = re.match(r"^(项目|设备)\s*[:：]\s*(.+)$", heading)
+    if scoped:
+        bucket = scopes.projects if scoped.group(1) == "项目" else scopes.devices
+        name = scoped.group(2).strip()
+        key = next((k for k in bucket if norm_scope_name(k) == norm_scope_name(name)), name)
+        bucket.setdefault(key, []).append(bullet)
+    else:
+        scopes.general = _add_general_line(scopes.general, heading, bullet)
+    return join_profile_scopes(scopes)
+
+
+def over_limit(content: str) -> bool:
+    scopes = split_profile_scopes(content)
+    if len(scopes.general) > PROFILE_MAX_CHARS:
+        return True
+    return any(len("\n".join(lines)) > SCOPED_MAX_CHARS
+               for bucket in (scopes.projects, scopes.devices) for lines in bucket.values())
+
+
+def scope_for(kind: str, said: Said) -> str:
+    """"project:chembook" / "device:DESKTOP-KR9IPP4" / "global", from where it was said."""
+    if kind == "project" and said.project:
+        return f"project:{said.project}"
+    if kind == "device" and said.device:
+        return f"device:{said.device}"
+    return "global"
+
+
+def topic_heading(topic: CorrectionTopic) -> str:
+    """Where an accepted topic goes in the profile."""
+    kind, _, name = (topic.scope or "global").partition(":")
+    if kind == "project" and name:
+        return f"项目：{name}"
+    if kind == "device" and name:
+        return f"设备：{name}"
+    return CATEGORY_HEADINGS.get(topic.category, "铁律")
+
+
 # ---- scanning ----
 
 async def fetch_new_corrections(
@@ -127,8 +185,11 @@ async def fetch_new_corrections(
     and the highest message id looked at (the next cursor)."""
     machines = select(Machine.id).where(Machine.user_id == user.id)
     query = (
-        select(ConversationMessage.id, ConversationMessage.content, ConversationMessage.timestamp)
+        select(ConversationMessage.id, ConversationMessage.content, ConversationMessage.timestamp,
+               Project.title, Machine.name)
         .join(Document, Document.id == ConversationMessage.document_id)
+        .outerjoin(Project, Project.id == Document.project_id)
+        .outerjoin(Machine, Machine.id == Document.machine_id)
         .where(
             Document.machine_id.in_(machines),
             ConversationMessage.role == "user",
@@ -145,10 +206,10 @@ async def fetch_new_corrections(
         query = query.where(ConversationMessage.id > after_id)
     rows = (await db.execute(query)).all()
     found: list[Said] = []
-    for message_id, content, said_at in rows:
+    for message_id, content, said_at, project, machine in rows:
         text = clean_user_voice(content)
         if text and looks_like_pushback(text):
-            found.append(Said(message_id, text, said_at))
+            found.append(Said(message_id, text, said_at, project, clean_device_name(machine) if machine else None))
     found.sort(key=lambda s: s.said_at)
     return found, (rows[-1][0] if rows else after_id)
 
@@ -165,17 +226,18 @@ _CLASSIFY_PROMPT = """下面是用户在各个 AI 工具里亲手打的话，都
 - 只挑长期有效的：沟通方式、必须遵守或禁止的做法、工作习惯、技术偏好。一次性的任务指令（"帮我改这个 bug"、"不要改那个文件"这类只针对当前任务的）不要。
 - statement：写成直接对 AI 的一句祈使句，如"始终用中文回复"、"git commit 不要加 Co-Authored-By"。不超过 60 字。
 - category：communication（沟通方式）| rule（必须/禁止）| workflow（工作方式）| tech（技术偏好）。
+- scope：global（到哪都适用，默认）| project（只在原话所在的那个项目里成立，比如涉及它的业务、数据格式、专有工具）| device（只在那台机器上成立，比如本机磁盘、路径）。原话前的 [项目 @ 设备] 标注说明它是在哪说的。沟通方式、工作习惯这类，即使只在一个项目里说过，也是 global。
 - i：表达这条规矩的所有原话编号。同一件事在下面说了好几次，就合成一条，把编号都列上。
 - match：如果和某个已知话题说的是同一件事，填它的编号（如 "t3"、"m12"）；否则填 null。宁可匹配已知话题，也不要把同一件事拆成两个。
 - 抱怨 AI 又违反了某个已知话题的话也要输出、填上 match，哪怕它本身不像一条规矩。例如已知话题是"始终用中文回复"，原话"怎么又变成英文了"就匹配它。这类重复最重要，不要漏。
 - 不是规矩的原话直接略过，不用输出。
 
-只输出 JSON：{{"items": [{{"i": [1, 4], "statement": "...", "category": "rule", "match": null}}]}}"""
+只输出 JSON：{{"items": [{{"i": [1, 4], "statement": "...", "category": "rule", "scope": "global", "match": null}}]}}"""
 
 
 async def classify(batch: list[Said], known: list[tuple[str, str]]) -> list[dict[str, Any]]:
     known_text = "\n".join(f"{ref}: {text[:100]}" for ref, text in known) or "（无）"
-    messages = "\n".join(f"[{i}] {s.text}" for i, s in enumerate(batch, 1))
+    messages = "\n".join(f"[{i}] " + (f"[{s.where}] " if s.where else "") + s.text for i, s in enumerate(batch, 1))
     raw = await call_plain_chat(
         messages=[
             {"role": "system", "content": "You extract durable user preferences. Respond only with valid JSON."},
@@ -202,10 +264,12 @@ async def classify(batch: list[Said], known: list[tuple[str, str]]) -> list[dict
         if not indices or not statement:
             continue
         category = str(item.get("category") or "rule")
+        scope = str(item.get("scope") or "global")
         out.append({
             "indices": indices,
             "statement": statement,
             "category": category if category in CATEGORY_HEADINGS else "rule",
+            "scope": scope if scope in ("global", "project", "device") else "global",
             "match": str(item["match"]) if item.get("match") else None,
         })
     return out
@@ -282,7 +346,7 @@ async def learn_from_corrections(db: AsyncSession, user: User) -> dict[str, Any]
             else:
                 topic = CorrectionTopic(
                     user_id=user.id, statement=item["statement"], category=item["category"],
-                    status="pending", times=0,
+                    status="pending", times=0, scope=scope_for(item.get("scope", "global"), s),
                 )
                 db.add(topic)
                 await db.flush()
@@ -326,17 +390,21 @@ async def _append_published(db: AsyncSession, user: User, content: str) -> UserP
 
 async def accept_topic(
     db: AsyncSession, user: User, topic: CorrectionTopic, statement: str | None = None,
+    general: bool = False,
 ) -> CorrectionTopic:
-    """Remember the topic and add it to the published profile (and the draft, if any)."""
+    """Remember the topic and add it to the published profile (and the draft, if any).
+    general=True widens a project / device topic to apply everywhere."""
     line = clean_statement(statement or topic.statement)
     if not line:
         raise ValueError("statement is empty")
-    heading = CATEGORY_HEADINGS.get(topic.category, "铁律")
+    if general:
+        topic.scope = "global"
+    heading = topic_heading(topic)
 
     published = await get_published_profile(db, user)
     base = (published.content if published else "").strip()
     updated = add_profile_line(base, heading, line)
-    if len(updated) > PROFILE_MAX_CHARS:
+    if over_limit(updated):
         raise ProfileFull()
     if updated != base:
         await _append_published(db, user, sanitize_profile_content(updated))
@@ -431,7 +499,8 @@ def topic_out(topic: CorrectionTopic, quotes: list[CorrectionEvent] | None = Non
         "id": str(topic.id),
         "statement": topic.statement,
         "category": topic.category,
-        "heading": CATEGORY_HEADINGS.get(topic.category, "铁律"),
+        "heading": topic_heading(topic),
+        "scope": topic.scope or "global",
         "status": topic.status,
         "times": topic.times,
         "first_at": topic.first_at.isoformat() if topic.first_at else None,

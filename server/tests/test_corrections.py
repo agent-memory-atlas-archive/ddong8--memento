@@ -17,6 +17,9 @@ from server.services.correction_service import (  # noqa: E402
     fingerprint,
     learned_by,
     looks_like_pushback,
+    over_limit,
+    scope_for,
+    topic_heading,
 )
 from server.db.models import CorrectionTopic  # noqa: E402
 from server.services.health_service import assess  # noqa: E402
@@ -48,6 +51,34 @@ class ProfileLineTests(unittest.TestCase):
     def test_existing_line_is_not_duplicated(self) -> None:
         profile = "### 沟通\n- 用中文回复"
         self.assertEqual(add_profile_line(profile, "沟通", "用中文回复"), profile)
+
+
+class ScopedLineTests(unittest.TestCase):
+    PROFILE = "### 沟通\n- 用中文回复\n\n## 项目：chembook\n- 结构式带手性"
+
+    def test_project_rule_goes_to_its_section(self) -> None:
+        self.assertEqual(add_profile_line(self.PROFILE, "项目：ChemBook", "结果含 CAS 号"),
+                         "### 沟通\n- 用中文回复\n\n## 项目：chembook\n- 结构式带手性\n- 结果含 CAS 号")
+        self.assertEqual(add_profile_line("### 沟通\n- 用中文回复", "设备：DESKTOP-KR9IPP4", "缓存放 /data2"),
+                         "### 沟通\n- 用中文回复\n\n## 设备：DESKTOP-KR9IPP4\n- 缓存放 /data2")
+
+    def test_general_rule_stays_above_scoped_sections(self) -> None:
+        self.assertEqual(add_profile_line(self.PROFILE, "铁律", "只走 GitOps"),
+                         "### 沟通\n- 用中文回复\n\n### 铁律\n- 只走 GitOps\n\n## 项目：chembook\n- 结构式带手性")
+
+    def test_scope_and_heading(self) -> None:
+        said = Said(1, "结构式要带手性", NOW, project="chembook", device="DESKTOP-KR9IPP4")
+        self.assertEqual(scope_for("project", said), "project:chembook")
+        self.assertEqual(scope_for("device", said), "device:DESKTOP-KR9IPP4")
+        self.assertEqual(scope_for("project", Said(2, "x", NOW)), "global")  # no project known: general
+        topic = CorrectionTopic(statement="x", category="communication", scope="project:chembook")
+        self.assertEqual(topic_heading(topic), "项目：chembook")
+        self.assertEqual(topic_heading(CorrectionTopic(statement="x", category="communication", scope="global")), "沟通")
+
+    def test_limits_are_per_part(self) -> None:
+        full_project = "### 沟通\n- a\n\n## 项目：p\n" + "\n".join("- " + "字" * 50 for _ in range(20))
+        self.assertTrue(over_limit(full_project))
+        self.assertFalse(over_limit("### 沟通\n- a\n\n## 项目：p\n- b"))
 
 
 class StatementTests(unittest.TestCase):
@@ -93,7 +124,8 @@ class ClassifyTests(unittest.IsolatedAsyncioTestCase):
         )
         with patch("server.services.correction_service.call_plain_chat", new=AsyncMock(return_value=answer)):
             items = await classify(batch, [("t2", "用中文回复")])
-        self.assertEqual(items, [{"indices": [1, 3], "statement": "始终用中文回复", "category": "communication", "match": "t2"}])
+        self.assertEqual(items, [{"indices": [1, 3], "statement": "始终用中文回复", "category": "communication",
+                                  "scope": "global", "match": "t2"}])
 
     async def test_single_index_still_works(self) -> None:
         answer = '{"items": [{"i": 1, "statement": "先写测试", "category": "workflow"}]}'

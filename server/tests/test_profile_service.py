@@ -48,6 +48,7 @@ class TestBuildProfileDraft(unittest.IsolatedAsyncioTestCase):
             patch.object(ps, "fetch_user_voice_rows", AsyncMock(return_value=[])),
             patch.object(ps, "_profile_memories", AsyncMock(return_value=[self.memory] if memories is None else memories)),
             patch.object(ps, "call_plain_chat", AsyncMock(return_value=llm)),
+            patch.object(ps, "user_scopes", AsyncMock(return_value=(["memento", "chembook"], ["haixingdeMac-mini"]))),
         ]
 
     async def _run(self, **kw):
@@ -90,3 +91,44 @@ class TestBuildProfileDraft(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestProfileScopes(unittest.TestCase):
+    PROFILE = (
+        "### 沟通\n- 始终用中文回复\n\n### 铁律\n- 只走 GitOps\n\n"
+        "## 项目：chembook\n- 结构式图需包含手性信息\n- 结果需含 CAS 号\n\n"
+        "## 设备：DESKTOP-KR9IPP4\n- 数据优先放在 /data2 盘"
+    )
+
+    def test_split_and_join_round_trip(self):
+        scopes = ps.split_profile_scopes(self.PROFILE)
+        self.assertEqual(scopes.general, "### 沟通\n- 始终用中文回复\n\n### 铁律\n- 只走 GitOps")
+        self.assertEqual(scopes.projects, {"chembook": ["- 结构式图需包含手性信息", "- 结果需含 CAS 号"]})
+        self.assertEqual(list(scopes.devices), ["DESKTOP-KR9IPP4"])
+        self.assertEqual(ps.join_profile_scopes(scopes), self.PROFILE)
+
+    def test_device_gets_its_own_rules_and_its_projects_only(self):
+        windows = ps.render_device_profile(self.PROFILE, "DESKTOP-KR9IPP4 (Windows)", {"chembook": "d:/dev/chembook"})
+        self.assertIn("### 本机专属\n- 数据优先放在 /data2 盘", windows)
+        self.assertIn("#### chembook（`d:/dev/chembook`）\n- 结构式图需包含手性信息", windows)
+        mac = ps.render_device_profile(self.PROFILE, "haixingdeMac-mini.local (Darwin)", {"memento": "/Users/h/dev/memento"})
+        self.assertNotIn("CAS", mac)
+        self.assertNotIn("/data2", mac)
+        self.assertIn("始终用中文回复", mac)
+
+    def test_project_names_match_loosely(self):
+        out = ps.render_device_profile(self.PROFILE, "x", {"ChemBook": "/p"})
+        self.assertIn("手性", out)
+
+    def test_limits_apply_per_part(self):
+        general = "### 铁律\n" + "\n".join(f"- 通用规矩 {i} " + "字" * 40 for i in range(60))
+        project = "\n\n## 项目：chembook\n" + "\n".join(f"- 项目规矩 {i} " + "字" * 40 for i in range(40))
+        cleaned = ps.sanitize_profile_content(general + project)
+        scopes = ps.split_profile_scopes(cleaned)
+        self.assertLessEqual(len(scopes.general), ps.PROFILE_MAX_CHARS)
+        self.assertLessEqual(len("\n".join(scopes.projects["chembook"])), ps.SCOPED_MAX_CHARS)
+        self.assertTrue(scopes.projects["chembook"])  # the project section survives a full general part
+
+    def test_clean_device_name(self):
+        self.assertEqual(ps.clean_device_name("haixingdeMac-mini.local (Darwin)"), "haixingdeMac-mini")
+        self.assertEqual(ps.clean_device_name("DESKTOP-KR9IPP4 (Windows)"), "DESKTOP-KR9IPP4")

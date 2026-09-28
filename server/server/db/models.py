@@ -669,6 +669,8 @@ class CorrectionTopic(Base):
     statement: Mapped[str] = mapped_column(Text, nullable=False)  # imperative, addressed to the AI
     category: Mapped[str] = mapped_column(String(20), nullable=False, default="rule")  # communication | rule | workflow | tech
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")  # pending | accepted | dismissed
+    # "global", "project:<name>" or "device:<name>": where the rule holds.
+    scope: Mapped[str] = mapped_column(String(200), nullable=False, default="global", server_default="global")
     times: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     first_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

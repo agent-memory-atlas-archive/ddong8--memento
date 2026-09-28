@@ -20,13 +20,14 @@ from ..services.guidance_service import guidance_for, render_guidance
 from ..services.memory_lifecycle import reconcile, reconcile_in_background
 from ..services.retrospective_service import learn_from_tasks, review_sessions, review_stats, save_pitfall
 from ..services.notify_service import spawn
-from ..services.profile_service import PROFILE_MAX_CHARS
+from ..services.profile_service import PROFILE_MAX_CHARS, SCOPED_MAX_CHARS
 
 router = APIRouter(prefix="/api/learning", tags=["learning"])
 
 
 class AcceptBody(BaseModel):
     statement: str | None = None  # the user's edit; None keeps what was learned
+    general: bool = False  # widen a project / device rule to apply everywhere
 
 
 async def _own_topic(db: AsyncSession, user: User, topic_id: str) -> CorrectionTopic:
@@ -70,11 +71,11 @@ async def accept(
 ) -> dict:
     topic = await _own_topic(db, user, topic_id)
     try:
-        topic = await accept_topic(db, user, topic, body.statement)
+        topic = await accept_topic(db, user, topic, body.statement, general=body.general)
     except ProfileFull:
         raise HTTPException(
             status_code=409,
-            detail=f"常驻画像已接近 {PROFILE_MAX_CHARS} 字上限，先在画像里删减一些再采纳。",
+            detail=f"常驻画像这一部分已接近上限（通用 {PROFILE_MAX_CHARS} 字、每个项目或设备 {SCOPED_MAX_CHARS} 字），先删减一些再采纳。",
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

@@ -117,7 +117,7 @@ def clean_user_voice(content: str | None) -> str | None:
 
 
 def plan_user_voice_batches(
-    rows: list[tuple[str | None, datetime | None]],
+    rows: list[tuple[str | None, datetime | None]] | list[tuple[str | None, datetime | None, str | None]],
 ) -> tuple[list[list[str]], dict[str, int]]:
     """Clean, dedupe and pack newest-first user messages into prompt-sized batches.
 
@@ -128,12 +128,16 @@ def plan_user_voice_batches(
     seen: set[str] = set()
     corrections: list[tuple[datetime | None, str]] = []
     others: list[tuple[datetime | None, str]] = []
-    for content, ts in rows:
+    for row in rows:
+        content, ts = row[0], row[1]
+        where = row[2] if len(row) > 2 else None
         text = clean_user_voice(content)
         if not text or text.lower() in seen:
             continue
         seen.add(text.lower())
-        (corrections if _CORRECTION_RE.search(text) else others).append((ts, text))
+        # "[memento @ Mac-mini] ..." lets the profile tell a project's rule from a general one.
+        tagged = f"[{where}] {text}" if where else text
+        (corrections if _CORRECTION_RE.search(text) else others).append((ts, tagged))
 
     packed: list[list[tuple[datetime | None, str]]] = []
     current: list[tuple[datetime | None, str]] = []
@@ -171,14 +175,24 @@ def plan_user_voice_batches(
 
 
 async def fetch_user_voice_rows(
-    db: AsyncSession, user: User, since_dt: datetime, until_dt: datetime,
-) -> list[tuple[str | None, datetime | None]]:
+    db: AsyncSession, user: User, since_dt: datetime, until_dt: datetime, *, with_source: bool = False,
+) -> list[tuple]:
     """Newest-first role="user" messages from the user's machines, minus tool output
-    and subagent transcripts (whose "user" turns were written by the parent agent)."""
+    and subagent transcripts (whose "user" turns were written by the parent agent).
+
+    with_source adds a third element, "project @ device", for telling a rule that
+    holds in one project or on one machine from a general one."""
     user_machines_subq = select(Machine.id).where(Machine.user_id == user.id)
+    columns = [ConversationMessage.content, ConversationMessage.timestamp]
+    if with_source:
+        columns += [Project.title, Machine.name]
+    query = select(*columns).join(Document, Document.id == ConversationMessage.document_id)
+    if with_source:
+        query = query.outerjoin(Project, Project.id == Document.project_id).outerjoin(
+            Machine, Machine.id == Document.machine_id
+        )
     res = await db.execute(
-        select(ConversationMessage.content, ConversationMessage.timestamp)
-        .join(Document, Document.id == ConversationMessage.document_id)
+        query
         .where(
             Document.machine_id.in_(user_machines_subq),
             ConversationMessage.role == "user",
@@ -191,7 +205,14 @@ async def fetch_user_voice_rows(
         .order_by(ConversationMessage.timestamp.desc())
         .limit(USER_VOICE_FETCH_LIMIT)
     )
-    return list(res.all())
+    if not with_source:
+        return list(res.all())
+    from .profile_service import clean_device_name
+
+    return [
+        (content, ts, " @ ".join(filter(None, [project, clean_device_name(machine) if machine else None])) or None)
+        for content, ts, project, machine in res.all()
+    ]
 
 _VOICE_SIGNAL_PROMPT = """下面是用户本人在各个 AI 工具里亲手输入的话（已去掉工具输出和系统注入内容），按时间排序。
 请只从这些原话中提取能长期指导 AI 如何与该用户协作的信号：
@@ -202,7 +223,9 @@ _VOICE_SIGNAL_PROMPT = """下面是用户本人在各个 AI 工具里亲手输�
 
 {quotes}
 
-只输出 JSON：{{"signals": [{{"kind": "correction|preference|rule", "statement": "一句话概括", "evidence": "原话片段"}}]}}
+原话前面如果有 [项目 @ 设备] 标注，把它原样填进 source，没有就留空。
+
+只输出 JSON：{{"signals": [{{"kind": "correction|preference|rule", "statement": "一句话概括", "evidence": "原话片段", "source": ""}}]}}
 """
 
 
@@ -246,7 +269,12 @@ async def render_user_voice(batches: list[list[str]]) -> str:
             seen.add(statement.lower())
             evidence = str(s.get("evidence") or "").strip()[:120]
             kind = str(s.get("kind") or "signal").strip()
-            lines.append(f"- [{kind}] {statement}" + (f"（原话：{evidence}）" if evidence else ""))
+            source = str(s.get("source") or "").strip().strip("[]")[:80]
+            lines.append(
+                f"- [{kind}] {statement}"
+                + (f"（原话：{evidence}）" if evidence else "")
+                + (f"（出自 {source}）" if source else "")
+            )
     # Every extraction failed: fall back to the correction-heavy first batch.
     return "\n".join(lines) if lines else "\n".join(batches[0])
 

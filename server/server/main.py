@@ -53,6 +53,12 @@ def _run_migrations(conn) -> None:
     if "skill_status" not in machine_cols:
         conn.execute(text("ALTER TABLE machines ADD COLUMN skill_status JSONB NOT NULL DEFAULT '{}'"))
 
+    # CorrectionTopic.scope — a learned rule can hold in one project or on one device only.
+    if "correction_topics" in tables:
+        topic_cols = {c["name"] for c in insp.get_columns("correction_topics")}
+        if "scope" not in topic_cols:
+            conn.execute(text("ALTER TABLE correction_topics ADD COLUMN scope VARCHAR(200) NOT NULL DEFAULT 'global'"))
+
     # User.collector_token
     user_cols = {c["name"] for c in insp.get_columns("users")}
     if "collector_token" not in user_cols:

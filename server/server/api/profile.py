@@ -19,6 +19,8 @@ from ..services.profile_service import (
     get_draft_profile,
     get_published_profile,
     publish_profile,
+    device_projects,
+    render_device_profile,
     render_profile_block,
     sanitize_profile_content,
 )
@@ -209,9 +211,13 @@ async def get_injection(
     """
     machine = await _owned_machine(db, user, x_device_id)
     published = await get_published_profile(db, user)
+    block = None
+    if published:
+        content = render_device_profile(published.content, machine.name, await device_projects(db, machine))
+        block = render_profile_block(published.version, content)
     return {
         "version": published.version if published else None,
-        "block": render_profile_block(published.version, published.content) if published else None,
+        "block": block,
         "targets": machine.profile_targets or [],
     }
 

@@ -193,6 +193,17 @@ class TestDreamingService(unittest.IsolatedAsyncioTestCase):
 
 
 class TestUserVoice(unittest.IsolatedAsyncioTestCase):
+    def test_source_tags_ride_along_with_the_text(self):
+        ts = datetime(2026, 9, 27, 14, 2, tzinfo=timezone.utc)
+        batches, stats = plan_user_voice_batches([
+            ("结构式要带手性", ts, "chembook @ DESKTOP-KR9IPP4"),
+            ("中文回复我", ts, None),
+            ("结构式要带手性", ts, "chembook @ DESKTOP-KR9IPP4"),
+        ])
+        self.assertEqual(stats["kept"], 2)
+        self.assertIn("[09-27 14:02] [chembook @ DESKTOP-KR9IPP4] 结构式要带手性", batches[0])
+        self.assertIn("[09-27 14:02] 中文回复我", batches[0])
+
     def test_clean_user_voice_drops_text_the_user_did_not_type(self):
         for content in [
             "[Result] total 48 drwxr-xr-x",
