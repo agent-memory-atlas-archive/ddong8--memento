@@ -5,6 +5,8 @@ import { Icon } from "./aurora/Icon";
 import { BrandMark } from "./aurora/BrandMark";
 import MarkdownViewer from "./viewers/MarkdownViewer";
 import { useI18n } from "@/lib/i18n";
+import type { TaskEvent } from "@memento/core";
+import TaskTimeline, { SteerBox } from "./TaskTimeline";
 
 export interface ToolCallItem {
   id?: string;
@@ -23,6 +25,8 @@ export interface ToolCallItem {
     error?: string;
     note?: string;
     devices?: Array<{ device_id: string; name: string; collector_version?: string; online: boolean }>;
+    /** Steps of a structured agent run (Claude Code / Codex), live and after it ends. */
+    events?: TaskEvent[];
   };
 }
 
@@ -459,6 +463,12 @@ export default function ExecutionCard({ call, isVisible = true, onSmartCompactAn
               {copied ? (t.ask.copied || "已复制") : (t.ask.copyOutput || "复制输出")}
             </button>
           </div>
+
+          {result?.events && result.events.length > 0 && <TaskTimeline events={result.events} running={isRunning} />}
+          {/* Claude reads follow-ups while it runs (stream-json input); other agents don't take them. */}
+          {isRunning && binary.includes("claude") && result?.task_id && (result.events?.length ?? 0) > 0 && (
+            <SteerBox taskId={result.task_id} />
+          )}
 
           {/* Conditional Content: Markdown or Terminal Console */}
           {viewMode === "markdown" && result?.stdout ? (

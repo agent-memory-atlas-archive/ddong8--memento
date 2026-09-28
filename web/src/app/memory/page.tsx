@@ -7,6 +7,7 @@ import { Icon } from "@/components/aurora/Icon";
 import { Btn, Glass, GhostInput, StatCard, TopBar } from "@/components/aurora/primitives";
 import { ShareModal } from "@/components/ShareModal";
 import MarkdownViewer from "@/components/viewers/MarkdownViewer";
+import DreamingPanel from "@/components/memory/DreamingPanel";
 
 interface GraphNode {
   id: string;
@@ -140,7 +141,7 @@ export default function MemoryPage() {
   const { t } = useI18n();
 
   // Navigation tab
-  const [activeTab, setActiveTab] = useState<"tree" | "graph" | "search">("tree");
+  const [activeTab, setActiveTab] = useState<"tree" | "graph" | "search" | "dreaming">("tree");
 
   // Core Memory Tree State
   const [memoryTree, setMemoryTree] = useState<MemoryTreeNode[]>([]);
@@ -351,8 +352,22 @@ export default function MemoryPage() {
             <Icon name="search" size={13} />
             <span>记忆检索</span>
           </button>
+
+          <button
+            onClick={() => setActiveTab("dreaming")}
+            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+              activeTab === "dreaming"
+                ? "bg-[var(--aurora-accent)] text-black shadow-xs"
+                : "text-[var(--aurora-fg3)] hover:text-[var(--aurora-fg1)]"
+            }`}
+          >
+            <Icon name="moon" size={13} />
+            <span>{t.dreaming.tab}</span>
+          </button>
         </div>
       </div>
+
+      {activeTab === "dreaming" && <DreamingPanel />}
 
       {/* ------------------------------------------------------------- */}
       {/* TAB 1: CORE MEMORY TREE */}

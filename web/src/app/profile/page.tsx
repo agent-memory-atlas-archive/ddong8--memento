@@ -5,6 +5,7 @@ import { useAuth } from "@/lib/auth-context";
 import { useI18n } from "@/lib/i18n";
 import { api } from "@/lib/api-client";
 import { Btn, Chip, Glass, TopBar, SectionLabel } from "@/components/aurora/primitives";
+import NotifySettings from "@/components/notify/NotifySettings";
 
 type ImportSummary = {
   machine_id: string;
@@ -88,6 +89,9 @@ export default function ProfilePage() {
           valueNode={<Chip tone={user.status === "active" ? "success" : "warn"}>{user.status}</Chip>}
         />
       </Glass>
+
+      <SectionLabel>{t.notify.title}</SectionLabel>
+      <NotifySettings />
 
       <SectionLabel>{t.profile.backup}</SectionLabel>
       <Glass padding={22} radius={20} style={{ marginBottom: 20 }}>

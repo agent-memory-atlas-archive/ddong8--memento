@@ -417,7 +417,75 @@ function _invalidateProfile() {
   invalidateApiCache(`${getApiBase()}/api/profile`);
 }
 
+type Json = Record<string, unknown>;
+
+/** A GET that skips the short-lived cache (status pages the user refreshes). */
+function fresh<T>(path: string): Promise<T> {
+  invalidateApiCache(`${getApiBase()}${path}`);
+  return apiFetch<T>(path);
+}
+
+const post = <T = Json>(path: string, body?: unknown) =>
+  apiFetch<T>(path, { method: "POST", body: body === undefined ? undefined : JSON.stringify(body) });
+const put = <T = Json>(path: string, body: unknown) => apiFetch<T>(path, { method: "PUT", body: JSON.stringify(body) });
+
 export const api = {
+  // === Health, learning, evals ===
+  getHealthOverview: () => fresh<Json>("/api/health/overview"),
+  getEvals: () => fresh<Json>("/api/learning/evals"),
+  /** Score retrieval now; rebuild first generates a new question set. */
+  runEval: (rebuild = false) => post<Json>(`/api/learning/evals/run?rebuild=${rebuild}`),
+  getReviews: () => fresh<Json>("/api/learning/reviews"),
+  startReview: () => post<Json>("/api/learning/review"),
+  /** {pending, accepted, dismissed, ...}: things the user keeps telling the AI. */
+  getCorrections: () => fresh<Json>("/api/learning/corrections"),
+  acceptCorrection: (id: string, opts: { statement?: string; general?: boolean } = {}) =>
+    post(`/api/learning/corrections/${id}/accept`, {
+      ...(opts.statement !== undefined ? { statement: opts.statement } : {}),
+      ...(opts.general ? { general: true } : {}),
+    }),
+  dismissCorrection: (id: string) => post(`/api/learning/corrections/${id}/dismiss`),
+
+  // === Skills ===
+  /** {drafts, published, archived, counts, devices} */
+  getSkills: () => fresh<Json>("/api/skills"),
+  /** edits: title / description / body / slug / project. Editing a published skill ships a new version. */
+  editSkill: (id: string, edits: Json) => put(`/api/skills/${id}`, edits),
+  publishSkill: (id: string, edits: Json = {}) => post(`/api/skills/${id}/publish`, edits),
+  /** action: dismiss | retire | restore | update/apply | update/discard */
+  skillAction: (id: string, action: string) => post(`/api/skills/${id}/${action}`),
+
+  // === Todos ===
+  /** {open, closed, counts} */
+  getTodos: () => fresh<Json>("/api/todos"),
+  addTodo: (title: string, extra: { detail?: string; due?: string; project?: string } = {}) =>
+    post("/api/todos", { title, ...extra }),
+  /** fields: title / detail / project / due ("" clears) / status (open | done | dropped) */
+  updateTodo: (id: string, fields: Json) => put(`/api/todos/${id}`, fields),
+
+  // === Push notifications ===
+  getNotifySettings: () => fresh<Json>("/api/notify/settings"),
+  updateNotifySettings: (fields: Json) => put("/api/notify/settings", fields),
+  sendTestNotification: () => post("/api/notify/test"),
+
+  // === Memory tiers & dreaming ===
+  getMemoryTiers: () => fresh<Json>("/api/memory/tiers"),
+  getDreamJournals: (limit = 20, offset = 0) => fresh<Json>(`/api/memory/dreams?limit=${limit}&offset=${offset}`),
+  getDreamJournal: (id: string) => apiFetch<Json>(`/api/memory/dreams/${id}`),
+  triggerDream: (daysBack = 1, range: { start?: string; end?: string } = {}) =>
+    post("/api/memory/dream", {
+      days_back: daysBack,
+      ...(range.start ? { start_date: range.start } : {}),
+      ...(range.end ? { end_date: range.end } : {}),
+    }),
+  triggerDreamBackfill: (chunkDays = 3, maxChunks = 30) =>
+    post("/api/memory/dream/backfill", { chunk_days: chunkDays, max_chunks: maxChunks, run_async: true }),
+  getDreamBackfillStatus: () => fresh<Json>("/api/memory/dream/backfill/status"),
+  bootstrapMemories: () => post("/api/memory/bootstrap"),
+  reviveCoreMemory: (id: string) => post(`/api/memory/core/${id}/revive`),
+  /** All core memories, including dormant and superseded ones. */
+  getCoreMemories: () => fresh<Json[]>("/api/memory/core"),
+
   getProfile: () => apiFetch<ProfileState>("/api/profile"),
   regenerateProfileDraft: () =>
     apiFetch<{ status: ProfileDraftStatus; draft: ProfileVersion | null }>(

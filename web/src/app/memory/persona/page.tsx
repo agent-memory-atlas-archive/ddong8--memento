@@ -6,6 +6,7 @@ import { fmt, useI18n } from "@/lib/i18n";
 import { BrandMark } from "@/components/aurora/BrandMark";
 import { Btn, Chip, Glass, TopBar } from "@/components/aurora/primitives";
 import MarkdownViewer from "@/components/viewers/MarkdownViewer";
+import LearnedCorrections from "@/components/persona/LearnedCorrections";
 
 const TARGET_META: Record<string, { label: string; file: string }> = {
   claude_code: { label: "Claude Code", file: "~/.claude/CLAUDE.md" },
@@ -158,6 +159,7 @@ function DeviceTargets({
 export default function PersonaPage() {
   const { t } = useI18n();
   const [state, setState] = useState<ProfileState | null>(null);
+  const [pending, setPending] = useState<Record<string, unknown>[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<"regenerate" | "publish" | "save" | "discard" | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -165,7 +167,13 @@ export default function PersonaPage() {
 
   const load = useCallback(async () => {
     try {
-      setState(await api.getProfile());
+      const [profile, corrections] = await Promise.all([
+        api.getProfile(),
+        // An older server without the learning API just shows no learned card.
+        api.getCorrections().catch(() => ({}) as Record<string, unknown>),
+      ]);
+      setState(profile);
+      setPending(Array.isArray(corrections.pending) ? (corrections.pending as Record<string, unknown>[]) : []);
       setError(null);
     } catch (e) {
       setError((e as Error).message);
@@ -253,6 +261,14 @@ export default function PersonaPage() {
       {notice && (
         <Glass padding={14} radius={14} style={{ marginBottom: 14, color: "var(--aurora-fg2)", fontSize: 13 }}>{notice}</Glass>
       )}
+
+      <LearnedCorrections
+        topics={pending}
+        onChanged={(message) => {
+          setNotice(message ?? null);
+          load();
+        }}
+      />
 
       {/* Draft awaiting review */}
       <Glass

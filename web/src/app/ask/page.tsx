@@ -10,6 +10,7 @@ import { BrandMark } from "@/components/aurora/BrandMark";
 import { Btn, Chip, Glass, GhostInput, TopBar } from "@/components/aurora/primitives";
 import MarkdownViewer from "@/components/viewers/MarkdownViewer";
 import { ExecutionTabs, ToolCallItem } from "@/components/ExecutionCard";
+import { mergeTaskEvent, type TaskEvent } from "@memento/core";
 
 export type ExecutionMode = "ai" | "claude" | "codex" | "antigravity" | "shell";
 
@@ -321,6 +322,8 @@ function AskPageContent() {
 
   // Agent Context: Model, Project & Session selection
   const [selectedModel, setSelectedModel] = useState<string>("");
+  /** Run agent tasks in their own git worktree and branch. */
+  const [worktreeMode, setWorktreeMode] = useState(false);
   const [selectedEffort, setSelectedEffort] = useState<string>("");
   const [capabilities, setCapabilities] = useState<AgentCapabilities | null>(null);
   const [isCustomModel, setIsCustomModel] = useState<boolean>(false);
@@ -598,6 +601,7 @@ function AskPageContent() {
         stream?: "stdout" | "stderr";
         result?: ToolCallItem["result"];
         call?: ToolCallItem;
+        event?: TaskEvent;
       };
       try {
         evt = JSON.parse(line.slice(6));
@@ -757,9 +761,26 @@ function AskPageContent() {
               .pop() ?? -1;
           }
           if (idx !== undefined && idx >= 0) {
-            calls[idx] = { ...calls[idx], result: evt.result };
+            // The final result carries the whole event log; keep the live one if it doesn't.
+            const events = evt.result?.events ?? calls[idx].result?.events;
+            calls[idx] = { ...calls[idx], result: evt.result && { ...evt.result, ...(events ? { events } : {}) } };
           } else if (calls.length > 0) {
             calls[calls.length - 1] = { ...calls[calls.length - 1], result: evt.result };
+          }
+          return { ...x, toolCalls: calls };
+        });
+      } else if (evt.type === "task_event" && evt.event) {
+        const event = evt.event;
+        patchLast((x) => {
+          const calls = [...(x.toolCalls || [])];
+          let idx = evt.task_id ? calls.findIndex((c) => c.result?.task_id === evt.task_id) : -1;
+          if (idx === -1 && evt.tool_call_id) idx = calls.findIndex((c) => c.id === evt.tool_call_id);
+          if (idx >= 0) {
+            const prev = calls[idx].result || {};
+            calls[idx] = {
+              ...calls[idx],
+              result: { ...prev, task_id: prev.task_id || evt.task_id, events: mergeTaskEvent(prev.events ?? [], event) },
+            };
           }
           return { ...x, toolCalls: calls };
         });
@@ -910,6 +931,7 @@ function AskPageContent() {
           session_id: effectiveSessionId || undefined,
           compact_mode: effectiveCompact || undefined,
           project_id: selectedProjectId || undefined,
+          worktree: worktreeMode && ["codex", "claude", "antigravity"].includes(executionMode) ? true : undefined,
         }),
         signal: ctrl.signal,
       });
@@ -934,7 +956,7 @@ function AskPageContent() {
     } finally {
       finishStream(ctrl);
     }
-  }, [activeConversationId, compactMode, consumeRun, cwd, executionMode, finishStream, followRun, patchLast, selectedDevice, selectedEffort, selectedModel, selectedProjectId, selectedSessionId, turns, t]);
+  }, [activeConversationId, compactMode, consumeRun, cwd, executionMode, finishStream, followRun, patchLast, selectedDevice, selectedEffort, selectedModel, selectedProjectId, selectedSessionId, turns, t, worktreeMode]);
 
   const send = useCallback(() => {
     sendWithText(input);
@@ -2088,6 +2110,33 @@ function AskPageContent() {
                     ))}
                   </select>
                 </div>
+              )}
+
+              {/* Own worktree and branch for the agent */}
+              {["codex", "claude", "antigravity"].includes(executionMode) && (
+                <button
+                  type="button"
+                  onClick={() => setWorktreeMode((v) => !v)}
+                  aria-pressed={worktreeMode}
+                  title={worktreeMode ? t.taskRun.worktreeOn : t.taskRun.worktreeOff}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                    background: worktreeMode ? "var(--aurora-accent-soft)" : "var(--aurora-chip)",
+                    border: "1px solid",
+                    borderColor: worktreeMode ? "var(--aurora-accent)" : "var(--aurora-border)",
+                    borderRadius: 10,
+                    padding: "4px 10px",
+                    fontSize: 12,
+                    color: worktreeMode ? "var(--aurora-accent)" : "var(--aurora-fg2)",
+                    fontWeight: worktreeMode ? 600 : 500,
+                    cursor: "pointer",
+                  }}
+                >
+                  <Icon name="layers" size={13} />
+                  {t.taskRun.worktree}
+                </button>
               )}
 
               {/* Agent Project selector */}

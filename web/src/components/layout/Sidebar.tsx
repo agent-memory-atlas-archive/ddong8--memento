@@ -62,10 +62,12 @@ export default function Sidebar({ open, onClose }: { open: boolean; onClose: () 
     { href: "/ask", label: t.nav.ask, icon: "sparkles", highlight: true, badge: "AI" },
     { href: "/memory", label: t.nav.memory || "Memory", icon: "brain" },
     { href: "/memory/persona", label: t.nav.persona, icon: "user" },
+    { href: "/skills", label: t.nav.skills, icon: "zap" },
     { href: "/projects", label: t.nav.projects, icon: "folder" },
     { href: "/daily", label: t.nav.daily, icon: "calendar" },
     { href: "/devices", label: t.nav.devices, icon: "devices" },
     { href: "/inbox", label: t.nav.inbox, icon: "inbox" },
+    { href: "/health", label: t.nav.health, icon: "activity" },
     ...(isAdmin ? [{ href: "/admin", label: t.nav.admin, icon: "lock" as IconName }] : []),
   ];
 
