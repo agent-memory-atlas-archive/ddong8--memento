@@ -16,7 +16,13 @@ logger = logging.getLogger("mcp_memory")
 
 mcp = FastMCP(
     "Memento",
-    instructions="Personal AI memory — search conversations, recall knowledge, explore project context from your Memento data.",
+    instructions=(
+        "Personal AI memory — search conversations, recall knowledge, explore project context from your Memento data. "
+        "Before deploying, releasing, migrating a database, deleting or changing data, pushing, or changing config, "
+        "call memory_check_rule: it returns the user's iron rules, pitfalls hit before on similar work, and skills to follow. "
+        "After a failure whose cause you found and fixed, call memory_pitfall. When the user says to do something later, "
+        "call todo_add; when asked what's left, call todo_list."
+    ),
 )
 
 # Initialized on startup
@@ -24,12 +30,14 @@ _remote = None  # RemoteClient for HTTP mode
 _session_factory = None  # SQLAlchemy session factory for DB mode
 
 
-def init_server(server_url: str | None = None, token: str | None = None, db_url: str | None = None):
+def init_server(
+    server_url: str | None = None, token: str | None = None, db_url: str | None = None, token_loader=None,
+):
     """Initialize the MCP server. Either (server_url + token) or db_url."""
     global _remote, _session_factory
     if server_url and token:
         from .remote_client import RemoteClient
-        _remote = RemoteClient(server_url, token)
+        _remote = RemoteClient(server_url, token, token_loader=token_loader)
         logger.info("MCP Memory Server initialized in remote mode: %s", server_url)
     elif db_url:
         from .db import create_engine_and_session
@@ -788,7 +796,7 @@ async def memory_core(category: str | None = None) -> str:
         if not category:
             data = await _remote.get_core_memory_markdown()
             return data.get("markdown", "")
-        memories = await _remote.get_core_memories(category=category)
+        memories = [m for m in await _remote.get_core_memories(category=category) if not m.get("is_folder")]
         if not memories:
             return f"No core memories found for category '{category}'."
         lines = [f"# Core Memories ({category})"]
@@ -805,29 +813,24 @@ async def get_core_memory_resource() -> str:
 
 
 @mcp.tool()
-async def memory_check_rule(action_type: str, project_name: str | None = None) -> str:
-    """Pre-flight safety check against user's consolidated engineering rules & guidelines.
+async def memory_check_rule(action_type: str, project_name: str | None = None, details: str | None = None) -> str:
+    """Pre-flight check against the user's rules, past pitfalls, and learned skills.
 
-    Use this tool BEFORE performing critical operations (e.g. release, build, migration,
-    git push, deployment, refactor, config update) to retrieve relevant iron rules,
-    compatibility requirements, or past pitfalls recorded in Memento.
+    Call this BEFORE critical operations (release, deploy, build, db migration, deleting or
+    changing data, git push, config change, restarting services). Returns the user's iron rules,
+    pitfalls hit before on similar work (symptom / cause / fix), and skills to follow step by step.
 
     Args:
-        action_type: Type of action being planned (e.g. 'release', 'deploy', 'update', 'build', 'db_migration')
-        project_name: Optional target project name to include project-specific rules
+        action_type: What you are about to do (e.g. 'release', 'deploy', 'db_migration', '删除数据')
+        project_name: Target project name, to include that project's pitfalls
+        details: Optional specifics (commands, services, error text) to match more pitfalls
     """
     rules: list[dict] = []
     if _remote:
-        rule_mems = await _remote.get_core_memories(category="rule")
-        pref_mems = await _remote.get_core_memories(category="preference")
-        rules.extend(rule_mems or [])
-        rules.extend(pref_mems or [])
-        if project_name:
-            proj_mems = await _remote.get_core_memories(category="project")
-            for m in (proj_mems or []):
-                p_text = f"{m.get('key', '')} {m.get('tree_path', '')}".lower()
-                if project_name.lower() in p_text:
-                    rules.append(m)
+        try:
+            return await _remote.check(action_type, project_name, details)
+        except Exception as e:
+            return f"Rule check failed: {e}"
     elif _session_factory:
         from sqlalchemy import or_, select
         from .db import UserMemory
@@ -886,3 +889,134 @@ async def memory_project_map() -> str:
     return "Project map retrieval is supported in remote mode."
 
 
+
+
+# ---------------------------------------------------------------------------
+# Learning loop: pitfalls, skills, todos
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+async def memory_pitfall(
+    title: str, symptom: str, fix: str, cause: str | None = None, project: str | None = None,
+) -> str:
+    """Record a pitfall after you hit a failure, found its cause, and fixed it.
+
+    Memento will warn about it the next time similar work comes up (memory_check_rule).
+    Only for problems in the user's project / machines / services — not for your own
+    tool-usage mistakes, and not for failures whose cause you didn't find.
+
+    Args:
+        title: One line summary
+        symptom: The error or behaviour you saw (keep the key error text)
+        fix: What fixed it
+        cause: The root cause
+        project: Project name
+    """
+    if not _remote:
+        return "Recording pitfalls is supported in remote mode."
+    try:
+        res = await _remote.add_pitfall(title=title, symptom=symptom, fix=fix, cause=cause, project=project)
+    except Exception as e:
+        return f"Save failed: {e}"
+    return "Saved." if res.get("saved") else f"Not saved: {res.get('note', '')}"
+
+
+@mcp.tool()
+async def memory_skill(query: str | None = None) -> str:
+    """Skills the user approved: procedures that worked in their own environment.
+
+    With a query (e.g. 'deploy memento', 'switch model'), returns the best matching skill's
+    full steps; without one, lists all skills. Prefer following a skill over working it out again.
+
+    Args:
+        query: What you want to do, or a skill name
+    """
+    if not _remote:
+        return "Skills are supported in remote mode."
+    data = await _remote.list_skills()
+    skills = data.get("published") or []
+    if not skills:
+        return "No published skills yet."
+    if not query:
+        return "\n".join(f"- `{s['slug']}` {s['title']}: {s['description']}" for s in skills)
+    q = query.lower()
+    words = [w for w in q.replace("-", " ").split() if len(w) > 1] or [q]
+
+    def score(s: dict) -> int:
+        text = f"{s['slug']} {s['title']} {s['description']} {s.get('project') or ''}".lower()
+        return (10 if s["slug"] == q else 0) + sum(1 for w in words if w in text)
+
+    best = max(skills, key=score)
+    if score(best) == 0:
+        return "No matching skill. Available:\n" + "\n".join(f"- `{s['slug']}` {s['title']}" for s in skills)
+    return best.get("skill_md") or best.get("body") or ""
+
+
+def _todo_line(t: dict) -> str:
+    extra = []
+    if t.get("due"):
+        extra.append(f"due {t['due']}")
+    if t.get("project"):
+        extra.append(t["project"])
+    return f"- [{t['id'][:8]}] {t['title']}" + (f" ({', '.join(extra)})" if extra else "")
+
+
+@mcp.tool()
+async def todo_list(project: str | None = None) -> str:
+    """The user's open todos (things they said they'd do later), soonest due first.
+
+    Args:
+        project: Only this project's todos
+    """
+    if not _remote:
+        return "Todos are supported in remote mode."
+    data = await _remote.list_todos(project)
+    items = data.get("open") or []
+    if not items:
+        return "No open todos."
+    return f"# Open todos ({len(items)})\n" + "\n".join(_todo_line(t) for t in items)
+
+
+@mcp.tool()
+async def todo_add(title: str, detail: str | None = None, due: str | None = None, project: str | None = None) -> str:
+    """Record something the user wants done later ("do this tomorrow", "note this down").
+
+    Not for work you are about to do right now. The user gets a push when it falls due.
+
+    Args:
+        title: What to do, as a short verb phrase
+        detail: Extra context
+        due: Due date YYYY-MM-DD
+        project: Project name
+    """
+    if not _remote:
+        return "Todos are supported in remote mode."
+    res = await _remote.add_todo(title, detail, due, project)
+    t = res.get("todo") or {}
+    return ("Added: " if res.get("created") else "Already on the list: ") + _todo_line(t)
+
+
+@mcp.tool()
+async def todo_update(
+    todo_id: str, status: str | None = None, title: str | None = None, due: str | None = None,
+) -> str:
+    """Close or edit a todo. status: done | dropped | open. todo_id: the id (or its first 8 chars) from todo_list.
+
+    Args:
+        todo_id: Todo id or its 8-char prefix
+        status: done, dropped, or open
+        title: New title
+        due: New due date YYYY-MM-DD ('' clears it)
+    """
+    if not _remote:
+        return "Todos are supported in remote mode."
+    full_id = todo_id
+    if len(todo_id) < 32:
+        data = await _remote.list_todos()
+        match = [t for t in (data.get("open") or []) + (data.get("closed") or []) if t["id"].startswith(todo_id)]
+        if len(match) != 1:
+            return f"No single todo matches '{todo_id}'."
+        full_id = match[0]["id"]
+    fields = {k: v for k, v in {"status": status, "title": title, "due": due}.items() if v is not None}
+    res = await _remote.update_todo(full_id, fields)
+    return "Updated: " + _todo_line(res.get("todo") or {}) + f" [{(res.get('todo') or {}).get('status')}]"

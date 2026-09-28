@@ -19,9 +19,12 @@ logger = logging.getLogger("mcp_memory.remote")
 class RemoteClient:
     """HTTP client for Memento server API."""
 
-    def __init__(self, server_url: str, token: str):
+    def __init__(self, server_url: str, token: str, token_loader=None):
         self.base_url = server_url.rstrip("/")
         self.token = token
+        # Re-reads the token (e.g. from the collector's config) when the server rejects
+        # the current one, so a rotated device token doesn't break every AI tool.
+        self._token_loader = token_loader
         self._jwt: str | None = None
         self._jwt_time: float = 0  # When JWT was obtained
 
@@ -32,21 +35,33 @@ class RemoteClient:
         if self._jwt and (time.time() - self._jwt_time) < 72000:
             return self._jwt
         self._jwt = None  # Force re-exchange
+        try:
+            return await self._exchange(self.token)
+        except RuntimeError:
+            fresh = self._token_loader() if self._token_loader else None
+            if not fresh or fresh == self.token:
+                raise
+            logger.info("Token rejected; retrying with the collector's current token")
+            self.token = fresh
+            return await self._exchange(fresh)
+
+    async def _exchange(self, token: str) -> str:
+        import time
         async with httpx.AsyncClient(timeout=10, verify=SSL_CONTEXT) as client:
             # Try as JWT directly
             resp = await client.get(
                 f"{self.base_url}/api/auth/me",
-                headers={"Authorization": f"Bearer {self.token}"},
+                headers={"Authorization": f"Bearer {token}"},
             )
             if resp.status_code == 200:
-                self._jwt = self.token
+                self._jwt = token
                 self._jwt_time = time.time()
                 return self._jwt
 
             # Try token-exchange (collector_token → JWT)
             resp = await client.post(
                 f"{self.base_url}/api/auth/token-exchange",
-                headers={"X-Collector-Token": self.token},
+                headers={"X-Collector-Token": token},
             )
             if resp.status_code == 200:
                 data = resp.json()
@@ -202,11 +217,54 @@ class RemoteClient:
     async def get_core_memory_markdown(self) -> dict:
         return await self._get("/api/memory/core/markdown")
 
-    async def get_core_memories(self, category: str | None = None) -> list[dict]:
-        params = {}
+    async def get_core_memories(self, category: str | None = None, recall: bool = True) -> list[dict]:
+        """Only memories in force (not dormant / superseded); counts as a use when recall."""
+        params: dict = {"active_only": "true", "recall": "true" if recall else "false"}
         if category:
             params["category"] = category
         return await self._get("/api/memory/core", params)
+
+    async def _put(self, path: str, json_data: dict | None = None) -> dict:
+        jwt = await self._ensure_jwt()
+        async with httpx.AsyncClient(timeout=30, verify=SSL_CONTEXT) as client:
+            resp = await client.put(
+                f"{self.base_url}{path}", json=json_data, headers={"Authorization": f"Bearer {jwt}"},
+            )
+            if resp.status_code == 401:
+                self._jwt = None
+                jwt = await self._ensure_jwt()
+                resp = await client.put(
+                    f"{self.base_url}{path}", json=json_data, headers={"Authorization": f"Bearer {jwt}"},
+                )
+            resp.raise_for_status()
+            return resp.json()
+
+    # --- Learning: rules / pitfalls / skills / todos ---
+    async def check(self, action: str, project: str | None = None, query: str | None = None) -> str:
+        params: dict = {"action": action, "format": "markdown"}
+        if project:
+            params["project"] = project
+        if query:
+            params["query"] = query
+        data = await self._get("/api/learning/check", params)
+        return data.get("markdown", "") if isinstance(data, dict) else ""
+
+    async def add_pitfall(self, **fields) -> dict:
+        return await self._post("/api/learning/pitfalls", {k: v for k, v in fields.items() if v})
+
+    async def list_skills(self) -> dict:
+        return await self._get("/api/skills")
+
+    async def list_todos(self, project: str | None = None) -> dict:
+        return await self._get("/api/todos", {"project": project} if project else None)
+
+    async def add_todo(self, title: str, detail: str | None, due: str | None, project: str | None) -> dict:
+        return await self._post("/api/todos", {
+            "title": title, "detail": detail, "due": due, "project": project, "source": "mcp",
+        })
+
+    async def update_todo(self, todo_id: str, fields: dict) -> dict:
+        return await self._put(f"/api/todos/{todo_id}", fields)
 
     async def get_dream_journals(self, limit: int = 5) -> dict:
         return await self._get("/api/memory/dreams", {"limit": limit})

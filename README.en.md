@@ -26,7 +26,10 @@ Auto-collect AI coding conversations and memory across devices and tools, aggreg
 - 🧠 **Cross-device conversation sync** — Claude Code / Codex / Cursor / Antigravity etc. on Mac / Linux / Windows, all aggregated in one place
 - 🔍 **Hybrid retrieval** — BGE-M3 vectors + jieba-tokenized full-text index; works for both English and Chinese
 - 🕸️ **Knowledge graph** — LLM extracts entities (projects / tools / technologies / people / concepts), relations and observations from conversations; observations older than 7 days are auto-compacted into summaries
-- 🔗 **MCP integration** — 8 tools (find: `memory_search` / `memory_recall` / `memory_context`; drill: `memory_open` / `memory_conversation` / `memory_graph`; write: `memory_store`; overview: `daily_summary`) plus 4 resources; any AI IDE can query, read, and update your memory directly
+- 🔗 **MCP integration** — find, drill, write and overview tools, plus a pre-flight check (`memory_check_rule`), skills (`memory_skill`), pitfalls (`memory_pitfall`) and todos (`todo_list` / `todo_add` / `todo_update`); any AI IDE can query, read, and update your memory directly
+- 🌱 **Learns how you work** — nightly reviews of finished sessions turn procedures that worked into **skills** (shipped to `~/.claude/skills` and `~/.agents/skills` once you approve), failures with a found cause into **pitfalls**, and unfinished work into **todos** (pushed when due); corrections you give an AI become rules within 10 minutes
+- ♻️ **Memory that ages** — tracks how often each memory is handed to an AI; duplicates and contradicted memories are marked superseded (the old profile line goes too), machine-made ones unused for 60 days go dormant; nothing is deleted, anything can be revived
+- 📏 **Retrieval evaluation** — a versioned question set generated from your own documents is scored weekly through the same retrieval Ask uses; drops in hit@5 / MRR raise an alert
 - 📅 **AI daily digest** — Celery runs a two-stage job at 23:30 every day: per-document summaries first, then aggregated into a cross-tool digest
 - 🔒 **Sanitize-before-enqueue** — The collector strips 14 classes of secrets locally (OpenAI / Anthropic / GitHub / Slack / Telegram / AWS / Bearer tokens / private keys / URL-embedded credentials …) so even the on-disk SQLite queue is safe
 - 🌐 **Public sharing** — One-click share links for project timelines / daily digests, with GeoIP visitor stats, expiry, revoke any time
@@ -302,7 +305,7 @@ After installing `memento-brain`, `memento-collector setup` automatically wires 
 | **Codex** | `~/.codex/config.toml` | TOML `[mcp_servers.memento-memory]` |
 | OpenClaw | `~/.openclaw/openclaw.json` | `openclaw mcp set` CLI |
 
-After installation, AI IDEs can call 8 tools, grouped in 4 buckets:
+After installation, AI IDEs can call:
 
 | Tool | Purpose |
 |---|---|
@@ -318,6 +321,13 @@ After installation, AI IDEs can call 8 tools, grouped in 4 buckets:
 | `memory_store(content, entity_name, entity_type)` | Save an observation into the knowledge graph |
 | **Overview** | |
 | `daily_summary(date)` | Cross-tool activity digest + AI summary for a given day |
+| **Before acting / learned** | |
+| `memory_check_rule(action_type, project_name, details)` | Call before deploying, releasing, migrating or changing data: relevant rules, past pitfalls, skills to follow |
+| `memory_skill(query)` | Full steps of a published skill (no argument lists them all) |
+| `memory_pitfall(title, symptom, fix, cause, project)` | Record a failure whose cause you found and fixed, to be warned next time |
+| `todo_list(project)` / `todo_add(title, detail, due, project)` / `todo_update(todo_id, status, title, due)` | Todos: list, record "do this later", close or drop |
+
+On a machine running the collector the MCP server needs no `--token`: it reads the server URL and device token from `~/.memento/collector.json`, and picks up a rotated token by itself.
 
 Plus 4 MCP **resources** exposed as URIs (subscribable from any IDE):
 

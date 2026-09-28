@@ -26,7 +26,10 @@
 - 🧠 **跨设备同步对话** — Mac / Linux / Windows 上的 Claude Code / Codex / Cursor / Antigravity 等工具,聊过的内容统一汇总
 - 🔍 **混合检索** — BGE-M3 向量 + jieba 分词的全文索引,中英文都能搜
 - 🕸️ **知识图谱** — LLM 自动从对话抽实体(项目 / 工具 / 技术 / 人物 / 概念)、关系、观察;超过 7 天的老观察自动压缩成 summary
-- 🔗 **MCP 接入** — 8 个 tool(找:`memory_search` / `memory_recall` / `memory_context`;钻:`memory_open` / `memory_conversation` / `memory_graph`;写:`memory_store`;总览:`daily_summary`)外加 4 个 resources;任何 AI IDE 都能直接查、读、改你的记忆
+- 🔗 **MCP 接入** — 查、钻、写、总览之外,还有动手前的检查(`memory_check_rule`)、技能(`memory_skill`)、踩坑(`memory_pitfall`)和待办(`todo_list` / `todo_add` / `todo_update`);任何 AI IDE 都能直接查、读、改你的记忆
+- 🌱 **越用越懂你** — 每晚复盘结束的会话:做成的多步骤流程总结成**技能**(确认后写进 `~/.claude/skills`、`~/.agents/skills`),查明原因的失败记成**踩坑**,没做完的事进**待办**(到期推送);你纠正 AI 的话 10 分钟内学成规矩
+- ♻️ **记忆新陈代谢** — 记录每条记忆被 AI 用到的次数;重复和被新说法推翻的旧记忆标记为"已取代"(画像同步删掉旧行),60 天没用的自动总结转为"沉睡";只打标记不删除,随时可唤醒
+- 📏 **检索评测** — 从你的资料生成带版本号的固定题集,每周用问答同一套检索作答,前 5 命中率 / MRR 下降时告警
 - 📅 **AI 日报** — Celery 每天 23:30 跑两阶段:先为每篇文档生成摘要,再聚合成跨工具每日 digest
 - 🔒 **入队前脱敏** — Collector 本地就过 14 类密钥正则(OpenAI / Anthropic / GitHub / Slack / Telegram / AWS / Bearer / 私钥 / URL 内嵌凭证 …),磁盘上 SQLite 队列也安全
 - 🌐 **公开分享** — 项目时间线 / 日报一键生成 share 链接,带 GeoIP 访客统计、有效期、随时撤销
@@ -302,7 +305,7 @@ LLM 自动从同步进来的对话和文档里抽:
 | **Codex** | `~/.codex/config.toml` | TOML `[mcp_servers.memento-memory]` |
 | OpenClaw | `~/.openclaw/openclaw.json` | `openclaw mcp set` CLI |
 
-接入后在任何 AI IDE 里可以调(8 个 tool,分四组):
+接入后在任何 AI IDE 里可以调:
 
 | 工具 | 用途 |
 |---|---|
@@ -318,6 +321,13 @@ LLM 自动从同步进来的对话和文档里抽:
 | `memory_store(content, entity_name, entity_type)` | 主动保存观察到知识图谱 |
 | **总览** | |
 | `daily_summary(date)` | 某天的跨工具活动汇总 + AI 摘要 |
+| **动手前 / 学到的** | |
+| `memory_check_rule(action_type, project_name, details)` | 部署、发版、迁移、改数据前调用:返回相关铁律、以前踩过的坑、可照做的技能 |
+| `memory_skill(query)` | 取出一个已发布技能的完整步骤(不带参数列出全部) |
+| `memory_pitfall(title, symptom, fix, cause, project)` | 查明原因并解决一个失败后记下来,下次同类操作前提醒 |
+| `todo_list(project)` / `todo_add(title, detail, due, project)` / `todo_update(todo_id, status, title, due)` | 待办:列出、记下"以后再做"的事、完成或放弃 |
+
+本机装了采集器时,MCP 服务不需要传 `--token`:自动读取 `~/.memento/collector.json` 里的服务地址和设备令牌,令牌轮换后也会自动换用新的。
 
 外加 4 个 MCP **resources**(以 URI 形式暴露,IDE 可订阅):
 
