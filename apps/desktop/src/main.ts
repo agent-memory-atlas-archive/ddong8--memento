@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, shell, Tray } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, shell, Tray } from "electron";
 import { autoUpdater } from "electron-updater";
 import { join, sep } from "node:path";
 
@@ -107,8 +107,12 @@ function createWindow(show: boolean): void {
     minHeight: 520,
     show,
     title: "Memento",
-    backgroundColor: "#0b0b12",
+    // Matches the page while it loads, so there's no dark flash in light mode.
+    backgroundColor: nativeTheme.shouldUseDarkColors ? "#0b0b12" : "#f6f5fb",
     titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
+    // Windows / Linux: the default File-Edit-View menu adds nothing to the web UI and its
+    // bottom edge shows as a dark line under it. Hidden, it still answers Alt and its shortcuts.
+    autoHideMenuBar: true,
     webPreferences: {
       preload: join(__dirname, "preload.cjs"),
       contextIsolation: true,
