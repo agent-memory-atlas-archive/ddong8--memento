@@ -71,7 +71,7 @@ export default function Sidebar({ open, onClose }: { open: boolean; onClose: () 
     { href: "/daily", label: t.nav.daily, icon: "calendar" },
     { href: "/devices", label: t.nav.devices, icon: "devices" },
     { href: "/inbox", label: t.nav.inbox, icon: "inbox" },
-    { href: "/health", label: t.nav.health, icon: "activity" },
+    { href: "/status", label: t.nav.health, icon: "activity" },
     ...(isDesktop ? [{ href: "/collector", label: t.nav.collector, icon: "terminal" as IconName }] : []),
     ...(isAdmin ? [{ href: "/admin", label: t.nav.admin, icon: "lock" as IconName }] : []),
   ];
