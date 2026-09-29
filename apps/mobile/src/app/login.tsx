@@ -1,6 +1,6 @@
 import { Redirect } from "expo-router";
 import { useState } from "react";
-import { KeyboardAvoidingView, Platform, Text, TextInput, View } from "react-native";
+import { KeyboardAvoidingView, Linking, Platform, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Svg, { Circle, Defs, LinearGradient, RadialGradient, Rect, Stop } from "react-native-svg";
 
@@ -73,9 +73,14 @@ export default function LoginScreen() {
           <Button onPress={submit} busy={busy} disabled={!email.trim() || !password}>
             登录
           </Button>
-          <Text onPress={() => setShowServer((v) => !v)} style={{ textAlign: "center", fontSize: 13, color: t.fg3, marginTop: 6 }}>
-            {showServer ? "收起服务器地址" : "自建服务器？"}
-          </Text>
+          <View style={{ flexDirection: "row", justifyContent: "center", gap: 20, marginTop: 6 }}>
+            <Text onPress={() => void Linking.openURL(`${(server.trim() || DEFAULT_SERVER).replace(/\/+$/, "")}/auth/register`)} style={{ fontSize: 13, color: t.accent }}>
+              注册账号
+            </Text>
+            <Text onPress={() => setShowServer((v) => !v)} style={{ fontSize: 13, color: t.fg3 }}>
+              {showServer ? "收起服务器地址" : "自建服务器？"}
+            </Text>
+          </View>
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>

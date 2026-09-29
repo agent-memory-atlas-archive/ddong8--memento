@@ -53,8 +53,7 @@ Electron 桌面端：
 - [x] 直连数据库模式已删除（没有在用的地方：服务端那段挂载从未生效）
 
 ### 阶段 4：Expo 手机端
-- [x] 提问（流式、断线续接、任务卡片：过程时间线/中途插话/停止、独立分支开关、设备与模式选择、对话记录）、记忆（搜索、长期准则、待确认纠正）、设备、日报待办、我的（系统健康、Bark 推送、账号）
-- [x] 复用 `@memento/core`（AskStream、任务事件合并与文案）；Expo SDK 57 的全局 fetch 支持流式响应
+- [x] ~~原生写的 5 个页面（提问、记忆、设备、日报待办、我的）~~：2026-09-30 用户反馈和桌面版差距太大，改成和桌面版一样加载网页（react-native-webview）。原生只保留登录和钥匙串里的令牌：每次启动刷新令牌，再通过网页的 `/auth/handoff` 交给网页；网页跳到 `/auth/login`（退出或令牌失效）时回到原生登录；外站链接用系统浏览器打开；状态栏颜色跟随网页的皮肤和主题；UA 带 `MementoMobile/<版本>`。网页更新后手机上直接生效，不用重装
 - [x] Android 由 CI 构建 APK（`expo prebuild` + Gradle，随 v* tag 发布）
 - [x] iOS 用免费 Apple ID 在装了 Xcode 的 Mac 上装到真机（签名 7 天有效，过期重跑最后一条）：`sudo xcode-select -s /Applications/Xcode.app/Contents/Developer && sudo xcodebuild -license accept`，Xcode 里登录 Apple ID 并生成 Apple Development 证书，手机连线信任、打开开发者模式；然后**在 `apps/mobile` 目录下**（在仓库根目录运行会找错入口）`npx expo prebuild --platform ios` → `npx expo run:ios --device --configuration Release`
 - [x] 图标统一用网页的 Memento 标志（`scripts/brand-icons.mjs` 生成；Flutter 版用的是 Flutter 默认图标）
@@ -75,6 +74,7 @@ Electron 桌面端：
 | 2026-09-29 | 4 | apps/mobile（Expo SDK 57）：expo-doctor 21/21 通过，Android/iOS JS 打包通过；整个仓库只保留一份 React 19.2.3 |
 | 2026-09-30 | 4 | iOS 真机构建通过后 `expo run:ios` 启动开发服务器时崩溃（`Cannot find module 'expo-router/_ctx-shared'`）：expo-router 被 npm 留在 apps/mobile/node_modules，根目录的 @expo/cli 找不到它。原因是它的可选同伴依赖 react-server-dom-webpack 要求 react-dom ≥ 19.2.4，和根目录钉住的 19.2.3 冲突。修复：根目录声明 expo-router、用 overrides 把 reanimated/worklets/gesture-handler 对齐 SDK 57（原来自动装成了 4.7/0.13/3.3），expo 升到 57.0.26；CI 加了解析检查 |
 | 2026-09-30 | 4 | iOS 27 真机打开即闪退（`_UIApplicationEvaluateRuntimeIssueForNoSceneLifecycleAdoption`，SIGTRAP）：用 Xcode 27 / iOS 27 SDK 构建的应用必须采用 UIScene 生命周期，SDK 57 模板还是 AppDelegate 自己管窗口。修复：装 expo-build-properties，打开官方的 `ios.enableSceneSupport`（要求 expo ≥ 57.0.23；升级到 SDK 58 后可以去掉） |
+| 2026-09-30 | 4 | 手机端改为加载网页（同桌面版），去掉原生页面和不再使用的依赖（@memento/core、expo-clipboard、expo-crypto、react-native-marked） |
 | 2026-09-29 | 3 | @memento/mcp：6 个测试（含内存传输的 MCP 客户端、令牌轮换、按前缀关待办）；stdio 对线上只读调用验证通过 |
 | 2026-09-29 | 2 | Electron 桌面端 apps/desktop：本机打包 mac 版并冒烟通过（守护进程、上传、任务、退出清理） |
 | 2026-09-29 | 2 | 网页端补齐 Flutter 独有功能：健康、技能、纠正、待办、推送、做梦、任务时间线/插话/独立分支 |

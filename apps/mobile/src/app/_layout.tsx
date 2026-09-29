@@ -10,13 +10,9 @@ function Root() {
   return (
     <>
       <StatusBar style={t.scheme === "dark" ? "light" : "dark"} />
-      <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: t.bg } }}>
-        <Stack.Screen name="(tabs)" />
+      <Stack screenOptions={{ headerShown: false, animation: "fade", contentStyle: { backgroundColor: t.bg } }}>
+        <Stack.Screen name="index" />
         <Stack.Screen name="login" />
-        <Stack.Screen
-          name="history"
-          options={{ presentation: "modal", headerShown: true, title: "对话记录", headerStyle: { backgroundColor: t.surface }, headerTintColor: t.fg1 }}
-        />
       </Stack>
     </>
   );

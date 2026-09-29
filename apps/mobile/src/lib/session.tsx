@@ -1,7 +1,7 @@
 import * as SecureStore from "expo-secure-store";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 
-import { ApiError, createApi, type Api } from "./api";
+import { ApiError } from "./api";
 
 export const DEFAULT_SERVER = "https://mem.ihasy.com";
 const SERVER_KEY = "memento.server";
@@ -11,7 +11,6 @@ interface Session {
   ready: boolean;
   server: string;
   token: string | null;
-  api: Api;
   signIn(server: string, email: string, password: string): Promise<void>;
   signOut(): Promise<void>;
 }
@@ -72,8 +71,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setToken(access_token);
   }, []);
 
-  const api = useMemo(() => createApi(server, token, () => void signOut()), [server, token, signOut]);
-  const value = useMemo(() => ({ ready, server, token, api, signIn, signOut }), [ready, server, token, api, signIn, signOut]);
+  const value = useMemo(() => ({ ready, server, token, signIn, signOut }), [ready, server, token, signIn, signOut]);
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }
 
