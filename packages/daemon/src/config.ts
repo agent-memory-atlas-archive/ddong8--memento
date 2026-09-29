@@ -18,6 +18,8 @@ export interface CollectorConfig {
   platform: string;
   remoteExecKey?: string;
   extraWatchDirs: string[];
+  /** Where the web app is when it isn't on the server's own origin (self-hosted: :3001 next to the API on :8001). */
+  webUrl?: string;
 }
 
 export const DEFAULT_SERVER_URL = "https://mem.ihasy.com";
@@ -77,6 +79,7 @@ export async function loadConfig(options: { home?: string; env?: NodeJS.ProcessE
   let token = env.MEMENTO_SERVER_TOKEN ?? "";
   let execKey = env.MEMENTO_REMOTE_EXEC_KEY;
   const extraWatchDirs: string[] = [];
+  let webUrl = env.MEMENTO_WEB_URL || undefined;
 
   let deviceId = (await readText(paths.deviceId))?.trim() ?? "";
   if (!deviceId) {
@@ -102,6 +105,7 @@ export async function loadConfig(options: { home?: string; env?: NodeJS.ProcessE
       if (json !== undefined) {
         if (nonEmpty(map.remote_exec_key)) execKey = map.remote_exec_key;
         if (Array.isArray(map.extra_watch_dirs)) extraWatchDirs.push(...map.extra_watch_dirs.filter(nonEmpty));
+        if (!webUrl && nonEmpty(map.web_url)) webUrl = map.web_url;
       } else if (nonEmpty(map.obsidian_vault_path)) {
         extraWatchDirs.push(map.obsidian_vault_path);
       }
@@ -127,6 +131,7 @@ export async function loadConfig(options: { home?: string; env?: NodeJS.ProcessE
     platform: plat,
     remoteExecKey: execKey || undefined,
     extraWatchDirs,
+    ...(webUrl ? { webUrl: webUrl.replace(/\/+$/, "") } : {}),
   };
 }
 
@@ -141,6 +146,7 @@ export async function saveConfig(config: CollectorConfig, home = homeDir()): Pro
     platform: config.platform,
     ...(config.remoteExecKey ? { remote_exec_key: config.remoteExecKey } : {}),
     extra_watch_dirs: config.extraWatchDirs,
+    ...(config.webUrl ? { web_url: config.webUrl } : {}),
     updated_at: new Date().toISOString(),
   };
   await writeFile(paths.config, JSON.stringify(data, null, 2));

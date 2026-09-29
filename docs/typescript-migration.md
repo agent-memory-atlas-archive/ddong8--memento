@@ -50,7 +50,7 @@ Electron 桌面端：
 ### 阶段 3：MCP 服务改 TS
 - [x] 用官方 TS MCP SDK 移植 `mcp_server` 的远程模式：17 个工具、5 个资源全部对齐（`packages/mcp`，顺带修好了 Python 版里报错的 `memory_project_map`）
 - [x] 分发方式：随桌面端提供（`ELECTRON_RUN_AS_NODE=1 "<Memento Desktop>" ".../mcp.mjs"`），「本机采集」页给出 Claude Code / Codex / 其他工具的配置一键复制；也可 `memento-mcp` 独立运行
-- [ ] 直连数据库模式（自建/本地开发用）暂留 Python 版，收尾时再决定是否保留
+- [x] 直连数据库模式已删除（没有在用的地方：服务端那段挂载从未生效）
 
 ### 阶段 4：Expo 手机端
 - [x] 提问（流式、断线续接、任务卡片：过程时间线/中途插话/停止、独立分支开关、设备与模式选择、对话记录）、记忆（搜索、长期准则、待确认纠正）、设备、日报待办、我的（系统健康、Bark 推送、账号）
@@ -60,7 +60,7 @@ Electron 桌面端：
 - [ ] 真机/模拟器上走一遍（本机没有模拟器和 Android SDK，目前只验证了类型检查和两端 JS 打包）
 
 ### 收尾
-- [ ] 清理不再使用的代码（旧 Python 采集器等，删除前逐个确认）
+- [x] 清理不再使用的代码（2026-09-29 用户确认）：删除旧 Python 采集器 `collector/`、打包壳 `memento_brain/` 和它的架构文档；Python MCP 去掉直连数据库模式（远程模式保留，现有 `memento-memory` 配置照常可用）；服务端删掉从未生效的 `/mcp` 挂载和 PyPI 采集器版本接口，镜像不再安装 mcp_server；管理页去掉「更新采集器」按钮（新旧采集都不处理这个命令）；CI 和 PyPI 发布只保留 memento-brain-memory；自建安装脚本改为从仓库构建 Node 守护进程（没有 Node 就提示装桌面端）
 - [ ] Flutter 版下线说明
 
 ## 进度记录

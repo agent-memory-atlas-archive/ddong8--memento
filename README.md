@@ -9,8 +9,6 @@
 [![License: AGPL v3](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
 [![Python ≥3.10](https://img.shields.io/badge/python-≥3.10-blue.svg)](#技术栈)
 [![Next.js 16](https://img.shields.io/badge/next.js-16-black.svg)](#技术栈)
-[![PyPI - memento-brain](https://img.shields.io/pypi/v/memento-brain?label=memento-brain)](https://pypi.org/project/memento-brain/)
-[![PyPI - memento-brain-collector](https://img.shields.io/pypi/v/memento-brain-collector?label=collector)](https://pypi.org/project/memento-brain-collector/)
 [![PyPI - memento-brain-memory](https://img.shields.io/pypi/v/memento-brain-memory?label=mcp-memory)](https://pypi.org/project/memento-brain-memory/)
 
 [快速开始](#-快速开始) · [架构](#️-架构) · [支持的工具](#-支持的-ai-工具) · [自部署](#-自托管部署) · [MCP 接入](#-mcp-记忆服务)
@@ -50,7 +48,7 @@ graph TB
         OC["OpenClaw<br/>~/.openclaw"]
         HM["Hermes<br/>~/.hermes"]
         OBS["Obsidian Vault"]
-        COL["memento-brain-collector<br/>watchdog 监听<br/>SQLite 离线队列<br/>sanitizer 入队脱敏"]
+        COL["Memento 守护进程<br/>桌面端内置 / memento-daemon<br/>文件监听 · 增量上传<br/>上传前脱敏"]
         CC --- COL
         CDX --- COL
         CUR --- COL
@@ -193,7 +191,7 @@ git clone https://github.com/ddong8/memento.git && cd memento
 2. `docker compose up -d --build` 起 7 个容器
 3. 探活 API `/health`
 4. 交互提示创建第一个用户(自动 owner,拿 collector_token)
-5. `pip install memento-brain-collector` + setup + 注册系统服务
+5. 把本机配到这台服务器,本机有 Node.js 20+ 时从仓库构建采集守护进程并注册为系统服务(没有 Node 就装桌面端,它会自动读取这份配置)
 
 可选参数:
 
@@ -251,19 +249,21 @@ git clone https://github.com/ddong8/memento.git && cd memento
 
 > macOS 首次打开若提示"无法验证开发者",右键图标 → 打开,或 `xattr -dr com.apple.quarantine /Applications/Memento.app`。
 
-### 方式二:命令行(pip)
+### 方式二:命令行(Node 守护进程)
 
-适合服务器 / headless / 习惯 CLI 的环境:
+适合服务器 / headless / 习惯 CLI 的环境,需要 Node.js 20+。守护进程和桌面端里跑的是同一份代码(`packages/daemon`):
 
 ```bash
-pip install memento-brain-collector   # 只装采集器
-# 或 pip install memento-brain         # 一并装齐 collector + MCP memory
-memento-collector setup                # 交互式填 URL + token
+git clone https://github.com/ddong8/memento.git && cd memento
+npm ci --workspace @memento/daemon --workspace @memento/core --include-workspace-root
+npm run build -w @memento/daemon
+node packages/daemon/dist/cli.js login <collector token> https://mem.ihasy.com
+node packages/daemon/dist/cli.js install-service   # 登录后自动启动
 ```
 
-> PyPI 包名 `memento-brain-collector` / `memento-brain-memory`(短名 `memento-memory` 被占了),CLI 保留短别名 `memento-collector` / `memento-memory`。
+> 旧的 Python 采集器(PyPI `memento-brain-collector`)已停止维护,已装的设备换成桌面端或上面的守护进程即可。
 
-**怎么拿 token?**(仅 pip / 命令行场景需要;桌面客户端**完全自动**)
+**怎么拿 token?**(仅命令行场景需要;桌面客户端**完全自动**)
 
 - **跑过 `./install.sh`** → 末尾会打印,同时存到 `.env.local`
 - **Web 自助注册** → `/auth/register` 即刻发 token(open 模式默认行为)
@@ -272,13 +272,13 @@ memento-collector setup                # 交互式填 URL + token
 ### 守护进程
 
 ```bash
-memento-collector status    # 查看状态
-memento-collector start     # 启动服务
-memento-collector stop      # 停止服务
-memento-collector run       # 前台运行(调试)
+node packages/daemon/dist/cli.js status              # 查看状态
+node packages/daemon/dist/cli.js run                 # 前台运行(调试)
+node packages/daemon/dist/cli.js install-service     # 登录后自动启动
+node packages/daemon/dist/cli.js uninstall-service   # 取消自动启动
 ```
 
-按平台自动适配:**macOS** launchd / **Linux** systemd user / **Windows** Task Scheduler。
+按平台自动适配:**macOS** launchd / **Linux** systemd user / **Windows** 启动项。桌面端和守护进程同一时间只会有一份在采集(共用 `~/.memento`)。
 
 ## 🕸️ 知识图谱
 
@@ -294,7 +294,7 @@ LLM 自动从同步进来的对话和文档里抽:
 
 ## 🧠 MCP 记忆服务
 
-装齐 `memento-brain` 后,所有 AI IDE 会自动配置 MCP 接入(由 `memento-collector setup` 完成):
+桌面端自带 MCP 服务,在「本机采集」页一键复制 Claude Code / Codex / 其他工具的配置;也可以 `pip install memento-brain-memory` 后运行 `memento-memory`(读取 `~/.memento/collector.json` 的登录信息)。各工具的配置位置:
 
 | AI 工具 | MCP 配置文件 | 写入方式 |
 |---|---|---|
@@ -402,24 +402,21 @@ Celery beat 调度的定时任务:
 
 ```
 memento/
-├── collector/                # 本地采集器 — PyPI: memento-brain-collector
-│   └── collector/
-│       ├── main.py           # 守护进程入口
-│       ├── cli.py            # setup / install / start / stop / uninstall
-│       ├── watcher.py        # watchdog 跨平台监听 + 去抖
-│       ├── queue.py          # SQLite WAL 离线队列
-│       ├── sync_client.py    # HTTPS 同步(分片上传 / 离线重试)
-│       ├── sanitizer.py      # 入队前脱敏(API key / 私钥 / OAuth)
-│       ├── parsers/          # 8 个解析器
-│       └── tools/            # 6 个工具定义
-├── mcp_server/               # MCP 记忆 — PyPI: memento-brain-memory
-├── memento_brain/            # Meta — PyPI: memento-brain(一键装齐)
+├── packages/
+│   ├── core/                 # @memento/core:接口类型、提问流、任务事件(各端共用)
+│   ├── daemon/               # @memento/daemon:本机采集 + 派活执行 + 画像/技能写入
+│   └── mcp/                  # @memento/mcp:MCP 记忆服务(随桌面端分发)
+├── apps/
+│   ├── desktop/              # Electron 桌面端(Memento Desktop)
+│   └── mobile/               # Expo 手机端(Memento Mobile)
+├── mcp_server/               # Python 版 MCP 记忆 — PyPI: memento-brain-memory
+├── mobile/                   # Flutter 客户端(迁移期间照常维护)
 ├── server/                   # 后端 FastAPI
 │   └── server/
 │       ├── main.py           # 入口 + schema 迁移 + validate_production
 │       ├── config.py         # MEMENTO_ 前缀 settings + fail-fast
 │       ├── middleware/       # JWT + collector token (constant-time)
-│       ├── api/              # REST + SSE + MCP 挂载
+│       ├── api/              # REST + SSE
 │       ├── db/               # 16 张表
 │       ├── services/         # ingest / embedding / graph / cache / geoip
 │       └── tasks/            # Celery worker + beat
@@ -429,7 +426,7 @@ memento/
 ├── embedding/                # BGE-M3 宿主服务
 ├── scripts/                  # install.py 后端 + 工具脚本
 ├── deploy/bootstrap/         # curl 一键安装(install.sh / .ps1 / index.html)
-├── docs/                     # project-architecture.md / collector-architecture.md
+├── docs/                     # project-architecture.md / typescript-migration.md
 └── docker-compose.yml
 ```
 
@@ -498,13 +495,13 @@ memento/
 <summary><b>服务端(跑过 install.sh)</b></summary>
 
 ```bash
-./install.sh uninstall          # 只停容器,保留数据 / .env / pip 包
+./install.sh uninstall          # 只停容器和采集服务,保留数据 / .env
 ./install.sh uninstall --purge  # 同上 + 删 Docker 数据卷 + .env
 ./install.sh uninstall --all    # 核弹级(加 -y 跳过二次确认)
 ```
 
 `--all` 会清:
-- pip 包(memento-brain-* + 旧品牌 daily-report-*)
+- 采集守护进程服务,以及旧版留下的 pip 包(memento-brain-* + 旧品牌 daily-report-*)
 - `~/.memento` + `~/.daily-report`(旧路径)
 - Collector 日志(macOS / Linux / Windows 各自路径)
 - Embedding venv + HuggingFace 模型缓存(~1.3 GB)
@@ -518,7 +515,8 @@ memento/
 <summary><b>只装了采集器的设备</b></summary>
 
 ```bash
-memento-collector uninstall                                  # 摘掉 launchd/systemd/Task
+node packages/daemon/dist/cli.js uninstall-service           # 新版守护进程
+memento-collector uninstall                                  # 旧版 Python 采集器(如果装过)
 pip uninstall -y memento-brain-collector memento-brain-memory memento-brain
 rm -rf ~/.memento
 

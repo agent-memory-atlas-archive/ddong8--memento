@@ -430,13 +430,6 @@ app.include_router(share.router)
 app.include_router(data_io.router)
 app.include_router(updates.router)
 
-# Mount MCP Memory Server (best-effort, skip if deps not available)
-try:
-    from .api.mcp_mount import mount_mcp
-    mount_mcp(app)
-except Exception:
-    pass
-
 
 @app.get("/")
 async def root() -> dict:

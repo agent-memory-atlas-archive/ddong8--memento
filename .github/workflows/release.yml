@@ -1,40 +1,30 @@
 name: Release to PyPI
 
-# Triggered by a git tag like v0.0.2. All 3 packages are bumped to the same
-# version and released together. Example:
+# Publishes the Python MCP server (memento-brain-memory) on a `pypi-v*` tag.
+# The Python collector and the memento-brain meta package were retired in favour
+# of the desktop app's Node daemon; their last releases stay on PyPI.
 #
-#   # 1. bump version in all 3 pyproject.toml
-#   sed -i '' 's/version = "0\.0\.1"/version = "0.0.2"/' \
-#     collector/pyproject.toml mcp_server/pyproject.toml memento_brain/pyproject.toml
-#   # 2. also bump the dep pins
-#   sed -i '' 's/memento-brain-memory>=0\.0\.1/memento-brain-memory>=0.0.2/' \
-#     collector/pyproject.toml memento_brain/pyproject.toml
-#   sed -i '' 's/memento-brain-collector>=0\.0\.1/memento-brain-collector>=0.0.2/' \
-#     memento_brain/pyproject.toml
-#   # 3. commit + tag + push
-#   git commit -am "release: 0.0.2"
-#   git tag v0.0.2 && git push && git push --tags
+#   # 1. bump version in mcp_server/pyproject.toml
+#   sed -i '' 's/version = "0\.0\.17"/version = "0.0.18"/' mcp_server/pyproject.toml
+#   # 2. commit + tag + push
+#   git commit -am "release: memento-brain-memory 0.0.18"
+#   git tag pypi-v0.0.18 && git push && git push --tags
 #
-# Trusted publishing setup (one-time, per PyPI project):
+# Trusted publishing setup (one-time):
 #   https://docs.pypi.org/trusted-publishers/adding-a-publisher/
-#   For each of memento-brain / memento-brain-collector / memento-brain-memory,
-#   add a "GitHub" trusted publisher:
+#   For memento-brain-memory add a "GitHub" trusted publisher:
 #     Repository owner: ddong8
 #     Repository name:  memento
 #     Workflow name:    release.yml
 #     Environment:      pypi
 #
-# If trusted publishing isn't set up, fall back to API token: uncomment the
-# `password:` line in each publish step and add PYPI_API_TOKEN to repo secrets.
+# If trusted publishing isn't set up, fall back to an API token: uncomment the
+# `password:` line in the publish step and add PYPI_API_TOKEN to repo secrets.
 
 on:
   push:
     tags:
-      # PyPI releases use `pypi-v*` prefix to leave the bare `v*` namespace
-      # for the desktop app (`desktop-release.yml`). Bump example:
-      #   git tag pypi-v0.0.10 && git push --tags
-      # The same version must be set in collector/mcp_server/memento_brain
-      # pyproject.toml beforehand — verify-version below fails fast otherwise.
+      # `pypi-v*` leaves the bare `v*` namespace for the apps (desktop-release.yml).
       - "pypi-v*"
 
 concurrency:
@@ -42,42 +32,24 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # ── Sanity: verify git tag matches the version in each pyproject.toml ──
+  # ── Sanity: the git tag matches mcp_server/pyproject.toml ──
   verify-version:
     runs-on: ubuntu-latest
-    outputs:
-      version: ${{ steps.extract.outputs.version }}
     steps:
       - uses: actions/checkout@v4
-      - id: extract
+      - name: Check the pyproject version matches the tag
         run: |
           TAG="${GITHUB_REF_NAME#pypi-v}"
-          echo "version=$TAG" >> "$GITHUB_OUTPUT"
-          echo "Tag version: $TAG"
-      - name: Check pyproject versions all match tag
-        run: |
-          TAG="${GITHUB_REF_NAME#pypi-v}"
-          fail=0
-          for pkg in collector mcp_server memento_brain; do
-            ver=$(grep -E '^version = ' "$pkg/pyproject.toml" | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
-            if [ "$ver" != "$TAG" ]; then
-              echo "::error::$pkg/pyproject.toml has version=$ver but tag is pypi-v$TAG"
-              fail=1
-            else
-              echo "✓ $pkg → $ver"
-            fi
-          done
-          exit $fail
+          ver=$(grep -E '^version = ' mcp_server/pyproject.toml | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
+          if [ "$ver" != "$TAG" ]; then
+            echo "::error::mcp_server/pyproject.toml has version=$ver but tag is pypi-v$TAG"
+            exit 1
+          fi
+          echo "✓ mcp_server → $ver"
 
   build:
     needs: verify-version
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: true
-      matrix:
-        # Order matters at publish time (memory before collector before meta),
-        # but build can run in parallel.
-        package: [mcp_server, collector, memento_brain]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -85,18 +57,17 @@ jobs:
           python-version: "3.12"
       - run: pip install build twine
       - name: Build
-        working-directory: ${{ matrix.package }}
+        working-directory: mcp_server
         run: python -m build
       - name: twine check
-        working-directory: ${{ matrix.package }}
+        working-directory: mcp_server
         run: twine check dist/*
       - uses: actions/upload-artifact@v4
         with:
-          name: dist-${{ matrix.package }}
-          path: ${{ matrix.package }}/dist/
+          name: dist-mcp_server
+          path: mcp_server/dist/
           retention-days: 7
 
-  # ── Publish in dependency order: memory → collector → meta ──
   publish-memory:
     needs: build
     runs-on: ubuntu-latest
@@ -116,38 +87,8 @@ jobs:
         # with:
         #   password: ${{ secrets.PYPI_API_TOKEN }}
 
-  publish-collector:
-    needs: publish-memory
-    runs-on: ubuntu-latest
-    environment:
-      name: pypi
-      url: https://pypi.org/project/memento-brain-collector/
-    permissions:
-      id-token: write
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: dist-collector
-          path: dist/
-      - uses: pypa/gh-action-pypi-publish@release/v1
-
-  publish-meta:
-    needs: publish-collector
-    runs-on: ubuntu-latest
-    environment:
-      name: pypi
-      url: https://pypi.org/project/memento-brain/
-    permissions:
-      id-token: write
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: dist-memento_brain
-          path: dist/
-      - uses: pypa/gh-action-pypi-publish@release/v1
-
   github-release:
-    needs: publish-meta
+    needs: publish-memory
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -155,12 +96,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          path: dist-all/
-      - name: Flatten artifacts
-        run: |
-          mkdir -p release-assets
-          find dist-all -type f \( -name "*.whl" -o -name "*.tar.gz" \) -exec cp {} release-assets/ \;
-          ls -la release-assets/
+          name: dist-mcp_server
+          path: release-assets/
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:

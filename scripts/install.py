@@ -27,7 +27,7 @@ from install_lib import (
     bootstrap_user, collector_setup, docker_up, embedding_docker, embedding_host,
     env_gen,
 )
-from install_lib.platform_utils import C, REPO_ROOT, fail, heading, info, ok, step
+from install_lib.platform_utils import C, REPO_ROOT, fail, heading, info, ok, step, which
 
 
 def _cmd_install(args: argparse.Namespace) -> int:
@@ -47,8 +47,8 @@ def _cmd_install(args: argparse.Namespace) -> int:
     token = bootstrap_user.ensure_first_user(interactive=not args.non_interactive)
 
     heading("4. Local collector")
-    with step("Install + configure memento-collector"):
-        collector_setup.install_collector(token, dev=args.dev)
+    with step("Configure this device + install the collector daemon"):
+        collector_setup.install_collector(token)
 
     heading("Done")
     print(f"  {C['green']}▸{C['reset']} Web UI:  http://localhost:3001")
@@ -107,21 +107,26 @@ def _cmd_update(args: argparse.Namespace) -> int:
         ["docker", "compose", "up", "-d", "--build"],
         check=True, cwd=str(REPO_ROOT),
     )
-    # Upgrade every pip-installed Memento package that's actually present.
-    # Trying to `pip install -U` an uninstalled package would needlessly
-    # *install* it; we check first so a user who only has the collector
-    # doesn't get the MCP server forced onto their system.
-    info("Upgrading pip packages…")
-    for pkg in ("memento-brain-collector", "memento-brain-memory", "memento-brain"):
-        probe = subprocess.run(
-            [sys.executable, "-m", "pip", "show", pkg],
-            capture_output=True,
+    # The collector daemon runs from this checkout: rebuild it and restart its
+    # service so it picks up the new code.
+    if collector_setup.daemon_service_installed() and which("node"):
+        info("Rebuilding the collector daemon…")
+        collector_setup.build_daemon()
+        subprocess.run(
+            [which("node"), str(collector_setup.DAEMON_CLI), "install-service"],
+            check=False, cwd=str(REPO_ROOT),
         )
-        if probe.returncode == 0:
-            subprocess.run(
-                [sys.executable, "-m", "pip", "install", "-U", "--user", pkg],
-                check=False,
-            )
+    # The MCP server is still a pip package: upgrade it if it's installed.
+    probe = subprocess.run(
+        [sys.executable, "-m", "pip", "show", "memento-brain-memory"],
+        capture_output=True,
+    )
+    if probe.returncode == 0:
+        info("Upgrading memento-brain-memory…")
+        subprocess.run(
+            [sys.executable, "-m", "pip", "install", "-U", "--user", "memento-brain-memory"],
+            check=False,
+        )
     # Embedding (if installed) restarts via its own service manager
     # (launchd / systemd / Docker restart policy) — nothing to do here.
     ok("Update complete. Run `./install.sh doctor` to verify.")
@@ -138,8 +143,8 @@ def _cmd_uninstall(args: argparse.Namespace) -> int:
     if deep and sys.stdin.isatty() and not args.yes:
         print(
             f"{C['yellow']}WARNING{C['reset']} `--all` will remove:\n"
-            "  • collector pip packages (memento-collector, memento-memory)\n"
-            "  • collector config + sync queue (~/.memento)\n"
+            "  • collector daemon service + old pip packages (memento-collector, memento-memory)\n"
+            "  • collector config + sync state (~/.memento)\n"
             "  • collector + embedding logs\n"
             "  • embedding venv + HuggingFace model cache (~1.3GB)\n"
             "  • Docker images (memento-*)\n"
@@ -156,12 +161,12 @@ def _cmd_uninstall(args: argparse.Namespace) -> int:
 
     # 1. Collector
     if deep:
-        info("Deep-uninstalling collector (pip + config + logs + MCP entries)…")
-        from install_lib import collector_setup as cs
-        cs.deep_uninstall()
+        info("Deep-uninstalling collector (service + config + logs + MCP entries)…")
+        collector_setup.deep_uninstall()
     else:
-        info("Stopping collector service…")
-        subprocess.run(["memento-collector", "uninstall"], check=False)
+        collector_setup.uninstall_daemon_service()
+        if which("memento-collector"):  # the retired Python collector, from older installs
+            subprocess.run(["memento-collector", "uninstall"], check=False)
 
     # 2. Embedding — both install paths idempotently torn down so users
     # who switched modes don't get orphaned containers / launch agents.
@@ -212,8 +217,6 @@ def main(argv: list[str] | None = None) -> int:
     p_install = sub.add_parser("install", help="Full install (default)")
     p_install.add_argument("--non-interactive", action="store_true",
                            help="Skip all prompts (fail if input required)")
-    p_install.add_argument("--dev", action="store_true",
-                           help="Use local editable collector via `pip install -e ./collector`")
     p_install.set_defaults(func=_cmd_install)
 
     p_emb = sub.add_parser(

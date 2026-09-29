@@ -15,7 +15,8 @@ let quitting = false;
 let config: CollectorConfig;
 const daemon = new DaemonHost();
 
-const serverOrigin = () => new URL(config.serverUrl).origin;
+/** Where the web app is: the server's origin, or a separate web URL on self-hosted setups. */
+const serverOrigin = () => new URL(config.webUrl || config.serverUrl).origin;
 
 function modeLabel(mode: DaemonMode): string {
   switch (mode) {
@@ -94,7 +95,7 @@ async function loadApp(target = "/ask"): Promise<void> {
   try {
     await win.loadURL(url);
   } catch {
-    await win.loadFile(join(__dirname, "static", "offline.html"), { query: { server: config.serverUrl } });
+    await win.loadFile(join(__dirname, "static", "offline.html"), { query: { server: serverOrigin() } });
   }
 }
 
@@ -131,7 +132,7 @@ function createWindow(show: boolean): void {
   win.webContents.on("did-finish-load", () => void adoptWebLogin());
   win.webContents.on("did-fail-load", (_e, code, _desc, url, isMainFrame) => {
     if (isMainFrame && code !== -3 && url.startsWith(serverOrigin())) {
-      void win?.loadFile(join(__dirname, "static", "offline.html"), { query: { server: config.serverUrl } });
+      void win?.loadFile(join(__dirname, "static", "offline.html"), { query: { server: serverOrigin() } });
     }
   });
 

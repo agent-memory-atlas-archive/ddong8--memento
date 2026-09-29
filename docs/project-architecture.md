@@ -89,7 +89,6 @@ memento/
 │   │   │   ├── hierarchy.py   # 设备→工具→项目层级
 │   │   │   ├── memory.py      # 知识图谱可视化
 │   │   │   ├── events.py      # SSE 实时推送
-│   │   │   ├── mcp_mount.py   # MCP 远程端点挂载
 │   │   │   ├── public.py      # 匿名可访问端点(首页统计等)
 │   │   │   └── install_bootstrap.py  # /install.sh、/install.ps1 静态分发
 │   │   ├── services/      # 业务逻辑层
@@ -112,34 +111,15 @@ memento/
 │   ├── Dockerfile
 │   └── pyproject.toml
 │
-├── collector/              # 采集器守护进程
-│   ├── collector/
-│   │   ├── main.py        # 主循环（心跳/命令轮询/自动更新）
-│   │   ├── cli.py         # CLI 入口（setup/install/start/stop）
-│   │   ├── config.py      # 跨平台配置（路径/设备标识）
-│   │   ├── watcher.py     # Watchdog 文件监听 + 去抖
-│   │   ├── queue.py       # SQLite 同步队列（WAL 模式）
-│   │   ├── sync_client.py # HTTP 上传（JSON/multipart/分块）
-│   │   ├── sanitizer.py   # 敏感数据过滤
-│   │   ├── tools/         # 6 个工具采集器
-│   │   │   ├── base.py            # 抽象基类 + 枚举定义
-│   │   │   ├── claude_code.py     # Claude Code (~/.claude/)
-│   │   │   ├── codex.py           # Codex (~/.codex/)
-│   │   │   ├── antigravity.py     # Antigravity (~/.antigravity/ + ~/.gemini/antigravity/)
-│   │   │   ├── cursor.py          # Cursor (~/.cursor/)
-│   │   │   ├── openclaw.py        # OpenClaw (~/.openclaw/)
-│   │   │   └── obsidian.py        # Obsidian (vault 自动发现)
-│   │   └── parsers/       # 8 个解析器
-│   │       ├── markdown.py
-│   │       ├── jsonl.py
-│   │       ├── json_parser.py
-│   │       ├── toml_parser.py
-│   │       ├── sqlite_parser.py
-│   │       ├── antigravity_pb_decoder.py  # AES-256-GCM 解密 + Protobuf
-│   │       ├── antigravity_export.py      # .pb 文件导出编排
-│   │       └── antigravity_vscdb.py       # Antigravity VSCode SQLite 缓存抽取(标题/摘要)
-│   ├── pyproject.toml     # PyPI: memento-brain-collector (CLI alias: memento-collector)
-│   └── README.md
+├── packages/
+│   ├── core/              # @memento/core：接口类型（从 OpenAPI 生成）、提问流、任务事件，各端共用
+│   ├── daemon/            # @memento/daemon：本机守护进程（工具发现 / 文件监听 / 增量上传 / 脱敏 /
+│   │                      #   派活执行 / 画像与技能写入 / P2P 媒体 / 本机接口），桌面端内置，也可单独运行
+│   └── mcp/               # @memento/mcp：MCP 记忆服务，随桌面端分发
+│
+├── apps/
+│   ├── desktop/           # Electron 桌面端：网页界面 + utilityProcess 里的守护进程 + 托盘 + 自动更新
+│   └── mobile/            # Expo 手机端
 │
 ├── mcp_server/             # MCP Memory Server
 │   ├── mcp_server/
@@ -197,7 +177,6 @@ memento/
 │   └── package.json
 │
 ├── docs/                   # 文档
-│   ├── collector-architecture.md  # 采集器架构详解
 │   └── project-architecture.md    # 本文档
 │
 └── docker-compose.yml      # 7 个 Docker 服务 + 1 个宿主机 Embedding 服务
@@ -390,9 +369,9 @@ iwr https://mem.ihasy.com/install.ps1 -useb | iex
 3. 生成 `.env` 随机密钥(`MEMENTO_SECRET_KEY` / `MEMENTO_COLLECTOR_TOKEN` / `POSTGRES_PASSWORD` / `MINIO_*`,幂等)
 4. `docker compose up -d --build` 起 7 个容器(postgres/redis/minio/api/celery-worker/celery-beat/web)
 5. 交互提示创建第一个用户(auto-owner,拿 `collector_token`)
-6. `pip install memento-brain-collector` + 非交互 setup 注册为系统服务
+6. 把本机配到这台服务器（写 `~/.memento/collector.json`），有 Node.js 20+ 时从仓库构建 `packages/daemon` 并注册为系统服务；没有 Node 就提示安装桌面端
 
-实现细节:`install.sh` 是薄 launcher,只负责找 Python;`scripts/install.py` 是主逻辑;`scripts/install_lib/*` 分 6 个模块:`platform_utils` / `env_gen` / `docker_up` / `bootstrap_user` / `collector_setup` / `embedding_host`。跨平台服务安装(launchd / systemd / Scheduled Task)复用 `collector/collector/cli.py` 里现成的 `_install_launchd` / `_install_systemd` / `_install_windows_task` 模板写法。
+实现细节:`install.sh` 是薄 launcher,只负责找 Python;`scripts/install.py` 是主逻辑;`scripts/install_lib/*` 分 6 个模块:`platform_utils` / `env_gen` / `docker_up` / `bootstrap_user` / `collector_setup` / `embedding_host`。跨平台服务安装(launchd / systemd / Windows 启动项)由守护进程自己的 `install-service` 完成。
 
 ### 子命令
 

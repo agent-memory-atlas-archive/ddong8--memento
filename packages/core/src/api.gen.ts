@@ -1532,29 +1532,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/devices/collector-latest-version": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Collector Latest Version
-         * @description Return the latest available collector + MCP memory versions from PyPI.
-         *
-         *     Cached for 5 minutes in-process. Returns null for any package whose PyPI
-         *     fetch failed (never 500s) so the admin UI can still render.
-         */
-        get: operations["get_collector_latest_version_api_devices_collector_latest_version_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/devices/commands": {
         parameters: {
             query?: never;
@@ -6437,39 +6414,6 @@ export interface operations {
                 collector_id: string;
                 action?: string;
             };
-            header?: {
-                authorization?: string;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_collector_latest_version_api_devices_collector_latest_version_get: {
-        parameters: {
-            query?: never;
             header?: {
                 authorization?: string;
             };

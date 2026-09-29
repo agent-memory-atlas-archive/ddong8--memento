@@ -9,8 +9,6 @@ Auto-collect AI coding conversations and memory across devices and tools, aggreg
 [![License: AGPL v3](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
 [![Python ≥3.10](https://img.shields.io/badge/python-≥3.10-blue.svg)](#-tech-stack)
 [![Next.js 16](https://img.shields.io/badge/next.js-16-black.svg)](#-tech-stack)
-[![PyPI - memento-brain](https://img.shields.io/pypi/v/memento-brain?label=memento-brain)](https://pypi.org/project/memento-brain/)
-[![PyPI - memento-brain-collector](https://img.shields.io/pypi/v/memento-brain-collector?label=collector)](https://pypi.org/project/memento-brain-collector/)
 [![PyPI - memento-brain-memory](https://img.shields.io/pypi/v/memento-brain-memory?label=mcp-memory)](https://pypi.org/project/memento-brain-memory/)
 
 [Quick Start](#-quick-start) · [Architecture](#️-architecture) · [Supported Tools](#-supported-ai-tools) · [Self-host](#-quick-start) · [MCP](#-mcp-memory-service)
@@ -50,7 +48,7 @@ graph TB
         OC["OpenClaw<br/>~/.openclaw"]
         HM["Hermes<br/>~/.hermes"]
         OBS["Obsidian Vault"]
-        COL["memento-brain-collector<br/>watchdog listener<br/>SQLite offline queue<br/>sanitizer on enqueue"]
+        COL["Memento daemon<br/>in the desktop app / memento-daemon<br/>file watching · incremental upload<br/>sanitized before upload"]
         CC --- COL
         CDX --- COL
         CUR --- COL
@@ -193,7 +191,7 @@ git clone https://github.com/ddong8/memento.git && cd memento
 2. `docker compose up -d --build` — boots 7 containers
 3. Liveness probe on API `/health`
 4. Interactive prompt to create the first user (auto-promoted to owner with a `collector_token`)
-5. `pip install memento-brain-collector` + setup + register the system service
+5. Point this machine at the server; with Node.js 20+ it builds the collector daemon from the checkout and registers it as a login service (without Node, install the desktop app — it reads the same config)
 
 Optional commands:
 
@@ -205,7 +203,7 @@ Optional commands:
 | `./install.sh update` | git pull + rebuild + upgrade |
 | `./install.sh uninstall` | Stop services; keep data and config |
 | `./install.sh uninstall --purge` | Above + drop Docker volumes + `.env` |
-| `./install.sh uninstall --all` | Nuclear: pip packages / `~/.memento` / model cache / Docker images / MCP entries — wiped |
+| `./install.sh uninstall --all` | Nuclear: collector service + old pip packages / `~/.memento` / model cache / Docker images / MCP entries — wiped |
 
 ### Service ports
 
@@ -251,19 +249,21 @@ The user **never sees a token** — no browser tab, no manual paste. The client 
 
 > If macOS says it "can't verify the developer", right-click the icon → Open, or run `xattr -dr com.apple.quarantine /Applications/Memento.app`.
 
-### Option 2: Command line (pip)
+### Option 2: Command line (Node daemon)
 
-For servers / headless / CLI-first setups:
+For servers / headless / CLI-first setups; needs Node.js 20+. It's the same daemon the desktop app runs (`packages/daemon`):
 
 ```bash
-pip install memento-brain-collector   # collector only
-# or pip install memento-brain         # bundles collector + MCP memory together
-memento-collector setup                # interactive: server URL + token
+git clone https://github.com/ddong8/memento.git && cd memento
+npm ci --workspace @memento/daemon --workspace @memento/core --include-workspace-root
+npm run build -w @memento/daemon
+node packages/daemon/dist/cli.js login <collector token> https://mem.ihasy.com
+node packages/daemon/dist/cli.js install-service   # start at login
 ```
 
-> PyPI packages are `memento-brain-collector` / `memento-brain-memory` (the short names were taken). CLIs keep the short aliases `memento-collector` / `memento-memory`.
+> The old Python collector (PyPI `memento-brain-collector`) is retired; switch existing devices to the desktop app or the daemon above.
 
-**How to get a token?** (only the pip / CLI path needs it — the desktop client is fully automatic)
+**How to get a token?** (only the CLI path needs it — the desktop client is fully automatic)
 
 - **Ran `./install.sh`** → printed at the end and stored in `.env.local`
 - **Web self-register** → `/auth/register` (open mode) hands back a token immediately
@@ -272,13 +272,13 @@ memento-collector setup                # interactive: server URL + token
 ### Daemon control
 
 ```bash
-memento-collector status    # show status
-memento-collector start     # start service
-memento-collector stop      # stop service
-memento-collector run       # run in foreground (debug)
+node packages/daemon/dist/cli.js status              # show status
+node packages/daemon/dist/cli.js run                 # run in foreground (debug)
+node packages/daemon/dist/cli.js install-service     # start at login
+node packages/daemon/dist/cli.js uninstall-service   # stop starting at login
 ```
 
-Auto-detects platform: **macOS** launchd / **Linux** systemd user / **Windows** Task Scheduler.
+Auto-detects platform: **macOS** launchd / **Linux** systemd user / **Windows** Run key. The desktop app and the daemon never collect at the same time (they share `~/.memento`).
 
 ## 🕸️ Knowledge graph
 
@@ -294,7 +294,7 @@ Read / write through MCP tools: write with `memory_store`; read with `memory_gra
 
 ## 🧠 MCP memory service
 
-After installing `memento-brain`, `memento-collector setup` automatically wires MCP into every AI IDE it finds:
+The desktop app ships the MCP server; its "This computer" page has ready-to-copy setup for Claude Code, Codex and other tools. Or `pip install memento-brain-memory` and run `memento-memory` (it reads the sign-in from `~/.memento/collector.json`). Where each tool keeps its MCP config:
 
 | AI tool | MCP config file | How it's written |
 |---|---|---|
@@ -402,24 +402,21 @@ Scheduled by Celery beat:
 
 ```
 memento/
-├── collector/                # Local collector — PyPI: memento-brain-collector
-│   └── collector/
-│       ├── main.py           # daemon entry
-│       ├── cli.py            # setup / install / start / stop / uninstall
-│       ├── watcher.py        # cross-platform watchdog + debounce
-│       ├── queue.py          # SQLite WAL offline queue
-│       ├── sync_client.py    # HTTPS sync (chunked upload / offline retry)
-│       ├── sanitizer.py      # sanitize on enqueue (API keys / private keys / OAuth)
-│       ├── parsers/          # 8 parsers
-│       └── tools/            # 6 tool definitions
-├── mcp_server/               # MCP memory — PyPI: memento-brain-memory
-├── memento_brain/            # Meta — PyPI: memento-brain (one-shot install)
+├── packages/
+│   ├── core/                 # @memento/core: API types, ask stream, task events (shared)
+│   ├── daemon/               # @memento/daemon: collection, dispatched tasks, profile/skills
+│   └── mcp/                  # @memento/mcp: MCP memory server (ships with the desktop app)
+├── apps/
+│   ├── desktop/              # Electron desktop app (Memento Desktop)
+│   └── mobile/               # Expo mobile app (Memento Mobile)
+├── mcp_server/               # Python MCP memory — PyPI: memento-brain-memory
+├── mobile/                   # Flutter client (maintained during the migration)
 ├── server/                   # Backend FastAPI
 │   └── server/
 │       ├── main.py           # entry + schema migrations + validate_production
 │       ├── config.py         # MEMENTO_-prefixed settings + fail-fast
 │       ├── middleware/       # JWT + collector token (constant-time)
-│       ├── api/              # REST + SSE + MCP mount
+│       ├── api/              # REST + SSE
 │       ├── db/               # 16 tables
 │       ├── services/         # ingest / embedding / graph / cache / geoip
 │       └── tasks/            # Celery worker + beat
@@ -429,7 +426,7 @@ memento/
 ├── embedding/                # BGE-M3 host service
 ├── scripts/                  # install.py backend + utility scripts
 ├── deploy/bootstrap/         # curl one-shot installer (install.sh / .ps1 / index.html)
-├── docs/                     # project-architecture.md / collector-architecture.md
+├── docs/                     # project-architecture.md / typescript-migration.md
 └── docker-compose.yml
 ```
 
@@ -498,13 +495,13 @@ All variables share the `MEMENTO_` prefix.
 <summary><b>Server (installed via install.sh)</b></summary>
 
 ```bash
-./install.sh uninstall          # stop containers; keep data / .env / pip packages
+./install.sh uninstall          # stop containers and the collector service; keep data / .env
 ./install.sh uninstall --purge  # above + drop Docker volumes + .env
 ./install.sh uninstall --all    # nuclear (add -y to skip confirmation)
 ```
 
 `--all` removes:
-- pip packages (memento-brain-* + legacy daily-report-*)
+- the collector daemon service, plus pip packages old installs left (memento-brain-* + legacy daily-report-*)
 - `~/.memento` + `~/.daily-report` (legacy path)
 - Collector logs (macOS / Linux / Windows paths)
 - Embedding venv + HuggingFace model cache (~1.3 GB)
@@ -518,7 +515,8 @@ All variables share the `MEMENTO_` prefix.
 <summary><b>Collector-only device</b></summary>
 
 ```bash
-memento-collector uninstall                                  # drop launchd/systemd/Task entry
+node packages/daemon/dist/cli.js uninstall-service           # the Node daemon
+memento-collector uninstall                                  # the old Python collector, if installed
 pip uninstall -y memento-brain-collector memento-brain-memory memento-brain
 rm -rf ~/.memento
 

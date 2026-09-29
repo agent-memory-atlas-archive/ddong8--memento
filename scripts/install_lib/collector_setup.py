@@ -1,52 +1,96 @@
-"""Install + configure the local collector against the freshly-started server.
+"""Set up this machine's collector against the freshly-started server.
 
-Also provides `deep_uninstall()` for `./install.sh uninstall --all`:
-stops service, pip-uninstalls packages, removes ~/.memento config,
-logs, and cleans MCP server entries from ~/.claude.json, Cursor, Codex, etc.
+The collector is the Node daemon in packages/daemon (the same one the Memento
+Desktop app runs). With Node 20+ available it is built from this checkout and
+installed as a login service (launchd / systemd / Windows Run key); otherwise
+the device is configured and the desktop app picks it up when installed.
+
+Also provides `deep_uninstall()` for `./install.sh uninstall --all`: stops the
+daemon service, removes the retired pip collector if present, ~/.memento config,
+logs, and MCP server entries from ~/.claude.json, Cursor, Codex, etc.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
-import sys
 from pathlib import Path
 
 from .platform_utils import (
     IS_LINUX, IS_MAC, IS_WINDOWS, REPO_ROOT, find_python, info, ok, warn, which,
 )
 
+DESKTOP_RELEASES = "https://github.com/ddong8/memento/releases/latest"
+DAEMON_CLI = REPO_ROOT / "packages" / "daemon" / "dist" / "cli.js"
+
+
+def write_device_config(token: str, server_url: str, web_url: str) -> Path:
+    """Merge server, web URL and token into ~/.memento/collector.json (keeps the device id)."""
+    path = Path.home() / ".memento" / "collector.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    data: dict = {}
+    if path.exists():
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            data = {}
+    data.update({"server_url": server_url, "web_url": web_url, "token": token})
+    path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
+    return path
+
+
+def _node_major() -> int | None:
+    node = which("node")
+    if not node:
+        return None
+    r = subprocess.run([node, "--version"], capture_output=True, text=True)
+    m = re.match(r"v(\d+)", r.stdout.strip())
+    return int(m.group(1)) if m else None
+
+
+def _npm(*args: str) -> None:
+    npm = which("npm")
+    if not npm:
+        raise RuntimeError("npm not found")
+    subprocess.run([npm, *args], check=True, cwd=str(REPO_ROOT), shell=IS_WINDOWS)
+
+
+def build_daemon() -> None:
+    """Install the daemon's dependencies and compile it (idempotent; used by update too)."""
+    _npm("ci", "--workspace", "@memento/daemon", "--workspace", "@memento/core", "--include-workspace-root")
+    _npm("run", "build", "-w", "@memento/daemon")
+
 
 def install_collector(token: str, server_url: str = "http://localhost:8001",
-                      dev: bool = False) -> None:
-    """pip install memento-brain-collector, then run non-interactive setup."""
-    py = find_python()
+                      web_url: str = "http://localhost:3001") -> None:
+    """Configure this device and run the Node daemon as a login service when Node is available."""
+    cfg = write_device_config(token, server_url, web_url)
+    ok(f"Device configured → {server_url} ({cfg})")
 
-    # Check if already installed
-    if which("memento-collector") is None:
-        info("Installing memento-collector via pip…")
-        cmd = [py, "-m", "pip", "install", "--user"]
-        if dev:
-            cmd += ["-e", str(REPO_ROOT / "collector")]
-        else:
-            cmd.append("memento-brain-collector")
-        subprocess.run(cmd, check=True)
-    else:
-        ok("memento-collector already installed.")
+    major = _node_major()
+    if major is None or major < 20:
+        warn("Node.js 20+ not found, so the collector wasn't installed as a service.")
+        info(f"Install Memento Desktop ({DESKTOP_RELEASES}); it reads {cfg} and signs in on its own.")
+        info("Or install Node.js 20+ and run `./install.sh update` to set up the headless collector.")
+        return
 
-    # Non-interactive setup — honored by the cli via MEMENTO_NONINTERACTIVE=1
-    env = os.environ.copy()
-    env["MEMENTO_SERVER_URL"] = server_url
-    env["MEMENTO_SERVER_TOKEN"] = token
-    env["MEMENTO_NONINTERACTIVE"] = "1"
-    info(f"Configuring collector → {server_url}…")
-    subprocess.run(
-        ["memento-collector", "setup"],
-        env=env, check=True,
-    )
-    ok("Collector set up and installed as a background service.")
+    info("Building the collector daemon…")
+    build_daemon()
+    node = which("node") or "node"
+    subprocess.run([node, str(DAEMON_CLI), "install-service"], check=True, cwd=str(REPO_ROOT))
+    ok("Collector daemon installed as a background service.")
+    info("If the Memento desktop app is also running, only one of them collects (they share ~/.memento).")
+
+
+def daemon_service_installed() -> bool:
+    return DAEMON_CLI.exists()
 
 
 # ─────────────────────────────────────────────────────────────
@@ -125,9 +169,18 @@ def _pip_uninstall(package: str) -> None:
     ok(f"pip uninstalled {package}")
 
 
+def uninstall_daemon_service() -> None:
+    """Remove the Node daemon's login service, if this checkout installed one."""
+    node = which("node")
+    if node and DAEMON_CLI.exists():
+        info("Removing the collector daemon service…")
+        subprocess.run([node, str(DAEMON_CLI), "uninstall-service"], check=False, cwd=str(REPO_ROOT))
+
+
 def deep_uninstall() -> None:
-    """Everything collector-side: service, pip packages, config, logs, MCP entries."""
-    # Stop the collector service first (ignore errors if absent). Try new name, then legacy.
+    """Everything collector-side: services, retired pip packages, config, logs, MCP entries."""
+    uninstall_daemon_service()
+    # The retired Python collector, if an older install left it behind.
     for cmd in ("memento-collector", "daily-report-collector"):
         if which(cmd):
             info(f"Stopping collector service ({cmd})…")

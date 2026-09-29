@@ -5,8 +5,8 @@ Runs on host (not in Docker) because:
 - Linux with NVIDIA works fine on host too
 - Windows: same story
 
-Cross-platform service install follows the same patterns as
-collector/collector/cli.py `_install_launchd` / `_install_systemd` / `_install_windows_task`.
+Cross-platform service install: launchd on macOS, systemd user units on Linux,
+a Scheduled Task on Windows.
 """
 
 from __future__ import annotations
