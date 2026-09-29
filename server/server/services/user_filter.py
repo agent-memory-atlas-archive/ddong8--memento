@@ -51,6 +51,9 @@ async def find_machine_by_id_or_hash(
         stmt = stmt.where(Machine.user_id == user.id)
     m = (await db.execute(stmt)).scalars().first()
     if m:
+        if m.merged_into is not None:
+            from .device_merge import resolve_merged
+            return await resolve_merged(db, m)
         return m
 
     # Fallback: try by UUID primary key
@@ -59,7 +62,11 @@ async def find_machine_by_id_or_hash(
         stmt = select(Machine).where(Machine.id == uid)
         if user and user.role not in ("admin", "owner"):
             stmt = stmt.where(Machine.user_id == user.id)
-        return (await db.execute(stmt)).scalars().first()
+        m = (await db.execute(stmt)).scalars().first()
+        if m is not None and m.merged_into is not None:
+            from .device_merge import resolve_merged
+            return await resolve_merged(db, m)
+        return m
     except (ValueError, AttributeError):
         return None
 

@@ -36,6 +36,8 @@ def _run_migrations(conn) -> None:
 
     # Machine.user_id
     machine_cols = {c["name"] for c in insp.get_columns("machines")}
+    if "merged_into" not in machine_cols:
+        conn.execute(text("ALTER TABLE machines ADD COLUMN merged_into UUID REFERENCES machines(id)"))
     if "user_id" not in machine_cols:
         conn.execute(text("ALTER TABLE machines ADD COLUMN user_id UUID REFERENCES users(id)"))
 
@@ -372,6 +374,19 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     async with engine.begin() as conn:
         await conn.run_sync(_run_migrations)
         await conn.run_sync(Base.metadata.create_all)
+    # One computer, one device record: fold in records left behind by a changed device id.
+    import logging
+    try:
+        from .db.session import async_session_factory
+        from .services.device_merge import merge_duplicate_machines
+        async with async_session_factory() as db:
+            merged = await merge_duplicate_machines(db)
+        for m in merged:
+            logging.getLogger("memento.devices").info(
+                "merged device record %s (%s) into %s: %s", m["from"], m["name"], m["into"], m["moved_counts"]
+            )
+    except Exception as e:  # never block startup on this
+        logging.getLogger("memento.devices").warning("device record merge skipped: %s", e)
     # Start daily compaction in background
     compaction_task = asyncio.create_task(_schedule_daily_compaction())
     # Fire-and-forget warmup of the embedding server (5s after boot)

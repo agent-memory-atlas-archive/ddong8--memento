@@ -301,14 +301,14 @@ function NavRow({
   const bg = active
     ? "var(--aurora-accent-soft)"
     : highlight
-    ? "rgba(124, 58, 237, 0.08)"
+    ? "color-mix(in srgb, var(--aurora-accent) 9%, transparent)"
     : hover
     ? "var(--aurora-chip)"
     : "transparent";
 
   const border =
     highlight && !active
-      ? "1px solid rgba(124, 58, 237, 0.2)"
+      ? "1px solid color-mix(in srgb, var(--aurora-accent) 22%, transparent)"
       : "1px solid transparent";
 
   return (

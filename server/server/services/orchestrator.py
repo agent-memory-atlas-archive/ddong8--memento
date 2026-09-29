@@ -303,7 +303,7 @@ ORCHESTRATOR_SYSTEM = """你是 Memento 的多设备调度与记忆助手，能�
 
 async def _tool_list_devices(db: AsyncSession, user: User) -> dict:
     try:
-        q = select(Machine).order_by(Machine.last_heartbeat.desc().nulls_last())
+        q = select(Machine).where(Machine.merged_into.is_(None)).order_by(Machine.last_heartbeat.desc().nulls_last())
         if user.role not in ("admin", "owner"):
             q = q.where(Machine.user_id == user.id)
         machines = (await db.execute(q)).scalars().all()
@@ -433,7 +433,7 @@ async def _tool_run_on_device(db: AsyncSession, user: User, args: dict, *, class
     try:
         # If device_id is omitted by the model, fall back to the user's most recently active machine
         if not device_id:
-            mq = select(Machine).order_by(Machine.last_heartbeat.desc().nulls_last())
+            mq = select(Machine).where(Machine.merged_into.is_(None)).order_by(Machine.last_heartbeat.desc().nulls_last())
             if user.role not in ("admin", "owner"):
                 mq = mq.where(Machine.user_id == user.id)
             machines = (await db.execute(mq)).scalars().all()

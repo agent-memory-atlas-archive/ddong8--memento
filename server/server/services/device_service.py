@@ -26,11 +26,19 @@ async def ensure_device(
     machine = result.scalar_one_or_none()
     now = datetime.now(timezone.utc)
 
+    # An old device id of a computer whose records were merged: use the record it lives in now.
+    if machine is not None and machine.merged_into is not None:
+        from .device_merge import resolve_merged
+        machine = await resolve_merged(db, machine)
+        if machine is not None:
+            machine.last_heartbeat = now
+            return machine
+
     # If not found by collector_token_hash, check if an existing record exists for this user and machine name
     if machine is None and user_id and device_name:
         name_match = await db.execute(
             select(Machine)
-            .where(Machine.name == device_name, Machine.user_id == user_id)
+            .where(Machine.name == device_name, Machine.user_id == user_id, Machine.merged_into.is_(None))
             .order_by(Machine.last_heartbeat.desc().nulls_last())
         )
         existing = name_match.scalars().first()
@@ -61,6 +69,6 @@ async def ensure_device(
 async def list_devices(db: AsyncSession) -> list[Machine]:
     """List all registered devices."""
     result = await db.execute(
-        select(Machine).order_by(Machine.last_heartbeat.desc())
+        select(Machine).where(Machine.merged_into.is_(None)).order_by(Machine.last_heartbeat.desc())
     )
     return list(result.scalars().all())

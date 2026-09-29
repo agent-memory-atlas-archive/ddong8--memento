@@ -49,9 +49,29 @@ class Machine(Base):
     profile_status: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}")
     # What the collector last reported writing into the tools' skills folders.
     skill_status: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}")
+    # Set when this record was folded into another one for the same computer
+    # (its device id changed); the row is kept for audit, never listed again.
+    merged_into: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("machines.id"))
 
     user: Mapped["User | None"] = relationship()
     documents: Mapped[list[Document]] = relationship(back_populates="machine")
+
+
+class MachineMerge(Base):
+    """Audit and backup of one device-record merge: what moved where, so it can be undone."""
+
+    __tablename__ = "machine_merges"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    from_machine_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("machines.id"), nullable=False)
+    into_machine_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("machines.id"), nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    collector_token_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    # Rows re-pointed from the old record: {"documents": [...], "sync_state": [...], "device_tasks": [...]},
+    # and rows left on it because the target already had the same file.
+    moved: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}")
+    kept: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}")
+    merged_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 # ---------------------------------------------------------------------------

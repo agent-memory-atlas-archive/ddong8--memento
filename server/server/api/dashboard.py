@@ -143,7 +143,7 @@ async def get_dashboard(
 
     # Active devices — batch per-device document counts in a single GROUP BY
     # instead of N+1.
-    devices_q = select(Machine).order_by(Machine.name).limit(10)
+    devices_q = select(Machine).where(Machine.merged_into.is_(None)).order_by(Machine.name).limit(10)
     if mids is not None:
         devices_q = devices_q.where(Machine.id.in_(mids))
     machine_rows = list((await db.execute(devices_q)).scalars().all())

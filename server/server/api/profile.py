@@ -88,7 +88,7 @@ async def get_profile(
         .limit(10)
     )).all()
     machines = (await db.execute(
-        select(Machine).where(Machine.user_id == user.id).order_by(Machine.last_heartbeat.desc().nulls_last())
+        select(Machine).where(Machine.user_id == user.id, Machine.merged_into.is_(None)).order_by(Machine.last_heartbeat.desc().nulls_last())
     )).scalars().all()
     now = datetime.now(timezone.utc)
     return {

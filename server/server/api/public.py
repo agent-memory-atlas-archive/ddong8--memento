@@ -26,7 +26,7 @@ async def public_stats(db: AsyncSession = Depends(get_db)) -> dict:
         select(func.count(ConversationMessage.id))
     )).scalar() or 0
     total_devices = (await db.execute(
-        select(func.count(Machine.id))
+        select(func.count(Machine.id)).where(Machine.merged_into.is_(None))
     )).scalar() or 0
     total_tools = (await db.execute(
         select(func.count(func.distinct(Document.tool_id)))

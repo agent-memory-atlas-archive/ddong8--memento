@@ -28,19 +28,20 @@ def _check_machine_access(machine: Machine | None, user: User) -> Machine | None
 
 
 async def _find_machine(db: AsyncSession, device_id: str) -> Machine | None:
-    """Find machine by collector_token_hash OR by primary key UUID."""
+    """Find machine by collector_token_hash OR by primary key UUID (following merged records)."""
+    from ..services.device_merge import resolve_merged
     result = await db.execute(
         select(Machine).where(Machine.collector_token_hash == device_id)
     )
     m = result.scalar_one_or_none()
     if m:
-        return m
+        return await resolve_merged(db, m)
     # Fallback: try as UUID primary key
     try:
         import uuid as _uuid
         uid = _uuid.UUID(device_id)
         result = await db.execute(select(Machine).where(Machine.id == uid))
-        return result.scalar_one_or_none()
+        return await resolve_merged(db, result.scalar_one_or_none())
     except (ValueError, AttributeError):
         return None
 
@@ -51,7 +52,7 @@ async def list_devices_with_tools(
     _user: User = Depends(get_current_user),
 ) -> list[dict]:
     """Level 1: All devices with tool counts."""
-    machines_q = select(Machine).order_by(Machine.name)
+    machines_q = select(Machine).where(Machine.merged_into.is_(None)).order_by(Machine.name)
     if _user.role not in ("admin", "owner"):
         machines_q = machines_q.where(Machine.user_id == _user.id)
     machines = await db.execute(machines_q)

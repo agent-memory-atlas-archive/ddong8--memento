@@ -46,7 +46,7 @@ async def list_devices(
     _user: User = Depends(get_current_user),
 ) -> list[dict]:
     """List all registered collector devices with their stats."""
-    machines_q = select(Machine).order_by(Machine.last_heartbeat.desc().nulls_last())
+    machines_q = select(Machine).where(Machine.merged_into.is_(None)).order_by(Machine.last_heartbeat.desc().nulls_last())
     if _user.role not in ("admin", "owner"):
         machines_q = machines_q.where(Machine.user_id == _user.id)
     machines = list((await db.execute(machines_q)).scalars().all())

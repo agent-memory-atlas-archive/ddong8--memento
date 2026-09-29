@@ -120,7 +120,7 @@ export default function Dashboard() {
               width: 340,
               height: 340,
               borderRadius: "50%",
-              background: "radial-gradient(circle, rgba(124,58,237,0.32), transparent 70%)",
+              background: "radial-gradient(circle, color-mix(in srgb, var(--aurora-accent) 32%, transparent), transparent 70%)",
               filter: "blur(40px)",
               pointerEvents: "none",
             }}
@@ -137,7 +137,7 @@ export default function Dashboard() {
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
-                    boxShadow: "0 4px 12px -2px rgba(124,58,237,0.4)",
+                    boxShadow: "0 4px 12px -2px color-mix(in srgb, var(--aurora-accent) 40%, transparent)",
                   }}
                 >
                   <Icon name="sparkles" size={16} style={{ color: "#fff" }} />
@@ -215,7 +215,7 @@ export default function Dashboard() {
                   className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-medium text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
                   style={{
                     background: "var(--aurora-brand-grad)",
-                    boxShadow: "0 2px 8px -1px rgba(124,58,237,0.4)",
+                    boxShadow: "0 2px 8px -1px color-mix(in srgb, var(--aurora-accent) 40%, transparent)",
                   }}
                 >
                   <span>发送</span>
@@ -258,7 +258,7 @@ export default function Dashboard() {
               position: "absolute",
               top: -120, right: -80,
               width: 320, height: 320, borderRadius: "50%",
-              background: "radial-gradient(circle, rgba(124,58,237,0.35), transparent 70%)",
+              background: "radial-gradient(circle, color-mix(in srgb, var(--aurora-accent) 35%, transparent), transparent 70%)",
               filter: "blur(40px)",
               pointerEvents: "none",
             }}
@@ -327,8 +327,8 @@ export default function Dashboard() {
                         width: "100%",
                         height: `${h}%`,
                         borderRadius: "6px 6px 2px 2px",
-                        background: "linear-gradient(180deg, #A78BFA, #7C3AED)",
-                        boxShadow: "0 4px 12px -4px rgba(124,58,237,0.45)",
+                        background: "linear-gradient(180deg, color-mix(in srgb, var(--aurora-accent) 60%, white), var(--aurora-accent))",
+                        boxShadow: "0 4px 12px -4px color-mix(in srgb, var(--aurora-accent) 45%, transparent)",
                       }}
                     />
                     <span style={{ fontSize: 10, color: "var(--aurora-fg4)" }}>{d.date.slice(5)}</span>
@@ -514,7 +514,7 @@ export default function Dashboard() {
               width: 52, height: 52, borderRadius: 16, margin: "0 auto 16px",
               background: "var(--aurora-brand-grad)",
               display: "flex", alignItems: "center", justifyContent: "center",
-              boxShadow: "0 12px 40px -10px rgba(124,58,237,0.5)",
+              boxShadow: "0 12px 40px -10px color-mix(in srgb, var(--aurora-accent) 50%, transparent)",
             }}
           >
             <Icon name="devices" size={24} style={{ color: "#fff" }} strokeWidth={2} />

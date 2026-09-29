@@ -528,13 +528,25 @@ html[data-skin="baseline"] aside {
   -webkit-backdrop-filter: none !important;
 }
 
-/* Baseline: sidebar dark navy rail even in light mode (matches original) */
+/* Baseline: sidebar dark navy rail even in light mode (matches original).
+   The rail re-defines the colour tokens for its own subtree, so everything
+   inside it (brand, nav rows, device list) reads light-on-dark instead of
+   inheriting the page's dark-on-light text. */
 html[data-skin="baseline"][data-theme="light"] aside {
+  --aurora-fg1: #f9fafb;
+  --aurora-fg2: #d1d5db;
+  --aurora-fg3: #9ca3af;
+  --aurora-fg4: #6b7280;
+  --aurora-fg5: #4b5563;
+  --aurora-border: rgba(255, 255, 255, 0.08);
+  --aurora-border-strong: rgba(255, 255, 255, 0.14);
+  --aurora-chip: rgba(255, 255, 255, 0.07);
+  --aurora-surface: rgba(255, 255, 255, 0.05);
+  --aurora-surface-solid: #1f2937;
+  --aurora-surface-mute: rgba(255, 255, 255, 0.04);
+  --aurora-accent: #93c5fd;
+  --aurora-accent-soft: rgba(59, 130, 246, 0.22);
   background: #111827 !important;
-  color: #d1d5db;
+  color: var(--aurora-fg2);
   border-right-color: transparent !important;
-}
-html[data-skin="baseline"][data-theme="light"] aside a,
-html[data-skin="baseline"][data-theme="light"] aside button {
-  color: #d1d5db;
 }
