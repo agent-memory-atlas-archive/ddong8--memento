@@ -118,6 +118,9 @@ jobs:
         working-directory: apps/mobile
         run: |
           npm run build -w @memento/core
+          # @expo/cli sits in the root node_modules and must see the app's expo-router
+          # (a copy nested under apps/mobile crashes `expo start` / `expo run:ios`).
+          node -e "require.resolve('expo-router/package.json', { paths: [require.resolve('@expo/router-server/package.json')] })"
           npx tsc --noEmit
           npx expo export --platform android --output-dir /tmp/mobile-export
 
