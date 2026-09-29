@@ -74,6 +74,7 @@ Electron 桌面端：
 | 2026-09-29 | 发版 | v1.0.63：Flutter 三端照常发布，同时发布 Memento Desktop（mac dmg/zip、Windows 安装包、Linux AppImage，含自动更新元数据）和 Memento Mobile Android APK |
 | 2026-09-29 | 4 | apps/mobile（Expo SDK 57）：expo-doctor 21/21 通过，Android/iOS JS 打包通过；整个仓库只保留一份 React 19.2.3 |
 | 2026-09-30 | 4 | iOS 真机构建通过后 `expo run:ios` 启动开发服务器时崩溃（`Cannot find module 'expo-router/_ctx-shared'`）：expo-router 被 npm 留在 apps/mobile/node_modules，根目录的 @expo/cli 找不到它。原因是它的可选同伴依赖 react-server-dom-webpack 要求 react-dom ≥ 19.2.4，和根目录钉住的 19.2.3 冲突。修复：根目录声明 expo-router、用 overrides 把 reanimated/worklets/gesture-handler 对齐 SDK 57（原来自动装成了 4.7/0.13/3.3），expo 升到 57.0.26；CI 加了解析检查 |
+| 2026-09-30 | 4 | iOS 27 真机打开即闪退（`_UIApplicationEvaluateRuntimeIssueForNoSceneLifecycleAdoption`，SIGTRAP）：用 Xcode 27 / iOS 27 SDK 构建的应用必须采用 UIScene 生命周期，SDK 57 模板还是 AppDelegate 自己管窗口。修复：装 expo-build-properties，打开官方的 `ios.enableSceneSupport`（要求 expo ≥ 57.0.23；升级到 SDK 58 后可以去掉） |
 | 2026-09-29 | 3 | @memento/mcp：6 个测试（含内存传输的 MCP 客户端、令牌轮换、按前缀关待办）；stdio 对线上只读调用验证通过 |
 | 2026-09-29 | 2 | Electron 桌面端 apps/desktop：本机打包 mac 版并冒烟通过（守护进程、上传、任务、退出清理） |
 | 2026-09-29 | 2 | 网页端补齐 Flutter 独有功能：健康、技能、纠正、待办、推送、做梦、任务时间线/插话/独立分支 |
