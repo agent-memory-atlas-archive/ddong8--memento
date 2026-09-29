@@ -70,6 +70,7 @@ Electron 桌面端：
 | 2026-09-28 | — | 定下方案 |
 | 2026-09-28 | 1 | workspaces + @memento/core（9 个测试）；网页镜像按新方式在本地模拟构建并启动验证 |
 | 2026-09-29 | 1 | 修正：上一次提交漏了大部分文件；根 lockfile 以网页原 lockfile 为底重建，补齐 linux 原生包（lightningcss、tailwind oxide） |
+| 2026-09-29 | 发版 | v1.0.63：Flutter 三端照常发布，同时发布 Memento Desktop（mac dmg/zip、Windows 安装包、Linux AppImage，含自动更新元数据）和 Memento Mobile Android APK |
 | 2026-09-29 | 4 | apps/mobile（Expo SDK 57）：expo-doctor 21/21 通过，Android/iOS JS 打包通过；整个仓库只保留一份 React 19.2.3 |
 | 2026-09-29 | 3 | @memento/mcp：6 个测试（含内存传输的 MCP 客户端、令牌轮换、按前缀关待办）；stdio 对线上只读调用验证通过 |
 | 2026-09-29 | 2 | Electron 桌面端 apps/desktop：本机打包 mac 版并冒烟通过（守护进程、上传、任务、退出清理） |
