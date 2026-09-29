@@ -367,6 +367,25 @@ async def _warm_embedding_server() -> None:
         log.info("embedding warmup skipped: %s", e)
 
 
+async def _merge_device_records() -> None:
+    """Fold device records left behind by a changed device id (see services/device_merge.py).
+
+    Runs in the background after startup so a slow merge never delays serving.
+    """
+    import logging
+    log = logging.getLogger("memento.devices")
+    try:
+        from .db.session import async_session_factory
+        from .services.device_merge import merge_duplicate_machines
+        async with async_session_factory() as db:
+            merged = await merge_duplicate_machines(db)
+        for m in merged:
+            log.warning("merged device record %s (%s) into %s: moved %s, kept %s",
+                        m["from"], m["name"], m["into"], m["moved_counts"], m["kept_counts"])
+    except Exception as e:
+        log.warning("device record merge skipped: %s", e)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     import asyncio
@@ -375,18 +394,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         await conn.run_sync(_run_migrations)
         await conn.run_sync(Base.metadata.create_all)
     # One computer, one device record: fold in records left behind by a changed device id.
-    import logging
-    try:
-        from .db.session import async_session_factory
-        from .services.device_merge import merge_duplicate_machines
-        async with async_session_factory() as db:
-            merged = await merge_duplicate_machines(db)
-        for m in merged:
-            logging.getLogger("memento.devices").info(
-                "merged device record %s (%s) into %s: %s", m["from"], m["name"], m["into"], m["moved_counts"]
-            )
-    except Exception as e:  # never block startup on this
-        logging.getLogger("memento.devices").warning("device record merge skipped: %s", e)
+    merge_task = asyncio.create_task(_merge_device_records())
     # Start daily compaction in background
     compaction_task = asyncio.create_task(_schedule_daily_compaction())
     # Fire-and-forget warmup of the embedding server (5s after boot)
@@ -394,6 +402,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     yield
     compaction_task.cancel()
     warmup_task.cancel()
+    merge_task.cancel()
     await engine.dispose()
 
 

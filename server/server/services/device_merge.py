@@ -14,18 +14,22 @@ kept, marked `merged_into`, and never listed again. Each merge is written to
 
 from __future__ import annotations
 
+import logging
+import time
 import uuid
 from collections import defaultdict
 from datetime import datetime, timezone
 
-from sqlalchemy import and_, exists, select, text, update
+from sqlalchemy import select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import aliased
 
 from ..db.models import DeviceTask, Document, Machine, MachineMerge, SyncState
 from .user_filter import normalize_device_name
 
+log = logging.getLogger("memento.devices")
+
 _LOCK_KEY = 0x6D656D656E746F  # pg advisory lock: only one api instance merges at a time
+_BATCH = 200  # rows per UPDATE: re-pointing a document touches all of its indexes
 
 
 def plan_merges(machines: list[Machine]) -> list[tuple[Machine, list[Machine]]]:
@@ -45,28 +49,35 @@ def plan_merges(machines: list[Machine]) -> list[tuple[Machine, list[Machine]]]:
     return plans
 
 
-async def _move(db: AsyncSession, model, key_cols: tuple, source: uuid.UUID, target: uuid.UUID) -> tuple[list, list]:
-    """Re-point rows of `model` from source to target, except where target already has the same key."""
-    other = aliased(model)
-    clash = exists().where(
-        and_(other.machine_id == target, *[getattr(other, c) == getattr(model, c) for c in key_cols])
-    )
-    movable = (await db.execute(select(model.id).where(model.machine_id == source, ~clash))).scalars().all()
-    kept = (await db.execute(select(model.id).where(model.machine_id == source, clash))).scalars().all()
-    if movable:
-        await db.execute(update(model).where(model.id.in_(movable)).values(machine_id=target))
+async def _move(db: AsyncSession, model, source: uuid.UUID, target: uuid.UUID) -> tuple[list, list]:
+    """Re-point rows of `model` from source to target, except files the target already has."""
+    have = {tuple(r) for r in (await db.execute(
+        select(model.tool_id, model.relative_path).where(model.machine_id == target)
+    )).all()}
+    rows = (await db.execute(
+        select(model.id, model.tool_id, model.relative_path).where(model.machine_id == source)
+    )).all()
+    movable = [r.id for r in rows if (r.tool_id, r.relative_path) not in have]
+    kept = [r.id for r in rows if (r.tool_id, r.relative_path) in have]
+    for i in range(0, len(movable), _BATCH):
+        await db.execute(update(model).where(model.id.in_(movable[i:i + _BATCH])).values(machine_id=target))
     return [str(i) for i in movable], [str(i) for i in kept]
 
 
 async def merge_duplicate_machines(db: AsyncSession) -> list[dict]:
     """Merge duplicate device records; returns what was merged."""
+    # A one-off bulk re-point can outlast the per-statement limit meant for user requests.
+    await db.execute(text("SET LOCAL statement_timeout = '15min'"))
     await db.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": _LOCK_KEY})
     machines = (await db.execute(select(Machine))).scalars().all()
     done = []
     for keep, fold in plan_merges(list(machines)):
         for old in fold:
-            moved_docs, kept_docs = await _move(db, Document, ("tool_id", "relative_path"), old.id, keep.id)
-            moved_sync, kept_sync = await _move(db, SyncState, ("tool_id", "relative_path"), old.id, keep.id)
+            t0 = time.monotonic()
+            moved_docs, kept_docs = await _move(db, Document, old.id, keep.id)
+            t1 = time.monotonic()
+            moved_sync, kept_sync = await _move(db, SyncState, old.id, keep.id)
+            log.info("merging %s into %s: documents %.1fs, sync state %.1fs", old.id, keep.id, t1 - t0, time.monotonic() - t1)
             task_ids = (await db.execute(select(DeviceTask.id).where(DeviceTask.machine_id == old.id))).scalars().all()
             if task_ids:
                 await db.execute(update(DeviceTask).where(DeviceTask.id.in_(task_ids)).values(machine_id=keep.id))
