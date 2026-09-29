@@ -1,7 +1,7 @@
 {
-  "version": "1.0.63",
-  "title": "Memento v1.0.63",
-  "release_notes": "1. 新桌面端「Memento Desktop」预览版：和网页同一套界面，后台自动同步各 AI 工具的会话、接收派活，托盘常驻、可开机自启、自动更新；和现在的 Memento 可以同时装，旧版在运行时它不会重复采集\n2. 新手机端「Memento Mobile」Android 预览版：问答（任务过程、中途补充、停止）、记忆搜索、待确认的规矩、待办、系统健康和推送设置\n3. 网页端补齐：系统健康、技能、刚学到的规矩、待办、推送设置、做梦记录、任务过程时间线和独立分支开关\n4. 给 AI 工具接上记忆更简单：桌面端自带记忆服务，在「本机采集」页一键复制 Claude Code / Codex 的配置",
+  "version": "1.0.64",
+  "title": "Memento v1.0.64",
+  "release_notes": "1. 新桌面端 Memento Desktop：Windows / Linux 去掉了菜单栏下面那条黑线（菜单栏默认隐藏，按 Alt 显示）；打开时不再先闪一下深色背景\n2. 系统健康页点开不再黑屏\n3. 同一台电脑换过设备标识后留下的重复记录已自动合并，设备列表不再重复出现，文件数也合到了一起\n4. Baseline 主题的侧边栏文字看得清了，页面装饰色跟随主题",
   "platforms": {
     "windows": {
       "asset_name": "Memento-windows-x64.zip",
