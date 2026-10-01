@@ -2,7 +2,7 @@ import Constants from "expo-constants";
 import { Redirect } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, BackHandler, Linking, Platform, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, AppState, type AppStateStatus, BackHandler, Linking, Platform, StyleSheet, Text, View } from "react-native";
 import * as Notifications from "expo-notifications";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { WebView, type WebViewMessageEvent, type WebViewNavigation, type WebViewProps } from "react-native-webview";
@@ -115,12 +115,14 @@ export default function WebShell() {
     [origin],
   );
 
+  const notifiedIds = useRef(new Set<string>());
+
   // Real-time server notification synchronization & instant native popups
   useEffect(() => {
     if (!ready || !token) return;
     let cancelled = false;
     let timer: ReturnType<typeof setInterval> | null = null;
-    let lastSeen = new Date().toISOString();
+    let lastSeen = new Date(Date.now() - 15 * 60 * 1000).toISOString();
 
     const fetchFeed = async () => {
       try {
@@ -138,6 +140,8 @@ export default function WebShell() {
           }>;
           if (Array.isArray(items) && items.length > 0) {
             for (const item of items) {
+              if (item.id && notifiedIds.current.has(item.id)) continue;
+              if (item.id) notifiedIds.current.add(item.id);
               await triggerLocalNotification(item.title, item.body, { url: item.url });
               if (item.created_at > lastSeen) {
                 lastSeen = item.created_at;
@@ -153,11 +157,18 @@ export default function WebShell() {
     void fetchFeed();
     timer = setInterval(() => {
       if (!cancelled) void fetchFeed();
-    }, 4000);
+    }, 3000);
+
+    const appStateSub = AppState.addEventListener("change", (state: AppStateStatus) => {
+      if (state === "active" && !cancelled) {
+        void fetchFeed();
+      }
+    });
 
     return () => {
       cancelled = true;
       if (timer) clearInterval(timer);
+      appStateSub.remove();
     };
   }, [ready, token, origin]);
 

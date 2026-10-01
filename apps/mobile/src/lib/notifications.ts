@@ -1,5 +1,4 @@
 import Constants from "expo-constants";
-import * as Device from "expo-device";
 import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
 
@@ -15,6 +14,7 @@ Notifications.setNotificationHandler({
 
 /**
  * Trigger an immediate native system notification with sound, banner and haptics on device.
+ * Uses interruptionLevel: "timeSensitive" so it is shown even when Focus / Do Not Disturb is active.
  */
 export async function triggerLocalNotification(
   title: string,
@@ -29,6 +29,7 @@ export async function triggerLocalNotification(
         body,
         sound: true,
         badge: 1,
+        interruptionLevel: "timeSensitive",
         data: data || {},
       },
       trigger: null,
@@ -39,7 +40,8 @@ export async function triggerLocalNotification(
 }
 
 /**
- * Request notification permissions and fetch the Expo Push Token for this device.
+ * Request notification permissions and fetch the Push Token for this device.
+ * Prioritizes Expo Push Token, with automatic fallback to native APNs token.
  */
 export async function registerForPushNotificationsAsync(): Promise<string | null> {
   if (Platform.OS === "web") return null;
@@ -56,25 +58,49 @@ export async function registerForPushNotificationsAsync(): Promise<string | null
   const { status: existingStatus } = await Notifications.getPermissionsAsync();
   let finalStatus = existingStatus;
   if (existingStatus !== "granted") {
-    const { status } = await Notifications.requestPermissionsAsync();
+    const { status } = await Notifications.requestPermissionsAsync({
+      ios: {
+        allowAlert: true,
+        allowBadge: true,
+        allowSound: true,
+        allowDisplayInCarPlay: true,
+        allowCriticalAlerts: true,
+      },
+    });
     finalStatus = status;
   }
   if (finalStatus !== "granted") {
     return null;
   }
 
+  // 1. Try Expo Push Token if EAS projectId is configured
   try {
     const projectId =
       Constants?.expoConfig?.extra?.eas?.projectId ??
       Constants?.easConfig?.projectId;
-    const tokenData = await Notifications.getExpoPushTokenAsync(
-      projectId ? { projectId } : undefined,
-    );
-    return tokenData.data;
-  } catch (err) {
-    console.warn("Failed to get Expo push token:", err);
-    return null;
+    if (projectId) {
+      const tokenData = await Notifications.getExpoPushTokenAsync({ projectId });
+      if (tokenData?.data) {
+        return tokenData.data;
+      }
+    }
+  } catch {
+    // fallback to native APNs
   }
+
+  // 2. Fallback to native APNs device push token
+  try {
+    const deviceToken = await Notifications.getDevicePushTokenAsync();
+    if (deviceToken?.data) {
+      return typeof deviceToken.data === "string"
+        ? deviceToken.data
+        : JSON.stringify(deviceToken.data);
+    }
+  } catch (err) {
+    console.warn("Native device push token error:", err);
+  }
+
+  return null;
 }
 
 /**
