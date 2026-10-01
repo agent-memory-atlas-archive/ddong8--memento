@@ -12,6 +12,7 @@ interface Session {
   server: string;
   token: string | null;
   signIn(server: string, email: string, password: string): Promise<void>;
+  signInWithToken(server: string, token: string): Promise<void>;
   signOut(): Promise<void>;
 }
 
@@ -71,7 +72,14 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setToken(access_token);
   }, []);
 
-  const value = useMemo(() => ({ ready, server, token, signIn, signOut }), [ready, server, token, signIn, signOut]);
+  const signInWithToken = useCallback(async (serverUrl: string, accessToken: string) => {
+    const base = (serverUrl.trim() || DEFAULT_SERVER).replace(/\/+$/, "");
+    await Promise.all([SecureStore.setItemAsync(SERVER_KEY, base), SecureStore.setItemAsync(TOKEN_KEY, accessToken)]);
+    setServer(base);
+    setToken(accessToken);
+  }, []);
+
+  const value = useMemo(() => ({ ready, server, token, signIn, signInWithToken, signOut }), [ready, server, token, signIn, signInWithToken, signOut]);
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }
 
