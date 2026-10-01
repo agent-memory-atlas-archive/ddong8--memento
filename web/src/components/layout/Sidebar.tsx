@@ -166,7 +166,6 @@ export default function Sidebar({ open, onClose }: { open: boolean; onClose: () 
             label={t.nav.ask || "远程控制"}
             icon="sparkles"
             active={isAskActive}
-            badge="CORE"
             onClick={handleNavClick}
           />
           <NavRow
