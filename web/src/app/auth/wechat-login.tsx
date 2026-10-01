@@ -23,11 +23,21 @@ export function WechatLoginSection() {
   const [errorMsg, setErrorMsg] = useState<string>("");
   const [countdown, setCountdown] = useState<number>(300);
   const [copied, setCopied] = useState<boolean>(false);
+  const [isMobile, setIsMobile] = useState<boolean>(false);
+  const [isWeChat, setIsWeChat] = useState<boolean>(false);
   const pollTimerRef = useRef<NodeJS.Timeout | null>(null);
   const countdownTimerRef = useRef<NodeJS.Timeout | null>(null);
   const fetchingRef = useRef<boolean>(false);
   const completedRef = useRef<boolean>(false);
   const { setAccessToken } = useAuth();
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const ua = window.navigator.userAgent.toLowerCase();
+      setIsMobile(/iphone|ipad|ipod|android/i.test(ua));
+      setIsWeChat(/micromessenger/i.test(ua));
+    }
+  }, []);
 
   // Fetch a new ticket
   const fetchNewTicket = useCallback(async () => {
@@ -174,6 +184,19 @@ export function WechatLoginSection() {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const handleOpenWeChat = () => {
+    if (!ticket) return;
+    try {
+      navigator.clipboard?.writeText(ticket);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2500);
+    } catch { /* noop */ }
+
+    if (!isWeChat) {
+      window.location.href = "weixin://";
+    }
+  };
+
   const minutes = Math.floor(countdown / 60);
   const seconds = countdown % 60;
   const timeFormatted = `${minutes}:${seconds < 10 ? "0" : ""}${seconds}`;
@@ -208,6 +231,7 @@ export function WechatLoginSection() {
             opacity: status === "expired" ? 0.2 : 1,
             filter: status === "expired" ? "blur(3px)" : "none",
             transition: "all 0.3s ease",
+            WebkitTouchCallout: "default",
           }}
         />
 
@@ -255,6 +279,12 @@ export function WechatLoginSection() {
           </div>
         )}
       </div>
+
+      {isMobile && (
+        <span style={{ fontSize: 11, color: "var(--aurora-fg4)", marginTop: -6 }}>
+          长按二维码可识别或保存到相册
+        </span>
+      )}
 
       {/* Passcode Card */}
       <div
@@ -315,6 +345,36 @@ export function WechatLoginSection() {
         </div>
       </div>
 
+      {/* Mobile Quick Action Button */}
+      {isMobile && status === "pending" && !loading && (
+        <button
+          type="button"
+          onClick={handleOpenWeChat}
+          style={{
+            width: "100%",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 8,
+            padding: "11px 16px",
+            borderRadius: 12,
+            background: "#07C160",
+            color: "#ffffff",
+            fontSize: 14,
+            fontWeight: 600,
+            border: "none",
+            cursor: "pointer",
+            boxShadow: "0 4px 14px rgba(7,193,96,0.30)",
+            transition: "transform 0.15s ease",
+          }}
+        >
+          <WechatMark size={18} />
+          {isWeChat
+            ? (copied ? "口令已复制，请在公众号发送" : "一键复制口令")
+            : (copied ? "已复制口令，正在前往微信…" : "复制口令并打开微信")}
+        </button>
+      )}
+
       {/* Guide Steps */}
       <div
         style={{
@@ -328,15 +388,25 @@ export function WechatLoginSection() {
       >
         <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
           <span style={{ color: "var(--aurora-accent)", fontWeight: 600 }}>1.</span>
-          <span>微信扫码关注公众号「<strong>深度部署</strong>」</span>
+          <span>
+            {isWeChat
+              ? "长按上方二维码识别关注公众号「深度部署」"
+              : isMobile
+              ? "关注「深度部署」公众号（可在微信搜索或长按二维码保存）"
+              : "微信扫码关注公众号「深度部署」"}
+          </span>
         </div>
         <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
           <span style={{ color: "var(--aurora-accent)", fontWeight: 600 }}>2.</span>
-          <span>向公众号发送上方 <strong>6 位数字口令</strong></span>
+          <span>
+            {isMobile && !isWeChat
+              ? "点击上方「复制口令并打开微信」并向公众号发送口令"
+              : "向公众号发送上方 6 位数字口令"}
+          </span>
         </div>
         <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
           <span style={{ color: "var(--aurora-accent)", fontWeight: 600 }}>3.</span>
-          <span>发送后页面将<strong>自动完成登录</strong></span>
+          <span>发送后切回本页面<strong>自动完成登录</strong></span>
         </div>
       </div>
 
