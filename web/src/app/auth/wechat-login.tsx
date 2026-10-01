@@ -285,6 +285,11 @@ export function WechatLoginSection() {
           长按二维码可识别或保存到相册
         </span>
       )}
+      {!isMobile && isWeChat && (
+        <span style={{ fontSize: 11, color: "var(--aurora-fg4)", marginTop: -6 }}>
+          右键二维码可直接「识别图中的二维码」关注
+        </span>
+      )}
 
       {/* Passcode Card */}
       <div
@@ -345,8 +350,8 @@ export function WechatLoginSection() {
         </div>
       </div>
 
-      {/* Mobile Quick Action Button */}
-      {isMobile && status === "pending" && !loading && (
+      {/* Mobile / WeChat Quick Action Button */}
+      {(isMobile || isWeChat) && status === "pending" && !loading && (
         <button
           type="button"
           onClick={handleOpenWeChat}
@@ -365,12 +370,12 @@ export function WechatLoginSection() {
             border: "none",
             cursor: "pointer",
             boxShadow: "0 4px 14px rgba(7,193,96,0.30)",
-            transition: "transform 0.15s ease",
+            transition: "all 0.15s ease",
           }}
         >
           <WechatMark size={18} />
           {isWeChat
-            ? (copied ? "口令已复制，请在公众号发送" : "一键复制口令")
+            ? (copied ? "口令已复制，请在微信对话框发送" : "一键复制口令并在微信发送")
             : (copied ? "已复制口令，正在前往微信…" : "复制口令并打开微信")}
         </button>
       )}
@@ -389,8 +394,10 @@ export function WechatLoginSection() {
         <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
           <span style={{ color: "var(--aurora-accent)", fontWeight: 600 }}>1.</span>
           <span>
-            {isWeChat
+            {isMobile && isWeChat
               ? "长按上方二维码识别关注公众号「深度部署」"
+              : isWeChat
+              ? "在微信中向「深度部署」公众号发送口令（未关注可右键二维码识别）"
               : isMobile
               ? "关注「深度部署」公众号（可在微信搜索或长按二维码保存）"
               : "微信扫码关注公众号「深度部署」"}
@@ -406,7 +413,7 @@ export function WechatLoginSection() {
         </div>
         <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
           <span style={{ color: "var(--aurora-accent)", fontWeight: 600 }}>3.</span>
-          <span>发送后切回本页面<strong>自动完成登录</strong></span>
+          <span>发送后本页面<strong>自动完成登录</strong></span>
         </div>
       </div>
 
