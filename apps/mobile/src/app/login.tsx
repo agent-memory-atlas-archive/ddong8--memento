@@ -1,3 +1,4 @@
+import * as Clipboard from "expo-clipboard";
 import { Redirect } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AppState, KeyboardAvoidingView, Linking, Platform, Pressable, Text, TextInput, View } from "react-native";
@@ -144,10 +145,28 @@ export default function LoginScreen() {
     return () => sub.remove();
   }, [authTab, checkPoll]);
 
+  const [copied, setCopied] = useState<boolean>(false);
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const copyToClipboard = useCallback(async (textToCopy: string, andOpenWeChat = false) => {
+    if (!textToCopy) return;
+    try {
+      await Clipboard.setStringAsync(textToCopy);
+      setCopied(true);
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+      copyTimerRef.current = setTimeout(() => setCopied(false), 3500);
+    } catch {
+      // ignore
+    }
+    if (andOpenWeChat) {
+      void Linking.openURL("weixin://").catch(() => {
+        setError("无法唤起微信，请确保手机已安装微信客户端");
+      });
+    }
+  }, []);
+
   const handleOpenWeChat = () => {
-    void Linking.openURL("weixin://").catch(() => {
-      setError("无法唤起微信，请确保手机已安装微信客户端");
-    });
+    void copyToClipboard(ticket, true);
   };
 
   if (token) return <Redirect href="/" />;
@@ -223,31 +242,42 @@ export default function LoginScreen() {
           {authTab === "wechat" ? (
             <View style={{ gap: 12 }}>
               {/* Passcode Box */}
-              <View
-                style={{
+              <Pressable
+                onPress={() => void copyToClipboard(ticket)}
+                style={({ pressed }) => ({
                   backgroundColor: t.surface,
-                  borderWidth: 1,
-                  borderColor: t.border,
+                  borderWidth: 1.5,
+                  borderColor: copied ? "#07C160" : t.border,
                   borderRadius: radius.control,
                   padding: 18,
                   alignItems: "center",
                   gap: 8,
-                }}
+                  opacity: pressed ? 0.85 : 1,
+                })}
               >
-                <View style={{ flexDirection: "row", justifyContent: "space-between", width: "100%" }}>
+                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", width: "100%" }}>
                   <Text style={{ fontSize: 11, color: t.fg3, fontWeight: "600", letterSpacing: 0.5 }}>登录口令</Text>
-                  <Text style={{ fontSize: 11, color: t.fg3 }}>{ticketStatus === "pending" && !ticketLoading ? `${timeFormatted} 有效` : ""}</Text>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                    {copied ? (
+                      <Text style={{ fontSize: 11, color: "#07C160", fontWeight: "600" }}>✓ 已复制到剪贴板</Text>
+                    ) : (
+                      <Text style={{ fontSize: 11, color: t.accent }}>轻触可直接复制</Text>
+                    )}
+                    <Text style={{ fontSize: 11, color: t.fg3 }}>
+                      {ticketStatus === "pending" && !ticketLoading ? ` · ${timeFormatted}` : ""}
+                    </Text>
+                  </View>
                 </View>
 
                 <Text
                   selectable
                   style={{
-                    fontSize: 32,
+                    fontSize: 34,
                     fontWeight: "700",
                     fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
-                    color: ticketStatus === "expired" ? t.fg4 : t.accent,
-                    letterSpacing: 4,
-                    paddingVertical: 6,
+                    color: ticketStatus === "expired" ? t.fg4 : copied ? "#07C160" : t.accent,
+                    letterSpacing: 5,
+                    paddingVertical: 4,
                   }}
                 >
                   {ticketLoading ? "••••••" : ticket ? ticket.split("").join(" ") : "------"}
@@ -258,38 +288,56 @@ export default function LoginScreen() {
                     口令已过期，点击刷新
                   </Button>
                 )}
-              </View>
+              </Pressable>
 
-              {/* Action Button: Open WeChat */}
+              {/* Action Buttons: Copy & Open WeChat */}
               {ticketStatus === "pending" && (
-                <Pressable
-                  onPress={handleOpenWeChat}
-                  style={({ pressed }) => ({
-                    flexDirection: "row",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: 8,
-                    backgroundColor: "#07C160",
-                    borderRadius: radius.control,
-                    paddingVertical: 12,
-                    opacity: pressed ? 0.8 : 1,
-                  })}
-                >
-                  <WechatMark size={20} color="#ffffff" />
-                  <Text style={{ color: "#ffffff", fontSize: 15, fontWeight: "600" }}>打开微信发送口令</Text>
-                </Pressable>
+                <View style={{ gap: 8 }}>
+                  <Pressable
+                    onPress={handleOpenWeChat}
+                    style={({ pressed }) => ({
+                      flexDirection: "row",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 8,
+                      backgroundColor: "#07C160",
+                      borderRadius: radius.control,
+                      paddingVertical: 13,
+                      opacity: pressed ? 0.85 : 1,
+                    })}
+                  >
+                    <WechatMark size={20} color="#ffffff" />
+                    <Text style={{ color: "#ffffff", fontSize: 15, fontWeight: "600" }}>
+                      {copied ? "口令已复制，前往微信粘贴" : "复制口令并打开微信"}
+                    </Text>
+                  </Pressable>
+
+                  <Pressable
+                    onPress={() => void copyToClipboard(ticket)}
+                    style={({ pressed }) => ({
+                      alignItems: "center",
+                      justifyContent: "center",
+                      paddingVertical: 6,
+                      opacity: pressed ? 0.6 : 1,
+                    })}
+                  >
+                    <Text style={{ fontSize: 12.5, color: copied ? "#07C160" : t.fg3 }}>
+                      {copied ? "口令已就绪，直接在公众号粘贴发送即可" : "不想跳转？点击仅复制 6 位口令"}
+                    </Text>
+                  </Pressable>
+                </View>
               )}
 
               {/* Guide steps */}
-              <View style={{ backgroundColor: t.surface, borderRadius: radius.control, padding: 12, borderWidth: 1, borderColor: t.border, gap: 6 }}>
+              <View style={{ backgroundColor: t.surface, borderRadius: radius.control, padding: 14, borderWidth: 1, borderColor: t.border, gap: 8 }}>
                 <Text style={{ fontSize: 12, color: t.fg2, lineHeight: 18 }}>
-                  1. 关注公众号「<Text style={{ fontWeight: "600", color: t.fg1 }}>深度部署</Text>」（可在微信搜索关注）
+                  1. 微信关注公众号「<Text style={{ fontWeight: "700", color: t.fg1 }}>深度部署</Text>」
                 </Text>
                 <Text style={{ fontSize: 12, color: t.fg2, lineHeight: 18 }}>
-                  2. 点击上方按钮前往微信，发送上方 <Text style={{ fontWeight: "600", color: t.accent }}>6 位数字口令</Text>
+                  2. 点击上方按钮前往微信，<Text style={{ fontWeight: "700", color: "#07C160" }}>口令已自动写入剪贴板</Text>，在公众号中直接<Text style={{ fontWeight: "600", color: t.fg1 }}>长按粘贴发送</Text>
                 </Text>
                 <Text style={{ fontSize: 12, color: t.fg2, lineHeight: 18 }}>
-                  3. 发送后切回本应用，系统将<Text style={{ fontWeight: "600", color: t.fg1 }}>自动完成登录</Text>
+                  3. 发送后切回本应用，系统将<Text style={{ fontWeight: "700", color: t.accent }}>自动秒级完成登录</Text>
                 </Text>
               </View>
             </View>
