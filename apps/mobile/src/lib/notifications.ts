@@ -14,6 +14,31 @@ Notifications.setNotificationHandler({
 });
 
 /**
+ * Trigger an immediate native system notification with sound, banner and haptics on device.
+ */
+export async function triggerLocalNotification(
+  title: string,
+  body: string,
+  data?: Record<string, unknown>,
+): Promise<void> {
+  if (Platform.OS === "web") return;
+  try {
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title,
+        body,
+        sound: true,
+        badge: 1,
+        data: data || {},
+      },
+      trigger: null,
+    });
+  } catch (err) {
+    console.warn("Failed to trigger local notification:", err);
+  }
+}
+
+/**
  * Request notification permissions and fetch the Expo Push Token for this device.
  */
 export async function registerForPushNotificationsAsync(): Promise<string | null> {

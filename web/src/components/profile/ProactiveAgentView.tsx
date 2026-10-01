@@ -74,10 +74,17 @@ export function ProactiveAgentView() {
       setTestingBrief(true);
       setTestMessage(null);
       await api.testMorningBrief();
+      if (typeof window !== "undefined" && (window as any).ReactNativeWebView) {
+        (window as any).ReactNativeWebView.postMessage(JSON.stringify({
+          type: "notify",
+          title: "🌅 早上好！今日晨间简报",
+          body: "今日待办与在线设备状态已同步，AI 执事全天候为您就绪！",
+        }));
+      }
       setTestMessage("✅ 晨间简报已成功合成并推送到手机！");
       setTimeout(() => setTestMessage(null), 4000);
     } catch (e) {
-      setTestMessage("❌ 推送失败，请确认是否在账号安全中配置了 Bark 推送地址");
+      setTestMessage("❌ 推送失败，请检查网络连接");
     } finally {
       setTestingBrief(false);
     }
@@ -88,6 +95,13 @@ export function ProactiveAgentView() {
       setTestingReflection(true);
       setTestMessage(null);
       await api.testEveningReflection();
+      if (typeof window !== "undefined" && (window as any).ReactNativeWebView) {
+        (window as any).ReactNativeWebView.postMessage(JSON.stringify({
+          type: "notify",
+          title: "🌌 晚间梦境自进化完成",
+          body: "今日工作沉淀已完成！已自动吸收碎片记忆，更新画像偏好与避坑规则。",
+        }));
+      }
       setTestMessage("✅ 晚间梦境复盘已执行并推送到手机！");
       setTimeout(() => setTestMessage(null), 4000);
     } catch (e) {

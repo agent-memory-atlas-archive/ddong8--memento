@@ -8,6 +8,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { WebView, type WebViewMessageEvent, type WebViewNavigation, type WebViewProps } from "react-native-webview";
 
 import { Button } from "../components/ui";
+import { triggerLocalNotification } from "../lib/notifications";
 import { useSession } from "../lib/session";
 import { useTheme } from "../lib/theme";
 
@@ -114,10 +115,67 @@ export default function WebShell() {
     [origin],
   );
 
+  // Real-time server notification synchronization & instant native popups
+  useEffect(() => {
+    if (!ready || !token) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setInterval> | null = null;
+    let lastSeen = new Date().toISOString();
+
+    const fetchFeed = async () => {
+      try {
+        const base = origin.replace(/\/+$/, "");
+        const res = await fetch(`${base}/api/notify/feed?since=${encodeURIComponent(lastSeen)}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res.ok) {
+          const items = (await res.json()) as Array<{
+            id: string;
+            title: string;
+            body: string;
+            url?: string;
+            created_at: string;
+          }>;
+          if (Array.isArray(items) && items.length > 0) {
+            for (const item of items) {
+              await triggerLocalNotification(item.title, item.body, { url: item.url });
+              if (item.created_at > lastSeen) {
+                lastSeen = item.created_at;
+              }
+            }
+          }
+        }
+      } catch {
+        // silent on network error
+      }
+    };
+
+    void fetchFeed();
+    timer = setInterval(() => {
+      if (!cancelled) void fetchFeed();
+    }, 4000);
+
+    return () => {
+      cancelled = true;
+      if (timer) clearInterval(timer);
+    };
+  }, [ready, token, origin]);
+
   const onMessage = useCallback((e: WebViewMessageEvent) => {
     try {
-      const msg = JSON.parse(e.nativeEvent.data) as { type?: string; bg?: string; dark?: boolean };
-      if (msg.type === "theme" && msg.bg && !/rgba\(0, 0, 0, 0\)|transparent/.test(msg.bg)) setPage({ bg: msg.bg, dark: !!msg.dark });
+      const msg = JSON.parse(e.nativeEvent.data) as {
+        type?: string;
+        bg?: string;
+        dark?: boolean;
+        title?: string;
+        body?: string;
+        data?: Record<string, unknown>;
+      };
+      if (msg.type === "theme" && msg.bg && !/rgba\(0, 0, 0, 0\)|transparent/.test(msg.bg)) {
+        setPage({ bg: msg.bg, dark: !!msg.dark });
+      } else if (msg.type === "notify" && msg.title) {
+        void triggerLocalNotification(msg.title, msg.body || "", msg.data);
+      }
     } catch {
       // not ours
     }

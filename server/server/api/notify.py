@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+import uuid
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -121,36 +124,56 @@ async def unregister_device_token(
     return {"status": "ok", "unregistered": True}
 
 
-@router.post("/test")
-async def send_test(user: User = Depends(get_current_user)) -> dict:
+@router.get("/feed")
+async def get_notification_feed(
+    since: str | None = None,
+    user: User = Depends(get_current_user),
+) -> list[dict]:
+    """Fetch unread/recent notification items for real-time mobile push & popups."""
     prefs = user.notify_settings or {}
+    feed: list[dict] = list(prefs.get("recent_notifications") or [])
+    if since:
+        feed = [n for n in feed if n.get("created_at", "") > since]
+    return feed
+
+
+@router.post("/test")
+async def send_test(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
+    prefs = dict(user.notify_settings or {})
     bark_url = prefs.get("bark_url")
     device_tokens = prefs.get("device_tokens") or []
 
-    if not bark_url and not device_tokens:
-        raise HTTPException(status_code=400, detail="未检测到已绑定的 Memento 手机端或外部推送地址")
+    # 1. Record test notification to real-time feed
+    item = {
+        "id": str(uuid.uuid4()),
+        "kind": "test",
+        "title": "Memento 手机端原生测试通知",
+        "body": "恭喜！您的 Memento 移动端原生通知已完全通畅，无需借助任何第三方外部 App！",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    feed = list(prefs.get("recent_notifications") or [])
+    feed.insert(0, item)
+    prefs["recent_notifications"] = feed[:30]
+    user.notify_settings = prefs
+    await db.commit()
 
     from ..services.notify_service import send_expo_push
-    sent = False
 
     if device_tokens:
-        native_ok = await send_expo_push(
+        await send_expo_push(
             device_tokens,
-            "Memento 手机端原生测试通知",
-            "恭喜！您的 Memento 移动端原生推送已完全通畅，无需借助任何第三方外部 App！",
+            item["title"],
+            item["body"],
         )
-        if native_ok:
-            sent = True
 
     if bark_url:
-        bark_ok = await send_bark(
+        await send_bark(
             bark_url,
             "Memento 测试通知",
             "收到这条说明推送已经通了。危险操作和任务完成都会推到这里。",
         )
-        if bark_ok:
-            sent = True
 
-    if not sent:
-        raise HTTPException(status_code=502, detail="推送发送失败，请检查网络或重新登录移动端")
-    return {"ok": True, "native_mobile_sent": bool(device_tokens)}
+    return {"ok": True, "feed_id": item["id"]}

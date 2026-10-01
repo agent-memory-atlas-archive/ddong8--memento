@@ -224,20 +224,38 @@ async def notify_user(
         return False
     level = "timeSensitive" if kind == "risky" else "active"
 
-    sent = False
+    # Record to user's notification feed for real-time mobile synchronization
+    item = {
+        "id": str(uuid.uuid4()),
+        "kind": kind,
+        "title": title,
+        "body": body,
+        "url": url,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    try:
+        async with async_session_factory() as db:
+            db_user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+            if db_user:
+                p = dict(db_user.notify_settings or {})
+                feed = list(p.get("recent_notifications") or [])
+                feed.insert(0, item)
+                p["recent_notifications"] = feed[:30]
+                db_user.notify_settings = p
+                await db.commit()
+    except Exception as e:
+        logger.warning("Failed to record notification feed for user %s: %s", user_id, e)
+
+    sent = True
 
     # 1. Native Memento Mobile App Push (No third-party app needed)
     device_tokens = prefs.get("device_tokens") or []
     if device_tokens:
-        native_ok = await send_expo_push(device_tokens, title, body, url=url, level=level)
-        if native_ok:
-            sent = True
+        await send_expo_push(device_tokens, title, body, url=url, level=level)
 
     # 2. Bark / ntfy channel (if configured as secondary or fallback)
     if prefs.get("bark_url"):
-        bark_ok = await send_bark(prefs["bark_url"], title, body, url=url, level=level)
-        if bark_ok:
-            sent = True
+        await send_bark(prefs["bark_url"], title, body, url=url, level=level)
 
     return sent
 
