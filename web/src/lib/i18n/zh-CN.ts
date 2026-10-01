@@ -65,7 +65,7 @@ const zhCN = {
   // Nav
   nav: {
     tasks: "派活",
-    ask: "智能指挥台",
+    ask: "远程控制",
     dashboard: "运行看板",
     tools: "工具",
     daily: "记忆日报",
@@ -80,7 +80,7 @@ const zhCN = {
     collector: "本机采集",
     persona: "个人画像",
     settings: "个人设置",
-    sectionExecutive: "主指挥台",
+    sectionExecutive: "控制中枢",
     sectionBrain: "认知大脑",
     sectionWorkspace: "工作沉淀",
     onlineCount: "{n} 台设备在线",
@@ -282,8 +282,8 @@ const zhCN = {
 
   // Ask — RAG chat over memory & agent execution
   ask: {
-    title: "AI 终端与记忆问答",
-    subtitle: "用自然语言对话查记忆、或直接调度设备执行任务",
+    title: "远程控制与工具调度",
+    subtitle: "跨终端远程操控、调度 Agent 工具链，并协同记忆与画像自进化",
     placeholder: "输入自然语言任务或提问...",
     placeholderAgent: "给机器派活或提问，例如「检查 git 状态」或「分析服务报错」...",
     placeholderAskOnly: "向记忆库提问，例如「总结上周的讨论重点」...",

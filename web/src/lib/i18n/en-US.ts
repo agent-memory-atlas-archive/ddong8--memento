@@ -64,7 +64,7 @@ const enUS: Translations = {
 
   nav: {
     tasks: "Dispatch",
-    ask: "Command Center",
+    ask: "Remote Control",
     dashboard: "Dashboard",
     tools: "Tools",
     daily: "Daily Notes",
@@ -79,7 +79,7 @@ const enUS: Translations = {
     collector: "Collector",
     persona: "Persona",
     settings: "Settings",
-    sectionExecutive: "Command",
+    sectionExecutive: "Control Center",
     sectionBrain: "Cognitive Brain",
     sectionWorkspace: "Workspace",
     onlineCount: "{n} devices online",
@@ -274,8 +274,8 @@ const enUS: Translations = {
 
   // Ask — RAG chat over memory
   ask: {
-    title: "AI Terminal & Memory",
-    subtitle: "Ask memory with natural language, or dispatch tasks directly to machines",
+    title: "Remote Control & Tool Dispatch",
+    subtitle: "Control remote terminals, dispatch agent tools, and evolve with memory & persona",
     placeholder: "Enter a task or ask a question...",
     placeholderAgent: "Give a task or ask a question, e.g. 'check git status' or 'inspect logs'...",
     placeholderAskOnly: "Ask memory, e.g. 'summarize last week's discussion'...",

@@ -159,11 +159,11 @@ export default function Sidebar({ open, onClose }: { open: boolean; onClose: () 
 
         {/* Navigation */}
         <nav className="flex-1 overflow-y-auto py-2">
-          {/* Section 1: 主指挥台 */}
-          <SectionHeader label={t.nav.sectionExecutive || "主指挥台"} />
+          {/* Section 1: 控制中枢 */}
+          <SectionHeader label={t.nav.sectionExecutive || "控制中枢"} />
           <NavRow
             href="/ask"
-            label={t.nav.ask || "智能指挥台"}
+            label={t.nav.ask || "远程控制"}
             icon="sparkles"
             active={isAskActive}
             badge="CORE"
