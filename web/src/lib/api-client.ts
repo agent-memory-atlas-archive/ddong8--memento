@@ -37,6 +37,7 @@ export function authFetch(url: string, init?: RequestInit): Promise<Response> {
 
 interface FetchOptions extends RequestInit {
   token?: string;
+  skipCache?: boolean;
 }
 
 function _getToken(): string | null {
@@ -58,7 +59,7 @@ export function invalidateApiCache(prefix?: string) {
 }
 
 async function apiFetch<T>(path: string, opts: FetchOptions = {}): Promise<T> {
-  const { token, ...init } = opts;
+  const { token, skipCache, ...init } = opts;
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     ...(init.headers as Record<string, string>),
@@ -76,7 +77,7 @@ async function apiFetch<T>(path: string, opts: FetchOptions = {}): Promise<T> {
 
   const base = getApiBase();
   const method = (init.method || "GET").toUpperCase();
-  const cacheKey = method === "GET" ? `${base}${path}` : null;
+  const cacheKey = method === "GET" && !skipCache ? `${base}${path}` : null;
 
   if (cacheKey) {
     const hit = _cache.get(cacheKey);
@@ -569,7 +570,7 @@ export const api = {
   getMe: (token: string) => apiFetch<UserInfo>("/api/auth/me", { token }),
   refreshToken: (token: string) =>
     apiFetch<TokenResponse>("/api/auth/refresh", { method: "POST", token }),
-  getWechatTicket: () => apiFetch<{ ticket: string; expires_in: number }>("/api/auth/wechat/ticket"),
+  getWechatTicket: () => apiFetch<{ ticket: string; expires_in: number }>("/api/auth/wechat/ticket", { skipCache: true }),
   pollWechatTicket: (ticket: string) =>
     apiFetch<{
       status: "pending" | "success" | "expired" | "not_found" | "registration_closed" | "account_disabled";
@@ -577,7 +578,7 @@ export const api = {
       user_id?: string;
       role?: string;
       detail?: string;
-    }>(`/api/auth/wechat/poll?ticket=${encodeURIComponent(ticket)}`),
+    }>(`/api/auth/wechat/poll?ticket=${encodeURIComponent(ticket)}`, { skipCache: true }),
   // === Account-level backup/restore ===
   //
   // exportData hits a binary endpoint so we go around apiFetch's

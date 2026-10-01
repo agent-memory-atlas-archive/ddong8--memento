@@ -80,7 +80,64 @@ export function WechatLoginSection() {
     };
   }, [ticket, status]);
 
-  // Polling ticket status
+  const handleSuccess = useCallback((accessToken: string) => {
+    if (completedRef.current) return;
+    completedRef.current = true;
+    if (pollTimerRef.current) {
+      clearInterval(pollTimerRef.current);
+      pollTimerRef.current = null;
+    }
+    if (countdownTimerRef.current) {
+      clearInterval(countdownTimerRef.current);
+      countdownTimerRef.current = null;
+    }
+    setStatus("success");
+
+    // Synchronously persist token so browser and AuthProvider pick it up immediately
+    try {
+      localStorage.setItem("dr_token", accessToken);
+    } catch { /* noop */ }
+
+    // Notify desktop client if running inside desktop iframe
+    void setAccessToken(accessToken).catch(() => {});
+
+    let next: string | null = null;
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      next = params.get("next");
+    }
+    const dest = next && next.startsWith("/") && !/^\/[/\\]/.test(next) ? next : "/app";
+
+    // Brief delay for the user to see the green checkmark before navigation
+    setTimeout(() => {
+      window.location.replace(dest);
+    }, 300);
+  }, [setAccessToken]);
+
+  const checkPoll = useCallback(async () => {
+    if (!ticket || status !== "pending" || completedRef.current) return;
+    try {
+      const res = await api.pollWechatTicket(ticket);
+      if (res.status === "success" && res.access_token) {
+        handleSuccess(res.access_token);
+      } else if (res.status === "expired" || res.status === "not_found") {
+        setStatus("expired");
+        if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+      } else if (res.status === "account_disabled") {
+        setStatus("error");
+        setErrorMsg(res.detail || "账号已被停用");
+        if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+      } else if (res.status === "registration_closed") {
+        setStatus("error");
+        setErrorMsg(res.detail || "系统暂未开放注册");
+        if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+      }
+    } catch {
+      // network blip — keep polling
+    }
+  }, [ticket, status, handleSuccess]);
+
+  // Polling ticket status every 1000ms
   useEffect(() => {
     if (pollTimerRef.current) {
       clearInterval(pollTimerRef.current);
@@ -88,62 +145,27 @@ export function WechatLoginSection() {
     }
     if (!ticket || status !== "pending") return;
 
-    pollTimerRef.current = setInterval(async () => {
-      if (completedRef.current) return;
-      try {
-        const res = await api.pollWechatTicket(ticket);
-        if (res.status === "success" && res.access_token) {
-          completedRef.current = true;
-          if (pollTimerRef.current) {
-            clearInterval(pollTimerRef.current);
-            pollTimerRef.current = null;
-          }
-          if (countdownTimerRef.current) {
-            clearInterval(countdownTimerRef.current);
-            countdownTimerRef.current = null;
-          }
-          setStatus("success");
-
-          // Synchronously persist token so browser and AuthProvider pick it up immediately
-          try {
-            localStorage.setItem("dr_token", res.access_token);
-          } catch { /* noop */ }
-
-          // Notify desktop client if running inside desktop iframe
-          void setAccessToken(res.access_token).catch(() => {});
-
-          let next: string | null = null;
-          if (typeof window !== "undefined") {
-            const params = new URLSearchParams(window.location.search);
-            next = params.get("next");
-          }
-          const dest = next && next.startsWith("/") && !/^\/[/\\]/.test(next) ? next : "/app";
-
-          // Brief delay for the user to see the green checkmark before navigation
-          setTimeout(() => {
-            window.location.replace(dest);
-          }, 350);
-        } else if (res.status === "expired" || res.status === "not_found") {
-          setStatus("expired");
-          if (pollTimerRef.current) clearInterval(pollTimerRef.current);
-        } else if (res.status === "account_disabled") {
-          setStatus("error");
-          setErrorMsg(res.detail || "账号已被停用");
-          if (pollTimerRef.current) clearInterval(pollTimerRef.current);
-        } else if (res.status === "registration_closed") {
-          setStatus("error");
-          setErrorMsg(res.detail || "系统暂未开放注册");
-          if (pollTimerRef.current) clearInterval(pollTimerRef.current);
-        }
-      } catch {
-        // network blip — keep polling
-      }
-    }, 1500);
+    pollTimerRef.current = setInterval(checkPoll, 1000);
 
     return () => {
       if (pollTimerRef.current) clearInterval(pollTimerRef.current);
     };
-  }, [ticket, status, setAccessToken]);
+  }, [ticket, status, checkPoll]);
+
+  // Instant poll when user returns to window/tab
+  useEffect(() => {
+    const handleActive = () => {
+      if (document.visibilityState === "visible") {
+        void checkPoll();
+      }
+    };
+    window.addEventListener("focus", handleActive);
+    document.addEventListener("visibilitychange", handleActive);
+    return () => {
+      window.removeEventListener("focus", handleActive);
+      document.removeEventListener("visibilitychange", handleActive);
+    };
+  }, [checkPoll]);
 
   const copyCode = () => {
     if (!ticket) return;

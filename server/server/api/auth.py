@@ -577,8 +577,9 @@ async def wechat_message_webhook(request: Request, db: AsyncSession = Depends(ge
 
 
 @router.get("/wechat/ticket")
-async def create_wechat_ticket_endpoint() -> dict:
+async def create_wechat_ticket_endpoint(response: Response) -> dict:
     """Generate a 6-digit numeric login ticket for WeChat QR login."""
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     ticket = await _create_wechat_ticket()
     return {"ticket": ticket, "expires_in": 300}
 
@@ -586,9 +587,11 @@ async def create_wechat_ticket_endpoint() -> dict:
 @router.get("/wechat/poll")
 async def poll_wechat_ticket_endpoint(
     ticket: str,
+    response: Response,
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Poll the status of a WeChat login ticket."""
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     ticket_data = await _get_ticket_data(ticket)
     if not ticket_data:
         return {"status": "not_found"}
