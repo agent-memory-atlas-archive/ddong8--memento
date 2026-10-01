@@ -200,7 +200,21 @@ function refreshTray(): void {
 }
 
 function createTray(): void {
-  const icon = nativeImage.createFromPath(join(__dirname, "static", "tray.png"));
+  const isMac = process.platform === "darwin";
+  // macOS menu bar standard: native 16x16 pt Template image (*Template.png).
+  // Windows/Linux system tray: 16x16 colored brand icon (tray.png).
+  const name = isMac ? "trayTemplate.png" : "tray.png";
+  const iconPath = join(__dirname, "static", name);
+  let icon = nativeImage.createFromPath(iconPath);
+  if (icon.isEmpty()) {
+    icon = nativeImage.createFromPath(join(__dirname, "static", "tray.png"));
+  }
+  if (isMac && !icon.isEmpty()) {
+    icon = icon.resize({ width: 16, height: 16 });
+    icon.setTemplateImage(true);
+  } else if (!icon.isEmpty()) {
+    icon = icon.resize({ width: 16, height: 16 });
+  }
   tray = new Tray(icon.isEmpty() ? nativeImage.createEmpty() : icon);
   tray.on("click", () => showWindow());
   refreshTray();

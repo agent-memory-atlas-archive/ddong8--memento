@@ -39,6 +39,17 @@ const background = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
 const foreground = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">${defs}${sparkles(32, 32, 1.2)}</svg>`;
 const monochrome = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">${sparkles(32, 32, 1.2, "#ffffff")}</svg>`;
 
+// Native macOS Template icon (16x16 pt): monochrome double-sparkles glyph with transparent background
+const s = 0.68;
+const tx = (8 - 14 * s).toFixed(2);
+const ty = (8 - 11.5 * s).toFixed(2);
+const trayTemplateSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+  <g transform="translate(${tx}, ${ty}) scale(${s})" fill="#000000" stroke="#000000" stroke-width="0.8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5z"/>
+    <path d="M19 14l.7 2.3L22 17l-2.3.7L19 20l-.7-2.3L16 17l2.3-.7z"/>
+  </g>
+</svg>`;
+
 async function render(svg, size, out) {
   mkdirSync(dirname(out), { recursive: true });
   await sharp(Buffer.from(svg), { density: 1024 }).resize(size, size).png().toFile(out);
@@ -52,8 +63,14 @@ const mobileFlutter = join(root, "mobile");
 
 // 1. Desktop app icons (macOS Big Sur 824/1024 grid margin: pad 6.25 of 64)
 await render(rounded(6.25), 1024, join(desktop, "build/icon.png"));
-await render(rounded(2), 32, join(desktop, "static/tray.png"));
-await render(rounded(2), 64, join(desktop, "static/tray@2x.png"));
+
+// macOS native menu bar template icon (16x16 pt, rendered at 16x16 @1x and 32x32 @2x)
+await render(trayTemplateSvg, 16, join(desktop, "static/trayTemplate.png"));
+await render(trayTemplateSvg, 32, join(desktop, "static/trayTemplate@2x.png"));
+
+// Standard tray icon (16x16 pt, rendered at 16x16 @1x and 32x32 @2x)
+await render(rounded(2), 16, join(desktop, "static/tray.png"));
+await render(rounded(2), 32, join(desktop, "static/tray@2x.png"));
 
 // 2. Mobile Expo assets
 await render(square, 1024, join(mobileExpo, "icon.png"));
