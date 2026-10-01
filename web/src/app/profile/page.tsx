@@ -1,12 +1,20 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
+import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
 import { useI18n } from "@/lib/i18n";
 import { api } from "@/lib/api-client";
+import { desktop } from "@/lib/desktop";
 import { Btn, Chip, Glass, TopBar, SectionLabel, GhostInput } from "@/components/aurora/primitives";
 import { Icon } from "@/components/aurora/Icon";
 import NotifySettings from "@/components/notify/NotifySettings";
+import { DevicesView } from "@/components/devices/DevicesView";
+import { CollectorView } from "@/components/collector/CollectorView";
+import { StatusView } from "@/components/status/StatusView";
+
+type TabKey = "account" | "devices" | "collector" | "health" | "admin";
 
 type ImportSummary = {
   machine_id: string;
@@ -15,8 +23,111 @@ type ImportSummary = {
 };
 
 export default function ProfilePage() {
+  return (
+    <Suspense
+      fallback={
+        <div style={{ textAlign: "center", color: "var(--aurora-fg4)", marginTop: 80 }}>
+          加载设置...
+        </div>
+      }
+    >
+      <ProfileContent />
+    </Suspense>
+  );
+}
+
+function ProfileContent() {
   const { user, token, logout, setUser } = useAuth();
   const { t } = useI18n();
+  const searchParams = useSearchParams();
+  const router = useRouter();
+
+  const [activeTab, setActiveTab] = useState<TabKey>("account");
+  const [isDesktopEnv, setIsDesktopEnv] = useState(false);
+
+  useEffect(() => {
+    const d = desktop();
+    if (d) setIsDesktopEnv(true);
+  }, []);
+
+  useEffect(() => {
+    const paramTab = searchParams.get("tab") as TabKey | null;
+    if (paramTab && ["account", "devices", "collector", "health", "admin"].includes(paramTab)) {
+      setActiveTab(paramTab);
+    }
+  }, [searchParams]);
+
+  const switchTab = (tab: TabKey) => {
+    setActiveTab(tab);
+    router.replace(`/profile?tab=${tab}`, { scroll: false });
+  };
+
+  const isAdmin = user?.role === "admin" || user?.role === "owner";
+
+  if (!user) {
+    return (
+      <div style={{ textAlign: "center", color: "var(--aurora-fg4)", marginTop: 80 }}>
+        {t.loading}
+      </div>
+    );
+  }
+
+  const TABS: { id: TabKey; label: string; icon: Parameters<typeof Icon>[0]["name"]; adminOnly?: boolean }[] = [
+    { id: "account", label: t.profile.tabs?.account || "账号安全", icon: "user" },
+    { id: "devices", label: t.profile.tabs?.devices || "我的设备", icon: "devices" },
+    { id: "collector", label: t.profile.tabs?.collector || "采集配置", icon: "terminal" },
+    { id: "health", label: t.profile.tabs?.health || "系统健康", icon: "activity" },
+    ...(isAdmin ? [{ id: "admin" as TabKey, label: t.profile.tabs?.admin || "管理控制台", icon: "lock" as const }] : []),
+  ];
+
+  return (
+    <div className="max-w-4xl mx-auto pb-16">
+      <TopBar title={t.profile.title || "个人设置"} subtitle={t.profile.subtitle || "账号偏好、终端设备与系统运维"} />
+
+      {/* Tabs navigation */}
+      <div
+        className="flex items-center gap-1.5 p-1 mb-6 rounded-2xl overflow-x-auto no-scrollbar"
+        style={{
+          background: "var(--aurora-card)",
+          border: "1px solid var(--aurora-border)",
+          boxShadow: "0 2px 10px rgba(0,0,0,0.03)",
+        }}
+      >
+        {TABS.map((tab) => {
+          const active = activeTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => switchTab(tab.id)}
+              className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-medium transition-all whitespace-nowrap cursor-pointer"
+              style={{
+                background: active ? "var(--aurora-accent-soft)" : "transparent",
+                color: active ? "var(--aurora-accent)" : "var(--aurora-fg3)",
+                border: active ? "1px solid color-mix(in srgb, var(--aurora-accent) 30%, transparent)" : "1px solid transparent",
+                fontWeight: active ? 600 : 450,
+              }}
+            >
+              <Icon name={tab.icon} size={15} color={active ? "var(--aurora-accent)" : undefined} />
+              <span>{tab.label}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Tab Panels */}
+      {activeTab === "account" && <AccountTab />}
+      {activeTab === "devices" && <DevicesView hideTopBar />}
+      {activeTab === "collector" && <CollectorView hideTopBar />}
+      {activeTab === "health" && <StatusView hideTopBar />}
+      {activeTab === "admin" && <AdminPanelTab />}
+    </div>
+  );
+}
+
+function AccountTab() {
+  const { user, token, logout, setUser } = useAuth();
+  const { t } = useI18n();
+
   const [name, setName] = useState(user?.name || "");
   const [savingName, setSavingName] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
@@ -37,13 +148,7 @@ export default function ProfilePage() {
     }
   }, [user?.name]);
 
-  if (!user) {
-    return (
-      <div style={{ textAlign: "center", color: "var(--aurora-fg4)", marginTop: 80 }}>
-        {t.loading}
-      </div>
-    );
-  }
+  if (!user) return null;
 
   const handleAvatarFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -103,9 +208,6 @@ export default function ProfilePage() {
     setExporting(true);
     try {
       const { blob, filename } = await api.exportData(token, includeLogs);
-      // Trigger a download via an off-DOM <a download>. Works in
-      // Chromium/Firefox/Safari; ObjectURL is revoked after a tick to
-      // free the blob.
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -129,8 +231,6 @@ export default function ProfilePage() {
     try {
       const result = await api.importData(token, importFile);
       setImportSummary(result);
-      // Clear the file input so the user can pick another later without
-      // confusing residual state.
       setImportFile(null);
       if (fileInputRef.current) fileInputRef.current.value = "";
     } catch (e: unknown) {
@@ -141,9 +241,7 @@ export default function ProfilePage() {
   };
 
   return (
-    <div className="max-w-2xl mx-auto">
-      <TopBar title={t.profile.title} subtitle={t.profile.subtitle} />
-
+    <div className="w-full">
       <SectionLabel>{t.profile.basicInfo || "基本信息"}</SectionLabel>
       <Glass padding={22} radius={20} style={{ marginBottom: 20 }}>
         {/* Avatar & Photo Actions */}
@@ -378,6 +476,39 @@ export default function ProfilePage() {
         </Btn>
       </div>
     </div>
+  );
+}
+
+function AdminPanelTab() {
+  return (
+    <Glass padding={28} radius={20} style={{ textAlign: "center" }}>
+      <div
+        style={{
+          width: 56,
+          height: 56,
+          borderRadius: 16,
+          margin: "0 auto 16px",
+          background: "var(--aurora-brand-grad)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          boxShadow: "0 12px 40px -10px rgba(124,58,237,0.5)",
+        }}
+      >
+        <Icon name="lock" size={26} style={{ color: "#fff" }} strokeWidth={2} />
+      </div>
+      <h3 style={{ margin: "0 0 8px", fontSize: 18, fontWeight: 600, color: "var(--aurora-fg1)" }}>
+        管理员控制中心
+      </h3>
+      <p style={{ margin: "0 auto 20px", maxWidth: 440, fontSize: 13.5, color: "var(--aurora-fg3)", lineHeight: 1.6 }}>
+        您拥有管理员权限，可以在管理控制台进行多用户账号审核、全量设备监管、系统同步状态分析与全局资源调配。
+      </p>
+      <Link href="/admin">
+        <Btn icon="external_link" size="md">
+          进入管理控制台 &rarr;
+        </Btn>
+      </Link>
+    </Glass>
   );
 }
 

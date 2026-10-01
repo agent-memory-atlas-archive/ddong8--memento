@@ -29,7 +29,7 @@ export default function LoginPage() {
         const params = new URLSearchParams(window.location.search);
         next = params.get("next");
       }
-      const dest = next && next.startsWith("/") && !/^\/[/\\]/.test(next) ? next : "/app";
+      const dest = next && next.startsWith("/") && !/^\/[/\\]/.test(next) ? next : "/ask";
       window.location.replace(dest);
     }
   }, [loading, token]);
@@ -50,7 +50,7 @@ export default function LoginPage() {
       }
       // Same-origin relative paths only — reject "//host" and "/\host"
       // (backslash normalizes to slash → protocol-relative open redirect).
-      router.push(next && next.startsWith("/") && !/^\/[/\\]/.test(next) ? next : "/app");
+      router.push(next && next.startsWith("/") && !/^\/[/\\]/.test(next) ? next : "/ask");
     } catch { setError(t.auth.invalidCredentials); }
   };
 

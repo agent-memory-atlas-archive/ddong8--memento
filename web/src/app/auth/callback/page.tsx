@@ -23,7 +23,7 @@ export default function AuthCallbackPage() {
       // Only allow same-origin relative paths — reject "//host" and "/\host"
       // (browsers normalize backslash to slash, making it protocol-relative).
       window.location.replace(
-        next && next.startsWith("/") && !/^\/[/\\]/.test(next) ? next : "/app",
+        next && next.startsWith("/") && !/^\/[/\\]/.test(next) ? next : "/ask",
       );
     } else {
       window.location.replace("/auth/login?error=github_oauth_failed");

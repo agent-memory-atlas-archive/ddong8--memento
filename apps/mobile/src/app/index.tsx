@@ -44,8 +44,8 @@ export default function WebShell() {
   const [page, setPage] = useState<{ bg: string; dark: boolean } | null>(null);
 
   const origin = useMemo(() => server.match(/^https?:\/\/[^/]+/i)?.[0] ?? server, [server]);
-  // Sign the page in with the app's token, then land on the dashboard.
-  const start = useMemo(() => (token ? `${origin}/auth/handoff#token=${encodeURIComponent(token)}&next=%2Fapp` : null), [origin, token]);
+  // Sign the page in with the app's token, then land directly on the Command Center (/ask).
+  const start = useMemo(() => (token ? `${origin}/auth/handoff#token=${encodeURIComponent(token)}&next=%2Fask` : null), [origin, token]);
 
   useEffect(() => {
     if (Platform.OS !== "android") return;

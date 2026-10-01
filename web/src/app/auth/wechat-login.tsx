@@ -116,7 +116,7 @@ export function WechatLoginSection() {
       const params = new URLSearchParams(window.location.search);
       next = params.get("next");
     }
-    const dest = next && next.startsWith("/") && !/^\/[/\\]/.test(next) ? next : "/app";
+    const dest = next && next.startsWith("/") && !/^\/[/\\]/.test(next) ? next : "/ask";
 
     // Brief delay for the user to see the green checkmark before navigation
     setTimeout(() => {

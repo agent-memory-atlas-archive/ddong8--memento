@@ -27,7 +27,7 @@ export default function HandoffPage() {
     // Only allow same-origin relative paths — reject "//host" and "/\host"
     // (browsers normalize backslash to slash, making it protocol-relative).
     const dest =
-      next && next.startsWith("/") && !/^\/[/\\]/.test(next) ? next : "/app";
+      next && next.startsWith("/") && !/^\/[/\\]/.test(next) ? next : "/ask";
 
     if (!token) {
       setFailed(true);

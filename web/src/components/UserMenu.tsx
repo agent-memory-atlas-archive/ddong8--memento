@@ -5,13 +5,21 @@ import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
 import { useI18n } from "@/lib/i18n";
 import { Icon } from "@/components/aurora/Icon";
+import { desktop } from "@/lib/desktop";
 
-/** Avatar button + popup menu (profile / logout). Click outside to close. */
+type IconName = Parameters<typeof Icon>[0]["name"];
+
+/** Avatar button + popup menu (profile / devices / health / admin / logout). Click outside to close. */
 export function UserMenu() {
   const { user, logout } = useAuth();
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
+  const [isDesktop, setIsDesktop] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (desktop()) setIsDesktop(true);
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -33,6 +41,7 @@ export function UserMenu() {
 
   const initial = (user.name || user.email)[0]?.toUpperCase() || "?";
   const displayName = user.name || user.email;
+  const isAdmin = user.role === "admin" || user.role === "owner";
 
   return (
     <div ref={ref} style={{ position: "relative" }}>
@@ -179,10 +188,33 @@ export function UserMenu() {
             </div>
           </div>
 
-          {/* Items */}
-          <MenuLink href="/profile" icon="user" onClick={() => setOpen(false)}>
-            {t.profile.title}
+          {/* Quick shortcuts */}
+          <MenuLink href="/profile" icon="settings" onClick={() => setOpen(false)}>
+            {t.profile.title || "个人设置"}
           </MenuLink>
+          <MenuLink href="/profile?tab=devices" icon="devices" onClick={() => setOpen(false)}>
+            {t.profile.tabs?.devices || "我的设备"}
+          </MenuLink>
+          <MenuLink href="/profile?tab=health" icon="activity" onClick={() => setOpen(false)}>
+            {t.profile.tabs?.health || "系统健康"}
+          </MenuLink>
+          {isDesktop && (
+            <MenuLink href="/profile?tab=collector" icon="terminal" onClick={() => setOpen(false)}>
+              {t.profile.tabs?.collector || "本机采集"}
+            </MenuLink>
+          )}
+
+          {isAdmin && (
+            <>
+              <div style={{ height: 1, background: "var(--aurora-border)", margin: "4px 8px" }} />
+              <MenuLink href="/admin" icon="lock" onClick={() => setOpen(false)}>
+                {t.nav.admin || "管理后台"}
+              </MenuLink>
+            </>
+          )}
+
+          <div style={{ height: 1, background: "var(--aurora-border)", margin: "4px 8px" }} />
+
           <MenuButton icon="log_out" onClick={() => { setOpen(false); logout(); }} tone="danger">
             {t.profile.logout}
           </MenuButton>
@@ -211,7 +243,7 @@ const menuItemStyle: React.CSSProperties = {
 function MenuLink({
   href, icon, children, onClick,
 }: {
-  href: string; icon: "user" | "log_out"; children: React.ReactNode; onClick?: () => void;
+  href: string; icon: IconName; children: React.ReactNode; onClick?: () => void;
 }) {
   return (
     <Link
@@ -230,7 +262,7 @@ function MenuLink({
 function MenuButton({
   icon, children, onClick, tone = "default",
 }: {
-  icon: "user" | "log_out";
+  icon: IconName;
   children: React.ReactNode;
   onClick: () => void;
   tone?: "default" | "danger";

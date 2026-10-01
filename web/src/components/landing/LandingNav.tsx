@@ -109,7 +109,7 @@ export function LandingNav() {
           <div className="hidden md:block"><SkinPicker /></div>
           <ThemeToggle />
           {!loading && (
-            <Link href={token ? "/app" : "/auth/login"} style={{ textDecoration: "none" }}>
+            <Link href={token ? "/ask" : "/auth/login"} style={{ textDecoration: "none" }}>
               <button
                 className="aurora-btn aurora-btn-sm"
                 style={{ padding: "6px 14px" }}
