@@ -1,11 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Image from "next/image";
-import { useRouter } from "next/navigation";
 import { api } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth-context";
-import { useI18n } from "@/lib/i18n";
 import { Btn } from "@/components/aurora/primitives";
 import { Icon } from "@/components/aurora/Icon";
 
@@ -27,25 +25,29 @@ export function WechatLoginSection() {
   const [copied, setCopied] = useState<boolean>(false);
   const pollTimerRef = useRef<NodeJS.Timeout | null>(null);
   const countdownTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const fetchingRef = useRef<boolean>(false);
+  const completedRef = useRef<boolean>(false);
   const { setAccessToken } = useAuth();
-  const router = useRouter();
-  const { t } = useI18n();
 
-  // Fetch a new ticket and start polling
-  const fetchNewTicket = async () => {
+  // Fetch a new ticket
+  const fetchNewTicket = useCallback(async () => {
+    if (fetchingRef.current) return;
+    fetchingRef.current = true;
     try {
       setLoading(true);
       setErrorMsg("");
       setStatus("pending");
       setCountdown(300);
+      completedRef.current = false;
       const res = await api.getWechatTicket();
       setTicket(res.ticket);
-      setLoading(false);
     } catch {
       setErrorMsg("获取登录口令失败，请点击刷新");
+    } finally {
       setLoading(false);
+      fetchingRef.current = false;
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchNewTicket();
@@ -53,11 +55,14 @@ export function WechatLoginSection() {
       if (pollTimerRef.current) clearInterval(pollTimerRef.current);
       if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
     };
-  }, []);
+  }, [fetchNewTicket]);
 
   // Countdown timer
   useEffect(() => {
-    if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
+    if (countdownTimerRef.current) {
+      clearInterval(countdownTimerRef.current);
+      countdownTimerRef.current = null;
+    }
     if (status !== "pending") return;
 
     countdownTimerRef.current = setInterval(() => {
@@ -77,23 +82,47 @@ export function WechatLoginSection() {
 
   // Polling ticket status
   useEffect(() => {
-    if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+    if (pollTimerRef.current) {
+      clearInterval(pollTimerRef.current);
+      pollTimerRef.current = null;
+    }
     if (!ticket || status !== "pending") return;
 
     pollTimerRef.current = setInterval(async () => {
+      if (completedRef.current) return;
       try {
         const res = await api.pollWechatTicket(ticket);
         if (res.status === "success" && res.access_token) {
-          if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+          completedRef.current = true;
+          if (pollTimerRef.current) {
+            clearInterval(pollTimerRef.current);
+            pollTimerRef.current = null;
+          }
+          if (countdownTimerRef.current) {
+            clearInterval(countdownTimerRef.current);
+            countdownTimerRef.current = null;
+          }
           setStatus("success");
-          await setAccessToken(res.access_token);
+
+          // Synchronously persist token so browser and AuthProvider pick it up immediately
+          try {
+            localStorage.setItem("dr_token", res.access_token);
+          } catch { /* noop */ }
+
+          // Notify desktop client if running inside desktop iframe
+          void setAccessToken(res.access_token).catch(() => {});
 
           let next: string | null = null;
           if (typeof window !== "undefined") {
             const params = new URLSearchParams(window.location.search);
             next = params.get("next");
           }
-          router.push(next && next.startsWith("/") && !/^\/[/\\]/.test(next) ? next : "/app");
+          const dest = next && next.startsWith("/") && !/^\/[/\\]/.test(next) ? next : "/app";
+
+          // Brief delay for the user to see the green checkmark before navigation
+          setTimeout(() => {
+            window.location.replace(dest);
+          }, 350);
         } else if (res.status === "expired" || res.status === "not_found") {
           setStatus("expired");
           if (pollTimerRef.current) clearInterval(pollTimerRef.current);
@@ -114,7 +143,7 @@ export function WechatLoginSection() {
     return () => {
       if (pollTimerRef.current) clearInterval(pollTimerRef.current);
     };
-  }, [ticket, status, router, setAccessToken]);
+  }, [ticket, status, setAccessToken]);
 
   const copyCode = () => {
     if (!ticket) return;

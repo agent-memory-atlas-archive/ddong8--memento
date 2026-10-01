@@ -457,32 +457,42 @@ def _clean_expired_tickets() -> None:
         _wechat_tickets.pop(k, None)
 
 
+async def _get_ticket_data(code: str) -> dict | None:
+    cached = await cache_get(f"wechat_ticket:{code}")
+    if cached:
+        return cached
+    return _wechat_tickets.get(code)
+
+
+async def _set_ticket_data(code: str, data: dict, ttl_seconds: int = 300) -> None:
+    _wechat_tickets[code] = data
+    await cache_set(f"wechat_ticket:{code}", data, ttl_seconds=ttl_seconds)
+
+
+async def _delete_ticket_data(code: str) -> None:
+    _wechat_tickets.pop(code, None)
+    await cache_set(f"wechat_ticket:{code}", {"status": "used"}, ttl_seconds=60)
+
+
 async def _create_wechat_ticket() -> str:
     _clean_expired_tickets()
     for _ in range(20):
         code = f"{secrets.randbelow(900000) + 100000}"
-        if code not in _wechat_tickets:
+        if not await _get_ticket_data(code):
             break
     data = {"status": "pending", "openid": None, "created_at": time.time()}
-    _wechat_tickets[code] = data
-    await cache_set(f"wechat_ticket:{code}", data, ttl_seconds=300)
+    await _set_ticket_data(code, data, ttl_seconds=300)
     return code
 
 
 async def _match_wechat_ticket(code: str, openid: str) -> bool:
-    ticket = _wechat_tickets.get(code)
-    if not ticket:
-        cached = await cache_get(f"wechat_ticket:{code}")
-        if cached:
-            ticket = cached
-
+    ticket = await _get_ticket_data(code)
     if ticket and ticket.get("status") == "pending":
         if time.time() - ticket.get("created_at", 0) <= 300:
             ticket["status"] = "success"
             ticket["openid"] = openid
             ticket["completed_at"] = time.time()
-            _wechat_tickets[code] = ticket
-            await cache_set(f"wechat_ticket:{code}", ticket, ttl_seconds=300)
+            await _set_ticket_data(code, ticket, ttl_seconds=300)
             return True
     return False
 
@@ -579,10 +589,7 @@ async def poll_wechat_ticket_endpoint(
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Poll the status of a WeChat login ticket."""
-    ticket_data = _wechat_tickets.get(ticket)
-    if not ticket_data:
-        ticket_data = await cache_get(f"wechat_ticket:{ticket}")
-
+    ticket_data = await _get_ticket_data(ticket)
     if not ticket_data:
         return {"status": "not_found"}
 
@@ -601,39 +608,47 @@ async def poll_wechat_ticket_endpoint(
     user = result.scalar_one_or_none()
 
     if user is None:
-        count_result = await db.execute(select(User.id).limit(1))
-        is_first_user = count_result.scalar_one_or_none() is None
-
-        if is_first_user:
-            role, user_status = "owner", "active"
-        elif settings.registration_mode == "open":
-            role, user_status = "viewer", "active"
+        # Check if there is only 1 active owner with no wechat_openid
+        all_owners = (
+            await db.execute(select(User).where(User.role == "owner", User.status == "active"))
+        ).scalars().all()
+        if len(all_owners) == 1 and all_owners[0].wechat_openid is None:
+            user = all_owners[0]
+            user.wechat_openid = openid
+            await db.flush()
         else:
-            return {"status": "registration_closed", "detail": "系统注册已关闭"}
+            count_result = await db.execute(select(User.id).limit(1))
+            is_first_user = count_result.scalar_one_or_none() is None
 
-        base_email = f"wx_{openid[:10].lower()}@memento.local"
-        email = base_email
-        chk = await db.execute(select(User).where(User.email == email))
-        if chk.scalar_one_or_none() is not None:
-            email = f"wx_{openid[:8].lower()}_{secrets.token_hex(4)}@memento.local"
+            if is_first_user:
+                role, user_status = "owner", "active"
+            elif settings.registration_mode == "open":
+                role, user_status = "viewer", "active"
+            else:
+                return {"status": "registration_closed", "detail": "系统注册已关闭"}
 
-        user = User(
-            email=email,
-            name=f"微信用户_{openid[-4:]}",
-            role=role,
-            status=user_status,
-            collector_token=secrets.token_hex(32),
-            wechat_openid=openid,
-        )
-        db.add(user)
-        await db.flush()
+            base_email = f"wx_{openid[:10].lower()}@memento.local"
+            email = base_email
+            chk = await db.execute(select(User).where(User.email == email))
+            if chk.scalar_one_or_none() is not None:
+                email = f"wx_{openid[:8].lower()}_{secrets.token_hex(4)}@memento.local"
+
+            user = User(
+                email=email,
+                name=f"微信用户_{openid[-4:]}",
+                role=role,
+                status=user_status,
+                collector_token=secrets.token_hex(32),
+                wechat_openid=openid,
+            )
+            db.add(user)
+            await db.flush()
 
     if user.status != "active":
         return {"status": "account_disabled", "detail": "账号已被停用"}
 
     # Invalidate ticket so it cannot be reused
-    _wechat_tickets.pop(ticket, None)
-    await cache_set(f"wechat_ticket:{ticket}", {"status": "used"}, ttl_seconds=60)
+    await _delete_ticket_data(ticket)
 
     token = create_access_token(str(user.id), user.role)
     return {

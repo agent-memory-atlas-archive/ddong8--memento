@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
@@ -15,11 +15,24 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
-  const { login } = useAuth();
+  const { login, token, loading } = useAuth();
   const { t } = useI18n();
   const router = useRouter();
   const githubEnabled = useGithubEnabled();
   const oauthError = useOauthErrorMessage();
+
+  // Auto-redirect if already authenticated
+  useEffect(() => {
+    if (!loading && token) {
+      let next: string | null = null;
+      if (typeof window !== "undefined") {
+        const params = new URLSearchParams(window.location.search);
+        next = params.get("next");
+      }
+      const dest = next && next.startsWith("/") && !/^\/[/\\]/.test(next) ? next : "/app";
+      window.location.replace(dest);
+    }
+  }, [loading, token]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
