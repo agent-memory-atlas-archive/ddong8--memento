@@ -59,7 +59,6 @@ async function render(svg, size, out) {
 const desktop = join(root, "apps/desktop");
 const mobileExpo = join(root, "apps/mobile/assets");
 const webPublic = join(root, "web/public");
-const mobileFlutter = join(root, "mobile");
 
 // 1. Desktop app icons (macOS Big Sur 824/1024 grid margin: pad 6.25 of 64)
 await render(rounded(6.25), 1024, join(desktop, "build/icon.png"));
@@ -85,38 +84,5 @@ const faviconSvgContent = rounded(2);
 writeFileSync(join(webPublic, "favicon.svg"), faviconSvgContent, "utf8");
 writeFileSync(join(webPublic, "favicon-aurora.svg"), faviconSvgContent, "utf8");
 await render(rounded(2), 512, join(webPublic, "favicon.png"));
-
-// 4. Flutter / Linux assets
-await render(rounded(2), 512, join(mobileFlutter, "linux/assets/memento.png"));
-
-// 5. Flutter macOS Assets.xcassets
-const macAppIconSet = join(mobileFlutter, "macos/Runner/Assets.xcassets/AppIcon.appiconset");
-const macSizes = [16, 32, 64, 128, 256, 512, 1024];
-for (const s of macSizes) {
-  await render(rounded(6.25), s, join(macAppIconSet, `app_icon_${s}.png`));
-}
-
-// 6. Flutter iOS Assets.xcassets
-const iosAppIconSet = join(mobileFlutter, "ios/Runner/Assets.xcassets/AppIcon.appiconset");
-const iosSizes = [
-  { name: "Icon-App-20x20@1x.png", size: 20 },
-  { name: "Icon-App-20x20@2x.png", size: 40 },
-  { name: "Icon-App-20x20@3x.png", size: 60 },
-  { name: "Icon-App-29x29@1x.png", size: 29 },
-  { name: "Icon-App-29x29@2x.png", size: 58 },
-  { name: "Icon-App-29x29@3x.png", size: 87 },
-  { name: "Icon-App-40x40@1x.png", size: 40 },
-  { name: "Icon-App-40x40@2x.png", size: 80 },
-  { name: "Icon-App-40x40@3x.png", size: 120 },
-  { name: "Icon-App-60x60@2x.png", size: 120 },
-  { name: "Icon-App-60x60@3x.png", size: 180 },
-  { name: "Icon-App-76x76@1x.png", size: 76 },
-  { name: "Icon-App-76x76@2x.png", size: 152 },
-  { name: "Icon-App-83.5x83.5@2x.png", size: 167 },
-  { name: "Icon-App-1024x1024@1x.png", size: 1024 },
-];
-for (const item of iosSizes) {
-  await render(square, item.size, join(iosAppIconSet, item.name));
-}
 
 console.log("All brand icons generated successfully!");
