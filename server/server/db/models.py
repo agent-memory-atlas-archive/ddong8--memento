@@ -277,6 +277,7 @@ class User(Base):
     status: Mapped[str] = mapped_column(String(20), default="pending")  # pending | active | disabled
     collector_token: Mapped[str | None] = mapped_column(String(64), unique=True)
     github_id: Mapped[str | None] = mapped_column(String(50))
+    wechat_openid: Mapped[str | None] = mapped_column(String(64), unique=True, index=True)
     # Phone push settings: {"bark_url", "notify_risky", "notify_task_done"}.
     notify_settings: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

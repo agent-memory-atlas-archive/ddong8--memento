@@ -61,10 +61,13 @@ def _run_migrations(conn) -> None:
         if "scope" not in topic_cols:
             conn.execute(text("ALTER TABLE correction_topics ADD COLUMN scope VARCHAR(200) NOT NULL DEFAULT 'global'"))
 
-    # User.collector_token
+    # User.collector_token & wechat_openid
     user_cols = {c["name"] for c in insp.get_columns("users")}
     if "collector_token" not in user_cols:
         conn.execute(text("ALTER TABLE users ADD COLUMN collector_token VARCHAR(64) UNIQUE"))
+    if "wechat_openid" not in user_cols:
+        conn.execute(text("ALTER TABLE users ADD COLUMN wechat_openid VARCHAR(64) UNIQUE"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_users_wechat_openid ON users (wechat_openid)"))
 
     # DeviceTask.alerts — risky operations an agent performed during the task.
     if "device_tasks" in tables:

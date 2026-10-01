@@ -71,6 +71,10 @@ class Settings(BaseSettings):
     # When unset, the redirect_uri is derived from the incoming request.
     public_url: str = ""
 
+    # WeChat Official Account (Subscription/Service) Webhook configuration
+    wechat_token: str = "memento_wx_token_2026"
+    wechat_encoding_aes_key: str = ""
+
     def validate_production(self) -> None:
         """Refuse to start with dev defaults when debug is off."""
         bad = []

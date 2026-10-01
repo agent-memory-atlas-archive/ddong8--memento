@@ -13,8 +13,9 @@ from datetime import datetime, timezone
 from urllib.parse import quote, urlencode
 
 import httpx
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
-from fastapi.responses import RedirectResponse
+import xml.etree.ElementTree as ET
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
+from fastapi.responses import PlainTextResponse, RedirectResponse
 from pydantic import BaseModel, EmailStr
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..config import settings
 from ..db.models import InviteCode, User
 from ..db.session import get_db
+from ..services.cache import cache_get, cache_set
 from ..middleware.auth import (
     create_access_token, get_current_user, hash_password, require_role, verify_password,
 )
@@ -40,6 +42,7 @@ class RegistrationModeResponse(BaseModel):
     mode: str  # open | invite_only | closed
     has_any_user: bool
     github_enabled: bool = False
+    wechat_enabled: bool = False
 
 
 class LoginRequest(BaseModel):
@@ -72,6 +75,7 @@ async def registration_mode(db: AsyncSession = Depends(get_db)) -> RegistrationM
         mode=settings.registration_mode,
         has_any_user=has_any,
         github_enabled=bool(settings.github_client_id and settings.github_client_secret),
+        wechat_enabled=bool(settings.wechat_token),
     )
 
 
@@ -437,3 +441,204 @@ async def rotate_collector_token(
         status=user.status,
         collector_token=user.collector_token,
     )
+
+
+# ---------------------------------------------------------------------------
+# WeChat Official Account Login (Subscription / Service Account Webhook)
+# ---------------------------------------------------------------------------
+
+_wechat_tickets: dict[str, dict] = {}
+
+
+def _clean_expired_tickets() -> None:
+    now = time.time()
+    expired = [k for k, v in _wechat_tickets.items() if now - v.get("created_at", 0) > 600]
+    for k in expired:
+        _wechat_tickets.pop(k, None)
+
+
+async def _create_wechat_ticket() -> str:
+    _clean_expired_tickets()
+    for _ in range(20):
+        code = f"{secrets.randbelow(900000) + 100000}"
+        if code not in _wechat_tickets:
+            break
+    data = {"status": "pending", "openid": None, "created_at": time.time()}
+    _wechat_tickets[code] = data
+    await cache_set(f"wechat_ticket:{code}", data, ttl_seconds=300)
+    return code
+
+
+async def _match_wechat_ticket(code: str, openid: str) -> bool:
+    ticket = _wechat_tickets.get(code)
+    if not ticket:
+        cached = await cache_get(f"wechat_ticket:{code}")
+        if cached:
+            ticket = cached
+
+    if ticket and ticket.get("status") == "pending":
+        if time.time() - ticket.get("created_at", 0) <= 300:
+            ticket["status"] = "success"
+            ticket["openid"] = openid
+            ticket["completed_at"] = time.time()
+            _wechat_tickets[code] = ticket
+            await cache_set(f"wechat_ticket:{code}", ticket, ttl_seconds=300)
+            return True
+    return False
+
+
+def _xml_reply(to_user: str, from_user: str, content: str) -> str:
+    now = int(time.time())
+    return (
+        f"<xml>\n"
+        f"  <ToUserName><![CDATA[{to_user}]]></ToUserName>\n"
+        f"  <FromUserName><![CDATA[{from_user}]]></FromUserName>\n"
+        f"  <CreateTime>{now}</CreateTime>\n"
+        f"  <MsgType><![CDATA[text]]></MsgType>\n"
+        f"  <Content><![CDATA[{content}]]></Content>\n"
+        f"</xml>"
+    )
+
+
+@router.get("/wechat/webhook", response_class=PlainTextResponse)
+async def wechat_verify_webhook(
+    signature: str = "",
+    timestamp: str = "",
+    nonce: str = "",
+    echostr: str = "",
+) -> PlainTextResponse:
+    """WeChat Server URL verification handshake.
+    When setting up Webhook in WeChat Developer Console, WeChat calls this GET endpoint.
+    """
+    if not signature or not echostr:
+        return PlainTextResponse("Memento WeChat Webhook is active.", status_code=200)
+
+    token = settings.wechat_token
+    items = sorted([token, timestamp, nonce])
+    computed_sig = hashlib.sha1("".join(items).encode("utf-8")).hexdigest()
+    if computed_sig == signature:
+        return PlainTextResponse(content=echostr, status_code=200)
+
+    return PlainTextResponse(content="Invalid signature", status_code=403)
+
+
+@router.post("/wechat/webhook")
+async def wechat_message_webhook(request: Request, db: AsyncSession = Depends(get_db)) -> Response:
+    """WeChat messages and events receiver (XML format)."""
+    body_bytes = await request.body()
+    if not body_bytes:
+        return PlainTextResponse("success", status_code=200)
+
+    try:
+        root = ET.fromstring(body_bytes.decode("utf-8", errors="replace"))
+        msg_type = (root.findtext("MsgType") or "").strip().lower()
+        from_user = (root.findtext("FromUserName") or "").strip()  # User openid
+        to_user = (root.findtext("ToUserName") or "").strip()      # Developer account
+
+        if msg_type == "text":
+            content = (root.findtext("Content") or "").strip()
+            # 1) Check if the message is a 6-digit login ticket
+            if content.isdigit() and len(content) == 6:
+                matched = await _match_wechat_ticket(content, from_user)
+                if matched:
+                    reply = "✅ 登录口令验证成功！请返回网页或桌面端，正在为您自动登录。"
+                    return Response(content=_xml_reply(from_user, to_user, reply), media_type="application/xml")
+                else:
+                    reply = "⚠️ 口令已过期或不存在，请在屏幕上点击「刷新」获取新口令。"
+                    return Response(content=_xml_reply(from_user, to_user, reply), media_type="application/xml")
+            elif content in {"登录", "登陆", "验证码", "login"}:
+                reply = "收到登录请求！请在 Memento 客户端点击「微信登录」，直接发送屏幕上显示的 6 位口令即可自动登录。"
+                return Response(content=_xml_reply(from_user, to_user, reply), media_type="application/xml")
+            else:
+                reply = "收到您的消息！\n若需登录 Memento，请在网页/客户端点击「微信登录」并发送屏幕上显示的 6 位口令。"
+                return Response(content=_xml_reply(from_user, to_user, reply), media_type="application/xml")
+
+        elif msg_type == "event":
+            event = (root.findtext("Event") or "").strip().lower()
+            if event == "subscribe":
+                reply = "欢迎关注！\n在登录 Memento 时，请直接发送登录屏幕上显示的 6 位数字口令即可自动登录。"
+                return Response(content=_xml_reply(from_user, to_user, reply), media_type="application/xml")
+
+    except Exception as e:
+        import logging
+        logging.getLogger("auth").error("WeChat webhook error: %s", e)
+
+    return PlainTextResponse("success", status_code=200)
+
+
+@router.get("/wechat/ticket")
+async def create_wechat_ticket_endpoint() -> dict:
+    """Generate a 6-digit numeric login ticket for WeChat QR login."""
+    ticket = await _create_wechat_ticket()
+    return {"ticket": ticket, "expires_in": 300}
+
+
+@router.get("/wechat/poll")
+async def poll_wechat_ticket_endpoint(
+    ticket: str,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Poll the status of a WeChat login ticket."""
+    ticket_data = _wechat_tickets.get(ticket)
+    if not ticket_data:
+        ticket_data = await cache_get(f"wechat_ticket:{ticket}")
+
+    if not ticket_data:
+        return {"status": "not_found"}
+
+    if time.time() - ticket_data.get("created_at", 0) > 300:
+        return {"status": "expired"}
+
+    if ticket_data.get("status") != "success":
+        return {"status": "pending"}
+
+    openid = ticket_data.get("openid")
+    if not openid:
+        return {"status": "pending"}
+
+    # Find or create User by wechat_openid
+    result = await db.execute(select(User).where(User.wechat_openid == openid))
+    user = result.scalar_one_or_none()
+
+    if user is None:
+        count_result = await db.execute(select(User.id).limit(1))
+        is_first_user = count_result.scalar_one_or_none() is None
+
+        if is_first_user:
+            role, user_status = "owner", "active"
+        elif settings.registration_mode == "open":
+            role, user_status = "viewer", "active"
+        else:
+            return {"status": "registration_closed", "detail": "系统注册已关闭"}
+
+        base_email = f"wx_{openid[:10].lower()}@memento.local"
+        email = base_email
+        chk = await db.execute(select(User).where(User.email == email))
+        if chk.scalar_one_or_none() is not None:
+            email = f"wx_{openid[:8].lower()}_{secrets.token_hex(4)}@memento.local"
+
+        user = User(
+            email=email,
+            name=f"微信用户_{openid[-4:]}",
+            role=role,
+            status=user_status,
+            collector_token=secrets.token_hex(32),
+            wechat_openid=openid,
+        )
+        db.add(user)
+        await db.flush()
+
+    if user.status != "active":
+        return {"status": "account_disabled", "detail": "账号已被停用"}
+
+    # Invalidate ticket so it cannot be reused
+    _wechat_tickets.pop(ticket, None)
+    await cache_set(f"wechat_ticket:{ticket}", {"status": "used"}, ttl_seconds=60)
+
+    token = create_access_token(str(user.id), user.role)
+    return {
+        "status": "success",
+        "access_token": token,
+        "user_id": str(user.id),
+        "role": user.role,
+    }
