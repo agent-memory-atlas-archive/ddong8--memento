@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, shell, Tray } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, Notification, shell, Tray } from "electron";
 import { autoUpdater } from "electron-updater";
 import { join, sep } from "node:path";
 
@@ -161,6 +161,67 @@ function showWindow(path?: string): void {
   if (path) void loadApp(path);
 }
 
+function showNotification(title: string, body: string, targetUrl?: string): void {
+  if (!Notification.isSupported()) return;
+  const iconPath = join(__dirname, "static", "tray.png");
+  let icon = nativeImage.createFromPath(iconPath);
+  if (icon.isEmpty()) {
+    icon = nativeImage.createFromPath(join(__dirname, "static", "trayTemplate.png"));
+  }
+  const notification = new Notification({
+    title,
+    body,
+    icon: icon.isEmpty() ? undefined : icon,
+  });
+  notification.on("click", () => {
+    showWindow(targetUrl);
+  });
+  notification.show();
+}
+
+let notifyPollTimer: NodeJS.Timeout | null = null;
+let lastSeenNotifyTime = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+const notifiedDesktopIds = new Set<string>();
+
+async function startNotificationFeedPoller(): Promise<void> {
+  if (notifyPollTimer) return;
+  const poll = async () => {
+    try {
+      const jwt = await webToken();
+      if (!jwt) return;
+      const base = serverOrigin();
+      const res = await fetch(`${base}/api/notify/feed?since=${encodeURIComponent(lastSeenNotifyTime)}`, {
+        headers: { Authorization: `Bearer ${jwt}` },
+        signal: AbortSignal.timeout(8000),
+      });
+      if (res.ok) {
+        const items = (await res.json()) as Array<{
+          id: string;
+          title: string;
+          body: string;
+          url?: string;
+          created_at: string;
+        }>;
+        if (Array.isArray(items) && items.length > 0) {
+          for (const item of items) {
+            if (item.id && notifiedDesktopIds.has(item.id)) continue;
+            if (item.id) notifiedDesktopIds.add(item.id);
+            showNotification(item.title, item.body, item.url);
+            if (item.created_at > lastSeenNotifyTime) {
+              lastSeenNotifyTime = item.created_at;
+            }
+          }
+        }
+      }
+    } catch {
+      // ignore network errors
+    }
+  };
+
+  void poll();
+  notifyPollTimer = setInterval(() => void poll(), 5000);
+}
+
 function refreshTray(): void {
   if (!tray) return;
   const openAtLogin = app.getLoginItemSettings().openAtLogin;
@@ -292,6 +353,14 @@ function setupIpc(): void {
     return app.getLoginItemSettings().openAtLogin;
   });
   ipcMain.handle("app:check-updates", () => checkForUpdates(true));
+  ipcMain.handle("app:notify", (_e, options: unknown) => {
+    const opt = options as { title?: string; body?: string; url?: string } | undefined;
+    if (opt?.title) {
+      showNotification(opt.title, opt.body || "", opt.url);
+      return true;
+    }
+    return false;
+  });
 
   const forward = (channel: string) => (payload: unknown) => {
     if (win && !win.isDestroyed()) win.webContents.send(channel, payload);
@@ -312,6 +381,10 @@ if (!app.requestSingleInstanceLock()) {
     quitting = true;
   });
   app.on("will-quit", (event) => {
+    if (notifyPollTimer) {
+      clearInterval(notifyPollTimer);
+      notifyPollTimer = null;
+    }
     if (daemon.mode === "running" || daemon.mode === "starting") {
       event.preventDefault();
       void daemon.stop().finally(() => app.exit(0));
@@ -320,6 +393,9 @@ if (!app.requestSingleInstanceLock()) {
   app.on("activate", () => showWindow());
 
   void app.whenReady().then(async () => {
+    if (process.platform === "win32") {
+      app.setAppUserModelId("com.ihasy.memento.desktop");
+    }
     config = await loadConfig();
     setupIpc();
     createTray();
@@ -329,5 +405,6 @@ if (!app.requestSingleInstanceLock()) {
     else daemon.mode = "no-token";
     refreshTray();
     setupUpdater();
+    void startNotificationFeedPoller();
   });
 }

@@ -71,9 +71,15 @@ export function ProactiveAgentView() {
 
   const sendBridgeNotification = (title: string, body: string) => {
     if (typeof window !== "undefined") {
+      // 1. Mobile App (iOS / Android) WebView Bridge
       const bridge = (window as unknown as { ReactNativeWebView?: { postMessage: (msg: string) => void } }).ReactNativeWebView;
       if (bridge && typeof bridge.postMessage === "function") {
         bridge.postMessage(JSON.stringify({ type: "notify", title, body }));
+      }
+      // 2. Desktop App (Mac / Windows / Linux) Electron Bridge
+      const desktop = (window as unknown as { mementoDesktop?: { notify?: (opts: { title: string; body: string }) => void } }).mementoDesktop;
+      if (desktop && typeof desktop.notify === "function") {
+        desktop.notify({ title, body });
       }
     }
   };
