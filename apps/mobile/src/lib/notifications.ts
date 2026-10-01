@@ -49,6 +49,17 @@ export async function triggerLocalNotification(
       return;
     }
 
+    if (Platform.OS === "android") {
+      await Notifications.setNotificationChannelAsync("default", {
+        name: "Memento 通知",
+        importance: Notifications.AndroidImportance.MAX,
+        vibrationPattern: [0, 250, 250, 250],
+        lightColor: "#7C3AED",
+        enableVibrate: true,
+        showBadge: true,
+      });
+    }
+
     await Notifications.scheduleNotificationAsync({
       content: {
         title,
@@ -57,6 +68,7 @@ export async function triggerLocalNotification(
         badge: 1,
         interruptionLevel: "timeSensitive",
         data: data || {},
+        ...(Platform.OS === "android" ? { channelId: "default" } : {}),
       },
       trigger: null,
     });
