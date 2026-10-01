@@ -408,7 +408,7 @@ jobs:
       - name: Collect APK
         run: |
           mkdir -p out
-          cp apps/mobile/android/app/build/outputs/apk/release/app-release.apk "out/Memento-Mobile-${VERSION}-android.apk"
+          cp apps/mobile/android/app/build/outputs/apk/release/app-release.apk "out/Memento-${VERSION}-android.apk"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

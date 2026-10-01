@@ -407,8 +407,8 @@ memento/
 │   ├── daemon/               # @memento/daemon: collection, dispatched tasks, profile/skills
 │   └── mcp/                  # @memento/mcp: MCP memory server (ships with the desktop app)
 ├── apps/
-│   ├── desktop/              # Electron desktop app (Memento Desktop)
-│   └── mobile/               # Expo mobile app (Memento Mobile)
+│   ├── desktop/              # Electron desktop app (Memento)
+│   └── mobile/               # Expo mobile app (Memento)
 ├── mcp_server/               # Python MCP memory — PyPI: memento-brain-memory
 ├── mobile/                   # Flutter client (maintained during the migration)
 ├── server/                   # Backend FastAPI

@@ -77,7 +77,7 @@ def install_collector(token: str, server_url: str = "http://localhost:8001",
     major = _node_major()
     if major is None or major < 20:
         warn("Node.js 20+ not found, so the collector wasn't installed as a service.")
-        info(f"Install Memento Desktop ({DESKTOP_RELEASES}); it reads {cfg} and signs in on its own.")
+        info(f"Install Memento ({DESKTOP_RELEASES}); it reads {cfg} and signs in on its own.")
         info("Or install Node.js 20+ and run `./install.sh update` to set up the headless collector.")
         return
 
@@ -86,7 +86,7 @@ def install_collector(token: str, server_url: str = "http://localhost:8001",
     node = which("node") or "node"
     subprocess.run([node, str(DAEMON_CLI), "install-service"], check=True, cwd=str(REPO_ROOT))
     ok("Collector daemon installed as a background service.")
-    info("If the Memento desktop app is also running, only one of them collects (they share ~/.memento).")
+    info("If the Memento app is also running, only one of them collects (they share ~/.memento).")
 
 
 def daemon_service_installed() -> bool:

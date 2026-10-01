@@ -45,11 +45,11 @@ Electron 桌面端：
 - [x] 主进程在 utilityProcess 里跑守护进程、托盘、预加载桥（`window.mementoDesktop`）
 - [x] 登录互通：设备已有 collector token 时窗口自动登录（token-exchange → /auth/handoff）；在窗口里登录后自动取 collector token 启动采集
 - [x] 自动更新（electron-updater，GitHub Releases）、CI 打包 macOS（dmg/zip，ad-hoc 签名固定 designated requirement）/ Windows（NSIS）/ Linux（AppImage），与 Flutter 版同一个 tag 发布
-- [x] 与 Flutter 桌面版共存：检测到旧版在运行就不启动第二份采集（`MEMENTO_DAEMON_FORCE=1` 可强制）；过渡期应用名为「Memento Desktop」
+- [x] 与 Flutter 桌面版共存：检测到旧版在运行就不启动第二份采集（`MEMENTO_DAEMON_FORCE=1` 可强制）；应用名统一为「Memento」
 
 ### 阶段 3：MCP 服务改 TS
 - [x] 用官方 TS MCP SDK 移植 `mcp_server` 的远程模式：17 个工具、5 个资源全部对齐（`packages/mcp`，顺带修好了 Python 版里报错的 `memory_project_map`）
-- [x] 分发方式：随桌面端提供（`ELECTRON_RUN_AS_NODE=1 "<Memento Desktop>" ".../mcp.mjs"`），「本机采集」页给出 Claude Code / Codex / 其他工具的配置一键复制；也可 `memento-mcp` 独立运行
+- [x] 分发方式：随桌面端提供（`ELECTRON_RUN_AS_NODE=1 "<Memento>" ".../mcp.mjs"`），「本机采集」页给出 Claude Code / Codex / 其他工具的配置一键复制；也可 `memento-mcp` 独立运行
 - [x] 直连数据库模式已删除（没有在用的地方：服务端那段挂载从未生效）
 
 ### 阶段 4：Expo 手机端

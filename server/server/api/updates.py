@@ -188,7 +188,7 @@ async def check_update(
             has_update=False,
             latest_version=version,
             current_version=version,
-            title="Memento Mobile",
+            title="Memento",
             release_notes="移动端请在 GitHub Release 发布页查看安装说明。",
         )
 

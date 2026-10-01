@@ -407,8 +407,8 @@ memento/
 │   ├── daemon/               # @memento/daemon:本机采集 + 派活执行 + 画像/技能写入
 │   └── mcp/                  # @memento/mcp:MCP 记忆服务(随桌面端分发)
 ├── apps/
-│   ├── desktop/              # Electron 桌面端(Memento Desktop)
-│   └── mobile/               # Expo 手机端(Memento Mobile)
+│   ├── desktop/              # Electron 桌面端(Memento)
+│   └── mobile/               # Expo 手机端(Memento)
 ├── mcp_server/               # Python 版 MCP 记忆 — PyPI: memento-brain-memory
 ├── mobile/                   # Flutter 客户端(迁移期间照常维护)
 ├── server/                   # 后端 FastAPI

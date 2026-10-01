@@ -89,7 +89,7 @@ export default function CollectorPage() {
           <Chip tone={tone}>{state?.label ?? t.loading}</Chip>
           {active && <Chip tone={status?.online ? "success" : "warn"}>{status?.online ? c.online : c.offline}</Chip>}
           <span style={{ flex: 1 }} />
-          {info && <span style={{ fontSize: 12, color: "var(--aurora-fg3)" }}>Memento Desktop {info.version}</span>}
+          {info && <span style={{ fontSize: 12, color: "var(--aurora-fg3)" }}>Memento {info.version}</span>}
         </div>
         {status && (
           <div style={{ marginTop: 12, fontSize: 13, color: "var(--aurora-fg2)", lineHeight: 1.7 }}>

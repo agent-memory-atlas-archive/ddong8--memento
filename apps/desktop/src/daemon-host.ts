@@ -59,7 +59,7 @@ export class DaemonHost extends EventEmitter {
       }
       return;
     }
-    if (!process.env.MEMENTO_DAEMON_FORCE && (await flutterAppRunning())) {
+    if (!process.env.MEMENTO_DAEMON_FORCE && (await flutterAppRunning([process.pid]))) {
       // Its built-in collector writes no pid file: check again later, it may be quit.
       this.setMode("flutter");
       this.log("The older Memento app is running and collects itself; not starting a second collector");

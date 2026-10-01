@@ -1,4 +1,4 @@
-# Memento Mobile (Flutter 客户端)
+# Memento (Flutter 客户端)
 
 Memento 的跨平台移动端客户端（iOS & Android），采用 **Flutter 3+** 与 **Aurora Dark** 设计系统开发。
 
