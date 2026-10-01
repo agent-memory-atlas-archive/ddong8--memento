@@ -177,9 +177,31 @@ export function WechatLoginSection() {
     };
   }, [checkPoll]);
 
+  const legacyCopy = (text: string) => {
+    try {
+      const el = document.createElement("textarea");
+      el.value = text;
+      el.setAttribute("readonly", "");
+      el.style.position = "absolute";
+      el.style.left = "-9999px";
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand("copy");
+      document.body.removeChild(el);
+    } catch { /* noop */ }
+  };
+
   const copyCode = () => {
     if (!ticket) return;
-    navigator.clipboard?.writeText(ticket);
+    try {
+      if (navigator.clipboard?.writeText) {
+        navigator.clipboard.writeText(ticket).catch(() => legacyCopy(ticket));
+      } else {
+        legacyCopy(ticket);
+      }
+    } catch {
+      legacyCopy(ticket);
+    }
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -187,12 +209,20 @@ export function WechatLoginSection() {
   const handleOpenWeChat = () => {
     if (!ticket) return;
     try {
-      navigator.clipboard?.writeText(ticket);
+      if (navigator.clipboard?.writeText) {
+        navigator.clipboard.writeText(ticket).catch(() => legacyCopy(ticket));
+      } else {
+        legacyCopy(ticket);
+      }
       setCopied(true);
       setTimeout(() => setCopied(false), 2500);
-    } catch { /* noop */ }
+    } catch {
+      legacyCopy(ticket);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2500);
+    }
 
-    if (!isWeChat) {
+    if (isMobile && !isWeChat) {
       window.location.href = "weixin://";
     }
   };
@@ -350,8 +380,8 @@ export function WechatLoginSection() {
         </div>
       </div>
 
-      {/* Mobile / WeChat Quick Action Button */}
-      {(isMobile || isWeChat) && status === "pending" && !loading && (
+      {/* Universal Quick Action Button - Always visible on all browsers */}
+      {status === "pending" && !loading && (
         <button
           type="button"
           onClick={handleOpenWeChat}
@@ -376,7 +406,9 @@ export function WechatLoginSection() {
           <WechatMark size={18} />
           {isWeChat
             ? (copied ? "口令已复制，请在微信对话框发送" : "一键复制口令并在微信发送")
-            : (copied ? "已复制口令，正在前往微信…" : "复制口令并打开微信")}
+            : isMobile
+            ? (copied ? "已复制口令，正在前往微信…" : "复制口令并打开微信")
+            : (copied ? "口令已复制！请发送给公众号「深度部署」" : "一键复制 6 位口令")}
         </button>
       )}
 
