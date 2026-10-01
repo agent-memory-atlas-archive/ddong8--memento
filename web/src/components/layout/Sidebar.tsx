@@ -28,8 +28,16 @@ export default function Sidebar({ open, onClose }: { open: boolean; onClose: () 
   const { user } = useAuth();
   const [devices, setDevices] = useState<SidebarDevice[]>([]);
   const [isDesktop, setIsDesktop] = useState(false);
+  const [isMacDesktop, setIsMacDesktop] = useState(false);
 
-  useEffect(() => setIsDesktop(desktop() !== null), []);
+  useEffect(() => {
+    const d = desktop();
+    if (d) {
+      setIsDesktop(true);
+      const isMac = typeof navigator !== "undefined" && (/Mac/i.test(navigator.userAgent) || /Mac/i.test((navigator as { platform?: string }).platform || ""));
+      if (isMac) setIsMacDesktop(true);
+    }
+  }, []);
 
   useEffect(() => {
     const token = localStorage.getItem("dr_token");
@@ -110,8 +118,14 @@ export default function Sidebar({ open, onClose }: { open: boolean; onClose: () 
         }}
       >
         {/* Brand */}
-        <div className="px-4 pt-5 pb-3 flex items-center gap-3">
-          <Link href="/app" onClick={handleNavClick} className="flex items-center gap-3 flex-1 min-w-0">
+        <div
+          className={`px-4 pb-3 flex items-center gap-3 ${isMacDesktop ? "pt-12 app-region-drag" : "pt-5"}`}
+        >
+          <Link
+            href="/app"
+            onClick={handleNavClick}
+            className="flex items-center gap-3 flex-1 min-w-0 app-region-no-drag"
+          >
             <div
               style={{
                 width: 34,
@@ -147,7 +161,7 @@ export default function Sidebar({ open, onClose }: { open: boolean; onClose: () 
           <button
             onClick={onClose}
             aria-label="Close"
-            className="lg:hidden"
+            className="lg:hidden app-region-no-drag"
             style={{ color: "var(--aurora-fg3)", padding: 4 }}
           >
             <Icon name="close" size={18} />

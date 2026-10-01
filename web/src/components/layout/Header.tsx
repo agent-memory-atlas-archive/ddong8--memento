@@ -8,15 +8,25 @@ import { Icon, PlatformGlyph } from "@/components/aurora/Icon";
 import { SkinPicker, ThemeToggle } from "@/components/aurora/primitives";
 import { UserMenu } from "@/components/UserMenu";
 
+import { useEffect, useState } from "react";
+import { desktop } from "@/lib/desktop";
+
 export default function Header({ onMenuToggle }: { onMenuToggle: () => void }) {
   const { user } = useAuth();
   const { t, locale, setLocale } = useI18n();
   const { devices, selectedDeviceId, setSelectedDeviceId } = useDevice();
   const selectedDevice = devices.find((d) => d.device_id === selectedDeviceId);
+  const [isMacDesktop, setIsMacDesktop] = useState(false);
+
+  useEffect(() => {
+    if (desktop() && typeof navigator !== "undefined" && (/Mac/i.test(navigator.userAgent) || /Mac/i.test((navigator as { platform?: string }).platform || ""))) {
+      setIsMacDesktop(true);
+    }
+  }, []);
 
   return (
     <header
-      className="h-14 flex items-center justify-between px-3 sm:px-4 md:px-6 fixed top-0 left-0 lg:left-60 right-0 z-20"
+      className={`h-14 flex items-center justify-between px-3 sm:px-4 md:px-6 fixed top-0 left-0 lg:left-60 right-0 z-20 ${isMacDesktop ? "app-region-drag" : ""}`}
       style={{
         background: "var(--aurora-surface)",
         backdropFilter: "blur(20px) saturate(180%)",

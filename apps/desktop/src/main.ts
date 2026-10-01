@@ -110,6 +110,7 @@ function createWindow(show: boolean): void {
     // Matches the page while it loads, so there's no dark flash in light mode.
     backgroundColor: nativeTheme.shouldUseDarkColors ? "#0b0b12" : "#f6f5fb",
     titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
+    trafficLightPosition: process.platform === "darwin" ? { x: 18, y: 18 } : undefined,
     // Windows / Linux: the default File-Edit-View menu adds nothing to the web UI and its
     // bottom edge shows as a dark line under it. Hidden, it still answers Alt and its shortcuts.
     autoHideMenuBar: true,

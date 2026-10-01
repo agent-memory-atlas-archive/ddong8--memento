@@ -538,3 +538,27 @@ html[data-skin="baseline"] aside {
 html[data-skin="baseline"][data-theme="light"] aside {
   border-right-color: var(--aurora-border-strong) !important;
 }
+
+/* =========================================================================
+   Desktop window dragging helpers
+   ========================================================================= */
+.app-region-drag {
+  -webkit-app-region: drag;
+}
+.app-region-no-drag {
+  -webkit-app-region: no-drag;
+}
+
+header button,
+header a,
+header select,
+header input,
+header [role="button"],
+aside button,
+aside a,
+aside select,
+aside input,
+[data-no-drag] {
+  -webkit-app-region: no-drag;
+}
+
