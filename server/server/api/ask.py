@@ -166,24 +166,124 @@ async def hybrid_rank(
     return docs[:k], [d.id for d in kw_docs], list(sem_order), sem_snippets
 
 
+def clean_conversation_excerpt(text: str, tool_id: str | None = None) -> str:
+    """Transform raw conversation chunks/JSONL into human-readable dialogue excerpts."""
+    if not text:
+        return ""
+
+    from ..services.conversation_parser import _iter_json_objects, parse_conversation_line
+
+    cleaned_parts: list[str] = []
+    has_json = "{" in text and "}" in text
+    if has_json:
+        for raw_obj_str in _iter_json_objects(text):
+            raw_obj_str = raw_obj_str.strip()
+            if not raw_obj_str:
+                continue
+            norm = parse_conversation_line(raw_obj_str, tool_id or "antigravity")
+            if not norm and tool_id != "codex":
+                norm = parse_conversation_line(raw_obj_str, "codex")
+            if not norm and tool_id != "claude_code":
+                norm = parse_conversation_line(raw_obj_str, "claude_code")
+
+            if norm and norm.role in ("user", "assistant"):
+                role_label = "用户" if norm.role == "user" else "助手"
+                clean_body = norm.content.strip()
+                clean_body = re.sub(r"<USER_REQUEST>\s*(.*?)\s*</USER_REQUEST>", r"\1", clean_body, flags=re.DOTALL)
+                clean_body = re.sub(r"<ADDITIONAL_METADATA>.*?</ADDITIONAL_METADATA>", "", clean_body, flags=re.DOTALL)
+                clean_body = re.sub(r"<USER_SETTINGS_CHANGE>.*?</USER_SETTINGS_CHANGE>", "", clean_body, flags=re.DOTALL)
+                clean_body = re.sub(r"<system-reminder>.*?</system-reminder>", "", clean_body, flags=re.DOTALL)
+                clean_body = re.sub(r"<ide_opened_file>.*?</ide_opened_file>", "", clean_body, flags=re.DOTALL)
+                clean_body = clean_body.strip()
+                if clean_body and clean_body != "[Request interrupted by user]":
+                    cleaned_parts.append(f"{role_label}: {clean_body}")
+            elif norm and norm.role == "tool" and norm.tool_name:
+                cleaned_parts.append(f"[调用工具: {norm.tool_name}]")
+
+    if cleaned_parts:
+        return "\n\n".join(cleaned_parts)
+
+    plain = text.strip()
+    plain = re.sub(r"<USER_REQUEST>\s*(.*?)\s*</USER_REQUEST>", r"用户: \1", plain, flags=re.DOTALL)
+    plain = re.sub(r"<ADDITIONAL_METADATA>.*?</ADDITIONAL_METADATA>", "", plain, flags=re.DOTALL)
+    plain = re.sub(r"<USER_SETTINGS_CHANGE>.*?</USER_SETTINGS_CHANGE>", "", plain, flags=re.DOTALL)
+    plain = re.sub(r"<system-reminder>.*?</system-reminder>", "", plain, flags=re.DOTALL)
+    plain = re.sub(r"<ide_opened_file>.*?</ide_opened_file>", "", plain, flags=re.DOTALL)
+
+    if plain.startswith(("{", "{\"timestamp\"", "{\"type\"", "{\"ordinal\"")):
+        return ""
+    return plain.strip()
+
+
 async def _retrieve(
     db: AsyncSession, user: User, q: str, tool: str | None, days: int | None
 ) -> list[dict]:
     """Hybrid retrieval — the same keyword+vector RRF fusion as /api/search."""
+    from ..services.ingest_service import _is_junk_or_uuid_title
+    from ..db.models import ConversationMessage
+
     docs, _, _, sem_snippets = await hybrid_rank(db, user, q, tool, days)
+
+    # Batch preload top conversation messages for conversation documents
+    conv_doc_ids = [d.id for d in docs[:TOP_K] if d.category == "conversation"]
+    cached_msgs: dict[uuid.UUID, list[tuple[str, str]]] = {}
+    if conv_doc_ids:
+        try:
+            msg_rows = (await db.execute(
+                select(ConversationMessage.document_id, ConversationMessage.role, ConversationMessage.content)
+                .where(ConversationMessage.document_id.in_(conv_doc_ids))
+                .where(ConversationMessage.role.in_(("user", "assistant")))
+                .order_by(ConversationMessage.document_id, ConversationMessage.line_number)
+            )).all()
+            for doc_id, role, content in msg_rows:
+                if doc_id not in cached_msgs:
+                    cached_msgs[doc_id] = []
+                if len(cached_msgs[doc_id]) < 4 and content and content.strip():
+                    cached_msgs[doc_id].append((role, content.strip()))
+        except Exception as e:
+            logger.warning("Failed to preload conversation messages: %s", e)
+
     sources = []
     for d in docs[:TOP_K]:
-        # Prefer the semantically-matched chunk — it is the passage that
-        # actually answered the query. Fall back to the head of the document.
-        text = sem_snippets.get(d.id) or (d.content or "")[:CHARS_PER_DOC]
+        raw_text = sem_snippets.get(d.id) or ""
+        clean_text = ""
+        if d.category == "conversation":
+            if raw_text:
+                clean_text = clean_conversation_excerpt(raw_text, d.tool_id)
+            if not clean_text and d.id in cached_msgs and cached_msgs[d.id]:
+                clean_text = "\n\n".join(
+                    f"{'用户' if r == 'user' else '助手'}: {c}"
+                    for r, c in cached_msgs[d.id]
+                )
+            if not clean_text and d.content:
+                clean_text = clean_conversation_excerpt(d.content[:3000], d.tool_id)
+        else:
+            clean_text = raw_text or (d.content or "")[:CHARS_PER_DOC]
+            clean_text = re.sub(r"<USER_REQUEST>\s*(.*?)\s*</USER_REQUEST>", r"\1", clean_text, flags=re.DOTALL)
+            clean_text = re.sub(r"<ADDITIONAL_METADATA>.*?</ADDITIONAL_METADATA>", "", clean_text, flags=re.DOTALL)
+
+        if not clean_text:
+            clean_text = "(无文字摘要)"
+
+        # Fix display title if title is junk like "[Request interrupted by user]"
+        display_title = d.title or (d.relative_path or "").split("/")[-1]
+        if _is_junk_or_uuid_title(display_title):
+            if d.id in cached_msgs and cached_msgs[d.id]:
+                for r, c in cached_msgs[d.id]:
+                    if r == "user" and c:
+                        cand_title = c.split("\n")[0][:50].strip()
+                        if not _is_junk_or_uuid_title(cand_title):
+                            display_title = cand_title
+                            break
+
         sources.append({
             "id": str(d.id),
-            "title": d.title or (d.relative_path or "").split("/")[-1],
+            "title": display_title,
             "relative_path": d.relative_path,
             "tool_id": d.tool_id,
             "category": d.category,
             "synced_at": d.synced_at.isoformat() if d.synced_at else None,
-            "excerpt": (text or "")[:CHARS_PER_DOC],
+            "excerpt": clean_text[:CHARS_PER_DOC],
         })
     return sources
 

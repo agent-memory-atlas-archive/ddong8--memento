@@ -195,6 +195,44 @@ function formatRelativeTime(dateStr: string | null, isZh: boolean): string {
   return d.toLocaleDateString();
 }
 
+function formatExcerpt(raw: string): string {
+  if (!raw) return "";
+  let text = raw.trim();
+
+  // If text is wrapped in or contains raw JSON line(s)
+  if (text.startsWith("{") && text.endsWith("}")) {
+    try {
+      const obj = JSON.parse(text);
+      if (obj.content) {
+        text = typeof obj.content === "string" ? obj.content : JSON.stringify(obj.content);
+      } else if (obj.payload?.message) {
+        text = obj.payload.message;
+      } else if (obj.message?.content) {
+        const mc = obj.message.content;
+        text = typeof mc === "string" ? mc : JSON.stringify(mc);
+      } else if (obj.type === "session_meta") {
+        return "会话启动信息";
+      }
+    } catch {
+      // not a single JSON
+    }
+  }
+
+  // Strip Antigravity & AI tool XML tags
+  text = text.replace(/<USER_REQUEST>\s*([\s\S]*?)\s*<\/USER_REQUEST>/g, "用户: $1");
+  text = text.replace(/<ADDITIONAL_METADATA>[\s\S]*?<\/ADDITIONAL_METADATA>/g, "");
+  text = text.replace(/<USER_SETTINGS_CHANGE>[\s\S]*?<\/USER_SETTINGS_CHANGE>/g, "");
+  text = text.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, "");
+  text = text.replace(/<ide_opened_file>[\s\S]*?<\/ide_opened_file>/g, "");
+
+  // If still raw session_meta JSON
+  if (text.startsWith('{"timestamp"') && text.includes('"session_meta"')) {
+    return "会话启动信息";
+  }
+
+  return text.trim();
+}
+
 /* ── Memoized turn renderer ── */
 const UserBubble = memo(function UserBubble({ content }: { content: string }) {
   return (
@@ -2566,9 +2604,9 @@ function AskPageContent() {
               position: "relative",
               width: "min(380px, 90vw)",
               height: "100%",
-              background: "var(--aurora-bg2)",
+              background: "var(--aurora-surface-solid)",
               borderLeft: "1px solid var(--aurora-border)",
-              boxShadow: "-8px 0 28px rgba(0, 0, 0, 0.2)",
+              boxShadow: "-8px 0 32px rgba(0, 0, 0, 0.16)",
               display: "flex",
               flexDirection: "column",
               zIndex: 1,
@@ -2872,11 +2910,11 @@ function AskPageContent() {
           <div
             style={{
               position: "relative",
-              width: "min(420px, 92vw)",
+              width: "min(460px, 92vw)",
               height: "100%",
-              background: "var(--aurora-bg2)",
+              background: "var(--aurora-surface-solid)",
               borderLeft: "1px solid var(--aurora-border)",
-              boxShadow: "-8px 0 28px rgba(0, 0, 0, 0.2)",
+              boxShadow: "-8px 0 32px rgba(0, 0, 0, 0.16)",
               display: "flex",
               flexDirection: "column",
               zIndex: 1,
@@ -2947,13 +2985,14 @@ function AskPageContent() {
                 <div
                   key={s.id || si}
                   style={{
-                    padding: "12px 14px",
+                    padding: "14px 16px",
                     borderRadius: 12,
-                    background: "var(--aurora-chip)",
+                    background: "var(--aurora-bg)",
                     border: "1px solid var(--aurora-border)",
                     display: "flex",
                     flexDirection: "column",
-                    gap: 8,
+                    gap: 10,
+                    boxShadow: "0 1px 3px rgba(0, 0, 0, 0.03)",
                   }}
                 >
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
@@ -2972,10 +3011,12 @@ function AskPageContent() {
                         <span
                           style={{
                             fontSize: 10.5,
-                            padding: "1px 6px",
+                            padding: "2px 7px",
                             borderRadius: 6,
-                            background: "rgba(255,255,255,0.06)",
+                            background: "var(--aurora-surface-solid)",
+                            border: "1px solid var(--aurora-border)",
                             color: "var(--aurora-fg3)",
+                            fontWeight: 500,
                           }}
                         >
                           {s.category}
@@ -3012,20 +3053,21 @@ function AskPageContent() {
                   {s.excerpt && (
                     <div
                       style={{
-                        fontSize: 11.5,
-                        lineHeight: 1.5,
-                        color: "var(--aurora-fg3)",
-                        background: "rgba(0, 0, 0, 0.12)",
+                        fontSize: 12,
+                        lineHeight: 1.6,
+                        color: "var(--aurora-fg2)",
+                        background: "var(--aurora-surface-solid)",
                         borderRadius: 8,
-                        padding: "8px 10px",
-                        borderLeft: "2px solid var(--aurora-accent)",
+                        padding: "10px 12px",
+                        border: "1px solid var(--aurora-border)",
+                        borderLeft: "3px solid var(--aurora-accent)",
                         whiteSpace: "pre-wrap",
                         wordBreak: "break-word",
-                        maxHeight: 140,
+                        maxHeight: 180,
                         overflowY: "auto",
                       }}
                     >
-                      {s.excerpt}
+                      {formatExcerpt(s.excerpt)}
                     </div>
                   )}
                 </div>

@@ -10,6 +10,7 @@
 :root,
 :root[data-skin="aurora"][data-theme="light"] {
   --aurora-bg: #FAFAFB;
+  --aurora-bg2: #F5F5F7;
   --aurora-glow1: #A78BFA;
   --aurora-glow2: #FBA5C9;
   --aurora-glow3: #7DD3FC;
@@ -50,6 +51,7 @@
 
 :root[data-skin="aurora"][data-theme="dark"] {
   --aurora-bg: #0A0A12;
+  --aurora-bg2: #14141E;
   --aurora-glow1: #7C3AED;
   --aurora-glow2: #DB2777;
   --aurora-glow3: #0891B2;
@@ -85,6 +87,7 @@
 /* ---------- ARC (paper minimalist) ---------- */
 :root[data-skin="arc"][data-theme="light"] {
   --aurora-bg: #FAFAF7;
+  --aurora-bg2: #F2F2EE;
   --aurora-glow1: transparent;
   --aurora-glow2: transparent;
   --aurora-glow3: transparent;
@@ -117,6 +120,7 @@
 
 :root[data-skin="arc"][data-theme="dark"] {
   --aurora-bg: #0B0B0A;
+  --aurora-bg2: #141413;
   --aurora-glow1: transparent;
   --aurora-glow2: transparent;
   --aurora-glow3: transparent;
@@ -150,6 +154,7 @@
 /* ---------- BASELINE (original Tailwind aesthetic) ---------- */
 :root[data-skin="baseline"][data-theme="light"] {
   --aurora-bg: #f9fafb;
+  --aurora-bg2: #f3f4f6;
   --aurora-glow1: transparent;
   --aurora-glow2: transparent;
   --aurora-glow3: transparent;
@@ -182,6 +187,7 @@
 
 :root[data-skin="baseline"][data-theme="dark"] {
   --aurora-bg: #0f172a;
+  --aurora-bg2: #1e293b;
   --aurora-glow1: transparent;
   --aurora-glow2: transparent;
   --aurora-glow3: transparent;

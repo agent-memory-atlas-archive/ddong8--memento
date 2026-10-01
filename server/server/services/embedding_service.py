@@ -132,7 +132,22 @@ async def generate_document_embeddings(db: AsyncSession, doc: Document) -> int:
         await _set_status("skipped")
         return 0
 
-    chunks = _chunk_text(doc.content)
+    raw_text = doc.content
+    if doc.category == "conversation":
+        from ..db.models import ConversationMessage
+        msgs = (await db.execute(
+            select(ConversationMessage.role, ConversationMessage.content)
+            .where(ConversationMessage.document_id == doc.id)
+            .where(ConversationMessage.role.in_(("user", "assistant")))
+            .order_by(ConversationMessage.line_number)
+        )).all()
+        if msgs:
+            raw_text = "\n\n".join(
+                f"{'用户' if r == 'user' else '助手'}: {c.strip()}"
+                for r, c in msgs if c and c.strip()
+            )
+
+    chunks = _chunk_text(raw_text)
     if not chunks:
         await _set_status("skipped")
         return 0

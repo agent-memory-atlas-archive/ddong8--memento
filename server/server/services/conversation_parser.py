@@ -28,8 +28,8 @@ class NormalizedMessage:
 def parse_conversation_line(raw_line: str, tool_id: str) -> NormalizedMessage | None:
     """Parse a single JSONL line into a NormalizedMessage, or None if it should be skipped."""
     try:
-        obj = json.loads(raw_line)
-    except json.JSONDecodeError:
+        obj = json.loads(raw_line, strict=False)
+    except (json.JSONDecodeError, TypeError, ValueError):
         return None
 
     if not isinstance(obj, dict):
@@ -608,7 +608,7 @@ def _iter_json_objects(raw_content: str):
     """
     if not raw_content:
         return
-    decoder = json.JSONDecoder()
+    decoder = json.JSONDecoder(strict=False)
     i = 0
     n = len(raw_content)
     while i < n:

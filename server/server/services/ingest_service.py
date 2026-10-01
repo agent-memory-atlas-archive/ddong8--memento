@@ -82,6 +82,14 @@ def _is_junk_or_uuid_title(title: str | None, session_id: str | None = None) -> 
     # Codex IDE plugin recommendation / context injection
     if t_lower.startswith(("<recommended_plugins>", "<environment_context>", "<turn_aborted>")):
         return True
+    # User interruption / aborted turns
+    if t_lower.startswith(("[request interrupted", "[interrupted", "request interrupted", "turn aborted", "<turn_aborted")):
+        return True
+    # Raw JSON / XML metadata
+    if t.startswith(("{", "[{", "{\"", "{\"type\"", "{\"timestamp\"", "{\"step_index\"")):
+        return True
+    if t_lower.startswith(("<ide_opened_file>", "<environment_context>", "<user_request>")):
+        return True
     # Regex-artifact junk (e.g. a title accidentally derived from a re.search
     # pattern). Match the regex-metacharacter escapes that only appear in
     # patterns (\d \s \w \b …) — deliberately NOT \t \n \\ or the general
