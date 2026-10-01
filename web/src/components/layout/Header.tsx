@@ -6,7 +6,6 @@ import { useDevice } from "@/lib/device-context";
 import { useI18n, locales, type Locale } from "@/lib/i18n";
 import { Icon, PlatformGlyph } from "@/components/aurora/Icon";
 import { SkinPicker, ThemeToggle } from "@/components/aurora/primitives";
-import { UserMenu } from "@/components/UserMenu";
 
 import { useEffect, useState } from "react";
 import { desktop } from "@/lib/desktop";
@@ -158,9 +157,7 @@ export default function Header({ onMenuToggle }: { onMenuToggle: () => void }) {
       <div className="flex items-center gap-2 sm:gap-3">
         <div className="hidden md:block"><SkinPicker /></div>
         <ThemeToggle />
-        {user ? (
-          <UserMenu />
-        ) : (
+        {!user && (
           <Link
             href="/auth/login"
             style={{ fontSize: 13, color: "var(--aurora-accent)", fontWeight: 500, letterSpacing: "-0.01em" }}

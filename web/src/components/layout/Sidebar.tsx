@@ -7,6 +7,7 @@ import { useI18n } from "@/lib/i18n";
 import { useAuth } from "@/lib/auth-context";
 import { getApiBase, authFetch } from "@/lib/api-client";
 import { Icon } from "@/components/aurora/Icon";
+import { UserMenu } from "@/components/UserMenu";
 import { desktop } from "@/lib/desktop";
 import pkg from "../../../package.json";
 
@@ -83,7 +84,6 @@ export default function Sidebar({ open, onClose }: { open: boolean; onClose: () 
   const isDailyActive = pathname === "/daily" || pathname.startsWith("/daily/");
   const isProjectsActive = pathname === "/projects" || pathname.startsWith("/projects/");
   const isInboxActive = pathname === "/inbox" || pathname.startsWith("/inbox/");
-  const isProfileActive = pathname === "/profile" || pathname.startsWith("/profile");
 
   return (
     <>
@@ -262,14 +262,8 @@ export default function Sidebar({ open, onClose }: { open: boolean; onClose: () 
             </span>
           </Link>
 
-          {/* Settings entry */}
-          <NavRow
-            href="/profile"
-            label={t.nav.settings || "个人设置"}
-            icon="settings"
-            active={isProfileActive}
-            onClick={handleNavClick}
-          />
+          {/* User profile identity card & dropup menu */}
+          <UserMenu variant="sidebar" onNavClick={handleNavClick} />
 
           {/* Version badge */}
           <div
