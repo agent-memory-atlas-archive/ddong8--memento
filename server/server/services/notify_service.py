@@ -31,25 +31,53 @@ _risky_push_counts: dict[str, int] = {}
 _background: set[asyncio.Task] = set()
 
 
-def parse_bark_url(raw: str | None) -> tuple[str, str] | None:
-    """'https://api.day.app/KEY[/anything]' -> ('https://api.day.app', 'KEY')."""
+def parse_push_url(raw: str | None) -> tuple[str, str, str] | None:
+    """Parse a push endpoint into (provider, base_or_target_url, key_or_topic).
+    
+    Supported:
+    - Bark (iOS): 'https://api.day.app/KEY[/anything]' -> ('bark', 'https://api.day.app', 'KEY')
+    - ntfy (Android & multiplatform): 'https://ntfy.sh/TOPIC' -> ('ntfy', 'https://ntfy.sh/TOPIC', 'TOPIC')
+    """
     if not raw:
         return None
     parsed = urlparse(raw.strip())
-    if parsed.scheme != "https" or not parsed.hostname:
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
         return None
     parts = [p for p in parsed.path.split("/") if p]
     if not parts:
         return None
-    return f"https://{parsed.netloc}", parts[0]
+    
+    # Bark
+    if "api.day.app" in parsed.netloc:
+        return "bark", f"{parsed.scheme}://{parsed.netloc}", parts[0]
+    
+    # ntfy (either ntfy.sh or self-hosted ntfy instance)
+    if "ntfy" in parsed.netloc or len(parts) == 1:
+        return "ntfy", f"{parsed.scheme}://{parsed.netloc}/{parts[0]}", parts[0]
+
+    return "bark", f"{parsed.scheme}://{parsed.netloc}", parts[0]
+
+
+def parse_bark_url(raw: str | None) -> tuple[str, str] | None:
+    res = parse_push_url(raw)
+    if not res:
+        return None
+    return res[1], res[2]
+
+
+def mask_push_url(raw: str | None) -> str | None:
+    res = parse_push_url(raw)
+    if not res:
+        return None
+    provider, target, key = res
+    if provider == "bark":
+        return f"{target}/{key[:4]}…"
+    # ntfy
+    return f"{target[:-len(key)]}{key[:4]}…"
 
 
 def mask_bark_url(raw: str | None) -> str | None:
-    parsed = parse_bark_url(raw)
-    if not parsed:
-        return None
-    base, key = parsed
-    return f"{base}/{key[:4]}…"
+    return mask_push_url(raw)
 
 
 async def _is_public_host(host: str) -> bool:
@@ -67,26 +95,50 @@ async def _is_public_host(host: str) -> bool:
 
 
 async def send_bark(
-    bark_url: str,
+    push_url: str,
     title: str,
     body: str,
     *,
     url: str | None = None,
     level: str = "active",
 ) -> bool:
-    parsed = parse_bark_url(bark_url)
+    """Send push notification supporting both Bark (iOS) and ntfy (Android/Universal)."""
+    parsed = parse_push_url(push_url)
     if not parsed:
         return False
-    base, key = parsed
-    if not await _is_public_host(urlparse(base).hostname or ""):
-        logger.warning("Bark push refused: %s does not resolve to a public address", base)
+    provider, target, key = parsed
+    host = urlparse(target).hostname or ""
+    if not await _is_public_host(host):
+        logger.warning("Push refused: %s does not resolve to a public address", host)
         return False
+
+    if provider == "ntfy":
+        # Send via ntfy (Android & multiplatform)
+        headers = {
+            "Title": title.encode("utf-8").decode("latin-1", "replace"),
+            "Priority": "urgent" if level == "timeSensitive" else "default",
+            "Tags": "robot,memento",
+        }
+        if url:
+            headers["Click"] = url
+        try:
+            async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
+                resp = await client.post(target, content=body.encode("utf-8"), headers=headers)
+            if resp.status_code not in (200, 201):
+                logger.warning("ntfy push failed: HTTP %s %s", resp.status_code, resp.text[:200])
+                return False
+            return True
+        except httpx.HTTPError as e:
+            logger.warning("ntfy push failed: %s", e)
+            return False
+
+    # Default Bark (iOS)
     payload = {"device_key": key, "title": title, "body": body, "group": "Memento", "level": level}
     if url:
         payload["url"] = url
     try:
         async with httpx.AsyncClient(timeout=10, follow_redirects=False) as client:
-            resp = await client.post(f"{base}/push", json=payload)
+            resp = await client.post(f"{target}/push", json=payload)
         if resp.status_code != 200:
             logger.warning("Bark push failed: HTTP %s %s", resp.status_code, resp.text[:200])
             return False

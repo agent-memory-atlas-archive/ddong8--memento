@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..db.models import User
 from ..db.session import get_db
 from ..middleware.auth import get_current_user
-from ..services.notify_service import mask_bark_url, parse_bark_url, send_bark
+from ..services.notify_service import mask_push_url, parse_push_url, send_bark
 
 router = APIRouter(prefix="/api/notify", tags=["notify"])
 
@@ -27,7 +27,7 @@ def _settings_out(user: User) -> dict:
     prefs = user.notify_settings or {}
     return {
         "bark_configured": bool(prefs.get("bark_url")),
-        "bark_masked": mask_bark_url(prefs.get("bark_url")),
+        "bark_masked": mask_push_url(prefs.get("bark_url")),
         "notify_risky": prefs.get("notify_risky", True),
         "notify_task_done": prefs.get("notify_task_done", True),
         "notify_health": prefs.get("notify_health", True),
@@ -52,10 +52,10 @@ async def update_settings(
         raw = body.bark_url.strip()
         if not raw:
             prefs.pop("bark_url", None)
-        elif not parse_bark_url(raw):
+        elif not parse_push_url(raw):
             raise HTTPException(
                 status_code=400,
-                detail="不是有效的 Bark 推送地址，应形如 https://api.day.app/你的key",
+                detail="不是有效的推送地址。iOS 请使用 https://api.day.app/Key，Android 请使用 https://ntfy.sh/Topic",
             )
         else:
             prefs["bark_url"] = raw
