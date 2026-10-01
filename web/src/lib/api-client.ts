@@ -541,6 +541,22 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ reason: reason || "用户驳回" }),
     }),
+
+  // 24/7 Life Rhythm, Screen Time & AI Decision Advisor
+  getLifeRhythm: (days = 7) => fresh<DailyLifeRhythm[]>(`/api/life/rhythm?days=${days}`),
+  recordLifeRhythm: (body: {
+    log_date?: string;
+    wakeup_time?: string;
+    bedtime?: string;
+    sleep_hours?: number;
+    app_usages: Array<{ name: string; minutes: number; category?: string }>;
+  }) => apiFetch<{ status: string; id: string }>("/api/life/rhythm", { method: "POST", body: JSON.stringify(body) }),
+  getLifeAdvice: (log_date?: string) =>
+    apiFetch<{ status: string; advice: string }>(log_date ? `/api/life/rhythm/advice?log_date=${log_date}` : "/api/life/rhythm/advice", {
+      method: "POST",
+    }),
+  populateSampleLifeRhythm: () =>
+    apiFetch<{ status: string; message: string; advice: string }>("/api/life/rhythm/sample", { method: "POST" }),
   getTools: () => apiFetch<ToolSummary[]>("/api/tools"),
   getTool: (id: string) => apiFetch<ToolDetail>(`/api/tools/${id}`),
   getToolFiles: (id: string, category?: string, offset = 0, limit = 50) => {
@@ -852,4 +868,22 @@ export interface AgentMissionItem {
   error?: string;
   last_heartbeat?: string;
   created_at?: string;
+}
+
+export interface DailyLifeRhythm {
+  id: string;
+  date: string;
+  wakeup_time: string | null;
+  bedtime: string | null;
+  sleep_hours: number | null;
+  total_screen_minutes: number;
+  productive_minutes: number;
+  distraction_minutes: number;
+  app_usages: Array<{
+    name: string;
+    category: "work" | "social" | "entertainment" | "reading" | "general";
+    minutes: number;
+    icon?: string;
+  }>;
+  ai_advice: string | null;
 }

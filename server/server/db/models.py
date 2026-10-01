@@ -887,3 +887,34 @@ class AgentMission(Base):
         Index("idx_agent_missions_user_status", "user_id", "status"),
         Index("idx_agent_missions_heartbeat", "status", "last_heartbeat"),
     )
+
+
+# ---------------------------------------------------------------------------
+# 24/7 Life Rhythm & App Screen Time Allocation
+# ---------------------------------------------------------------------------
+class UserLifeRhythm(Base):
+    """Daily sleep, wake-up schedule, screen time, and app usage allocation."""
+
+    __tablename__ = "user_life_rhythms"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    log_date: Mapped[date] = mapped_column(Date, nullable=False)
+    wakeup_time: Mapped[str | None] = mapped_column(String(20))     # e.g. "07:35"
+    bedtime: Mapped[str | None] = mapped_column(String(20))         # e.g. "00:45"
+    sleep_hours: Mapped[float | None] = mapped_column(Float)        # e.g. 6.8
+    total_screen_minutes: Mapped[int] = mapped_column(Integer, default=0)
+    productive_minutes: Mapped[int] = mapped_column(Integer, default=0)
+    distraction_minutes: Mapped[int] = mapped_column(Integer, default=0)
+    # [{"name": "VS Code", "category": "work", "minutes": 240}, {"name": "微信", "category": "social", "minutes": 90}]
+    app_usages: Mapped[list] = mapped_column(JSONB, default=list, server_default="[]")
+    # AI lifestyle & focus diagnosis
+    ai_advice: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    user: Mapped["User"] = relationship()
+
+    __table_args__ = (
+        Index("uq_life_rhythm_user_date", "user_id", "log_date", unique=True),
+    )

@@ -406,6 +406,9 @@ export function UserMenu({ variant = "sidebar", onNavClick }: UserMenuProps) {
           <MenuLink href="/profile?tab=proactive" icon="sparkles" onClick={handleItemClick}>
             全天候管家
           </MenuLink>
+          <MenuLink href="/profile?tab=life" icon="clock" onClick={handleItemClick}>
+            作息与时间
+          </MenuLink>
           <MenuLink href="/profile" icon="settings" onClick={handleItemClick}>
             {t.profile.title || "个人设置"}
           </MenuLink>

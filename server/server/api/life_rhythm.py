@@ -1,0 +1,139 @@
+"""API endpoints for daily life rhythm, sleep tracking, screen time allocation and AI lifestyle advice."""
+
+from __future__ import annotations
+
+from datetime import date, datetime
+from typing import Any
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from ..db.models import User
+from ..db.session import get_db
+from ..middleware.auth import get_current_user
+from ..services import life_service
+
+router = APIRouter(prefix="/api/life", tags=["life_rhythm"])
+
+
+class RecordRhythmBody(BaseModel):
+    log_date: str | None = None  # YYYY-MM-DD, defaults to today
+    wakeup_time: str | None = None
+    bedtime: str | None = None
+    sleep_hours: float | None = None
+    app_usages: list[dict[str, Any]] = []
+
+
+@router.get("/rhythm")
+async def get_rhythms(
+    days: int = Query(7, ge=1, le=90),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Get user's daily life rhythms and screen time allocation for the past N days."""
+    return await life_service.get_recent_rhythms(db, user, days=days)
+
+
+@router.post("/rhythm")
+async def record_rhythm(
+    body: RecordRhythmBody,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Record daily sleep times, wake-up times, and app usage minutes."""
+    target_date = date.fromisoformat(body.log_date) if body.log_date else date.today()
+    record = await life_service.record_daily_rhythm(
+        db,
+        user,
+        log_date=target_date,
+        app_usages=body.app_usages,
+        wakeup_time=body.wakeup_time,
+        bedtime=body.bedtime,
+        sleep_hours=body.sleep_hours,
+    )
+    return {
+        "status": "ok",
+        "id": str(record.id),
+        "log_date": record.log_date.isoformat(),
+        "total_screen_minutes": record.total_screen_minutes,
+        "productive_minutes": record.productive_minutes,
+        "distraction_minutes": record.distraction_minutes,
+    }
+
+
+@router.post("/rhythm/advice")
+async def get_life_advice(
+    log_date: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Generate comprehensive AI lifestyle decisions based on tracked sleep & app usage."""
+    target_date = date.fromisoformat(log_date) if log_date else date.today()
+    advice = await life_service.generate_life_decision_advice(db, user, target_date=target_date)
+    return {"status": "ok", "advice": advice}
+
+
+@router.post("/rhythm/sample")
+async def populate_sample_rhythm(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Populate sample realistic life rhythm data so user can preview the feature immediately."""
+    from datetime import timedelta
+    today = date.today()
+
+    sample_days = [
+        {
+            "offset": 0,
+            "wakeup": "07:30",
+            "bed": "00:45",
+            "apps": [
+                {"name": "VS Code", "minutes": 260, "category": "work"},
+                {"name": "Chrome (研发文档)", "minutes": 140, "category": "work"},
+                {"name": "微信", "minutes": 95, "category": "social"},
+                {"name": "哔哩哔哩", "minutes": 55, "category": "entertainment"},
+                {"name": "微信读书", "minutes": 35, "category": "reading"},
+                {"name": "抖音", "minutes": 40, "category": "entertainment"},
+            ],
+        },
+        {
+            "offset": 1,
+            "wakeup": "07:45",
+            "bed": "01:15",
+            "apps": [
+                {"name": "VS Code", "minutes": 220, "category": "work"},
+                {"name": "Terminal", "minutes": 80, "category": "work"},
+                {"name": "微信", "minutes": 110, "category": "social"},
+                {"name": "抖音", "minutes": 85, "category": "entertainment"},
+                {"name": "小红书", "minutes": 45, "category": "entertainment"},
+            ],
+        },
+        {
+            "offset": 2,
+            "wakeup": "07:15",
+            "bed": "23:45",
+            "apps": [
+                {"name": "Cursor", "minutes": 310, "category": "work"},
+                {"name": "飞书", "minutes": 90, "category": "work"},
+                {"name": "微信读书", "minutes": 60, "category": "reading"},
+                {"name": "微信", "minutes": 70, "category": "social"},
+                {"name": "哔哩哔哩", "minutes": 30, "category": "entertainment"},
+            ],
+        },
+    ]
+
+    for item in sample_days:
+        d = today - timedelta(days=item["offset"])
+        await life_service.record_daily_rhythm(
+            db,
+            user,
+            log_date=d,
+            app_usages=item["apps"],
+            wakeup_time=item["wakeup"],
+            bedtime=item["bed"],
+        )
+
+    # Generate initial advice
+    advice = await life_service.generate_life_decision_advice(db, user, target_date=today)
+    return {"status": "ok", "message": "已生成示例作息与时间分配数据", "advice": advice}
