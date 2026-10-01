@@ -611,41 +611,32 @@ async def poll_wechat_ticket_endpoint(
     user = result.scalar_one_or_none()
 
     if user is None:
-        # Check if there is only 1 active owner with no wechat_openid
-        all_owners = (
-            await db.execute(select(User).where(User.role == "owner", User.status == "active"))
-        ).scalars().all()
-        if len(all_owners) == 1 and all_owners[0].wechat_openid is None:
-            user = all_owners[0]
-            user.wechat_openid = openid
-            await db.flush()
+        count_result = await db.execute(select(User.id).limit(1))
+        is_first_user = count_result.scalar_one_or_none() is None
+
+        if is_first_user:
+            role, user_status = "owner", "active"
+        elif settings.registration_mode == "open":
+            role, user_status = "viewer", "active"
         else:
-            count_result = await db.execute(select(User.id).limit(1))
-            is_first_user = count_result.scalar_one_or_none() is None
+            return {"status": "registration_closed", "detail": "系统注册已关闭"}
 
-            if is_first_user:
-                role, user_status = "owner", "active"
-            elif settings.registration_mode == "open":
-                role, user_status = "viewer", "active"
-            else:
-                return {"status": "registration_closed", "detail": "系统注册已关闭"}
+        base_email = f"wx_{openid[:10].lower()}@memento.local"
+        email = base_email
+        chk = await db.execute(select(User).where(User.email == email))
+        if chk.scalar_one_or_none() is not None:
+            email = f"wx_{openid[:8].lower()}_{secrets.token_hex(4)}@memento.local"
 
-            base_email = f"wx_{openid[:10].lower()}@memento.local"
-            email = base_email
-            chk = await db.execute(select(User).where(User.email == email))
-            if chk.scalar_one_or_none() is not None:
-                email = f"wx_{openid[:8].lower()}_{secrets.token_hex(4)}@memento.local"
-
-            user = User(
-                email=email,
-                name=f"微信用户_{openid[-4:]}",
-                role=role,
-                status=user_status,
-                collector_token=secrets.token_hex(32),
-                wechat_openid=openid,
-            )
-            db.add(user)
-            await db.flush()
+        user = User(
+            email=email,
+            name=f"微信用户_{openid[-4:]}",
+            role=role,
+            status=user_status,
+            collector_token=secrets.token_hex(32),
+            wechat_openid=openid,
+        )
+        db.add(user)
+        await db.flush()
 
     if user.status != "active":
         return {"status": "account_disabled", "detail": "账号已被停用"}
