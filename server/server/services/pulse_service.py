@@ -185,7 +185,7 @@ async def _send_morning_brief(db: AsyncSession, user: User, user_now: datetime) 
     open_todos = (await db.execute(
         select(Todo)
         .where(Todo.user_id == user.id, Todo.status == "open")
-        .order_by(Todo.due_date.asc().nulls_last())
+        .order_by(Todo.due_at.asc().nulls_last())
         .limit(5)
     )).scalars().all()
 
@@ -199,7 +199,10 @@ async def _send_morning_brief(db: AsyncSession, user: User, user_now: datetime) 
         if m.last_heartbeat and (datetime.now(timezone.utc) - m.last_heartbeat).total_seconds() < 180
     )
 
-    todo_lines = [f"- {t.title}" + (f" (截止: {t.due_date})" if t.due_date else "") for t in open_todos]
+    todo_lines = [
+        f"- {t.title}" + (f" (截止: {t.due_at.strftime('%m/%d %H:%M')})" if t.due_at else "")
+        for t in open_todos
+    ]
     todo_text = "\n".join(todo_lines) if todo_lines else "暂无逾期待办事项，今天状态很好！"
 
     prompt = f"""你是用户的全天候私人 AI 执事。现在是早上，请为用户撰写今日晨间简报。

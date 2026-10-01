@@ -1,6 +1,6 @@
 import Constants from "expo-constants";
 import * as Notifications from "expo-notifications";
-import { Platform } from "react-native";
+import { Alert, Linking, Platform } from "react-native";
 
 // Configure how notifications appear when the app is in the foreground
 Notifications.setNotificationHandler({
@@ -23,6 +23,32 @@ export async function triggerLocalNotification(
 ): Promise<void> {
   if (Platform.OS === "web") return;
   try {
+    const { status: existingStatus } = await Notifications.getPermissionsAsync();
+    let finalStatus = existingStatus;
+    if (existingStatus !== "granted") {
+      const { status } = await Notifications.requestPermissionsAsync({
+        ios: {
+          allowAlert: true,
+          allowBadge: true,
+          allowSound: true,
+          allowDisplayInCarPlay: true,
+          allowCriticalAlerts: true,
+        },
+      });
+      finalStatus = status;
+    }
+    if (finalStatus !== "granted") {
+      Alert.alert(
+        "未开启通知权限",
+        "Memento 需要系统通知权限才能在手机顶部弹出提醒横幅。请前往系统设置开启「允许通知」。",
+        [
+          { text: "去设置", onPress: () => void Linking.openSettings() },
+          { text: "取消", style: "cancel" },
+        ],
+      );
+      return;
+    }
+
     await Notifications.scheduleNotificationAsync({
       content: {
         title,

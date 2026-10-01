@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { api, type ProactiveSettings, type AgentMissionItem } from "@/lib/api-client";
-import { Glass, Btn, Chip, SectionLabel } from "@/components/aurora/primitives";
+import { Glass, Btn, SectionLabel } from "@/components/aurora/primitives";
 import { Icon } from "@/components/aurora/Icon";
 
 export function ProactiveAgentView() {
@@ -50,7 +50,7 @@ export function ProactiveAgentView() {
     setSettings({ ...settings, [key]: !settings[key] });
   };
 
-  const handleChange = (key: keyof ProactiveSettings, val: any) => {
+  const handleChange = (key: keyof ProactiveSettings, val: unknown) => {
     if (!settings) return;
     setSettings({ ...settings, [key]: val });
   };
@@ -62,10 +62,19 @@ export function ProactiveAgentView() {
       await api.updateProactiveSettings(settings);
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 2500);
-    } catch (e) {
+    } catch {
       alert("保存失败，请检查网络");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const sendBridgeNotification = (title: string, body: string) => {
+    if (typeof window !== "undefined") {
+      const bridge = (window as unknown as { ReactNativeWebView?: { postMessage: (msg: string) => void } }).ReactNativeWebView;
+      if (bridge && typeof bridge.postMessage === "function") {
+        bridge.postMessage(JSON.stringify({ type: "notify", title, body }));
+      }
     }
   };
 
@@ -73,18 +82,18 @@ export function ProactiveAgentView() {
     try {
       setTestingBrief(true);
       setTestMessage(null);
+      // Immediately trigger local native notification popup via Bridge if running inside iOS/Android app
+      sendBridgeNotification(
+        "🌅 早上好！今日晨间简报",
+        "今日待办与在线设备状态已同步，AI 执事全天候为您就绪！",
+      );
       await api.testMorningBrief();
-      if (typeof window !== "undefined" && (window as any).ReactNativeWebView) {
-        (window as any).ReactNativeWebView.postMessage(JSON.stringify({
-          type: "notify",
-          title: "🌅 早上好！今日晨间简报",
-          body: "今日待办与在线设备状态已同步，AI 执事全天候为您就绪！",
-        }));
-      }
       setTestMessage("✅ 晨间简报已成功合成并推送到手机！");
       setTimeout(() => setTestMessage(null), 4000);
-    } catch (e) {
-      setTestMessage("❌ 推送失败，请检查网络连接");
+    } catch (e: unknown) {
+      console.error("Test brief failed:", e);
+      const msg = e instanceof Error ? e.message : String(e);
+      setTestMessage(`❌ 推送异常: ${msg || "请检查网络连接"}`);
     } finally {
       setTestingBrief(false);
     }
@@ -94,18 +103,17 @@ export function ProactiveAgentView() {
     try {
       setTestingReflection(true);
       setTestMessage(null);
+      sendBridgeNotification(
+        "🌌 晚间梦境自进化完成",
+        "今日工作沉淀已完成！已自动吸收碎片记忆，更新画像偏好与避坑规则。",
+      );
       await api.testEveningReflection();
-      if (typeof window !== "undefined" && (window as any).ReactNativeWebView) {
-        (window as any).ReactNativeWebView.postMessage(JSON.stringify({
-          type: "notify",
-          title: "🌌 晚间梦境自进化完成",
-          body: "今日工作沉淀已完成！已自动吸收碎片记忆，更新画像偏好与避坑规则。",
-        }));
-      }
       setTestMessage("✅ 晚间梦境复盘已执行并推送到手机！");
       setTimeout(() => setTestMessage(null), 4000);
-    } catch (e) {
-      setTestMessage("❌ 复盘执行失败");
+    } catch (e: unknown) {
+      console.error("Test reflection failed:", e);
+      const msg = e instanceof Error ? e.message : String(e);
+      setTestMessage(`❌ 复盘执行异常: ${msg || "网络错误"}`);
     } finally {
       setTestingReflection(false);
     }

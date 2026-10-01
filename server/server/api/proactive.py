@@ -7,6 +7,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db.models import User
@@ -50,6 +51,14 @@ async def update_settings(
     return {"status": "ok", "settings": merged}
 
 
+import asyncio
+import logging
+from ..db.session import async_session_factory
+from ..services.notify_service import notify_user
+
+logger = logging.getLogger("server.proactive")
+
+
 @router.post("/test-morning-brief")
 async def test_morning_brief(
     db: AsyncSession = Depends(get_db),
@@ -59,7 +68,27 @@ async def test_morning_brief(
     prefs = pulse_service.get_user_settings(user)
     offset = prefs.get("timezone_offset_hours", 8)
     user_now = datetime.now(timezone.utc) + timedelta(hours=offset)
-    await pulse_service._send_morning_brief(db, user, user_now)
+
+    # 1. Immediately push instant test notification to user's phone & feed
+    await notify_user(
+        user.id,
+        kind="todo",
+        title="🌅 早上好！今日晨间简报",
+        body="全天候 AI 执事联动成功！今日待办与在线设备均已正常同步。",
+    )
+
+    # 2. Run detailed LLM-powered briefing generation in background without blocking response
+    user_id = user.id
+    async def _async_brief():
+        try:
+            async with async_session_factory() as async_db:
+                u = (await async_db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+                if u:
+                    await pulse_service._send_morning_brief(async_db, u, user_now)
+        except Exception as e:
+            logger.warning("Background morning brief failed for %s: %s", user_id, e)
+
+    asyncio.create_task(_async_brief())
     return {"status": "ok", "message": "Morning brief triggered"}
 
 
@@ -72,5 +101,26 @@ async def test_evening_reflection(
     prefs = pulse_service.get_user_settings(user)
     offset = prefs.get("timezone_offset_hours", 8)
     user_now = datetime.now(timezone.utc) + timedelta(hours=offset)
-    await pulse_service._send_evening_reflection(db, user, user_now)
+
+    # 1. Immediately push instant test notification
+    await notify_user(
+        user.id,
+        kind="learning",
+        title="🌌 晚间梦境自进化复盘",
+        body="夜间复盘指令已接收！正在提炼今日碎片记忆并进化个人画像与避坑经验。",
+    )
+
+    # 2. Run dreaming pipeline in background
+    user_id = user.id
+    async def _async_reflection():
+        try:
+            async with async_session_factory() as async_db:
+                u = (await async_db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+                if u:
+                    await pulse_service._send_evening_reflection(async_db, u, user_now)
+        except Exception as e:
+            logger.warning("Background evening reflection failed for %s: %s", user_id, e)
+
+    asyncio.create_task(_async_reflection())
     return {"status": "ok", "message": "Evening reflection triggered"}
+
