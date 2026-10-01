@@ -509,6 +509,38 @@ export const api = {
       { method: "PUT", body: JSON.stringify({ targets }) },
     ).finally(_invalidateProfile),
   getPublicStats: () => apiFetch<PublicStats>("/api/public/stats"),
+
+  // 24/7 Always-On Proactive Agent API
+  getProactiveSettings: () => fresh<ProactiveSettings>("/api/proactive/settings"),
+  updateProactiveSettings: (body: Partial<ProactiveSettings>) =>
+    apiFetch<{ status: string; settings: ProactiveSettings }>("/api/proactive/settings", {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
+  testMorningBrief: () =>
+    apiFetch<{ status: string; message: string }>("/api/proactive/test-morning-brief", { method: "POST" }),
+  testEveningReflection: () =>
+    apiFetch<{ status: string; message: string }>("/api/proactive/test-evening-reflection", { method: "POST" }),
+
+  // 24/7 Autonomous Missions API
+  getMissions: (status?: string) =>
+    fresh<AgentMissionItem[]>(status ? `/api/missions?status=${encodeURIComponent(status)}` : "/api/missions"),
+  getMissionDetail: (id: string) => fresh<AgentMissionItem>(`/api/missions/${id}`),
+  createMission: (body: { title: string; goal: string; risk_level?: string; context?: any }) =>
+    apiFetch<{ id: string; status: string; title: string }>("/api/missions", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  approveMission: (id: string) =>
+    apiFetch<{ status: string; message: string }>(`/api/missions/${id}/approve`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    }),
+  rejectMission: (id: string, reason?: string) =>
+    apiFetch<{ status: string; message: string }>(`/api/missions/${id}/reject`, {
+      method: "POST",
+      body: JSON.stringify({ reason: reason || "用户驳回" }),
+    }),
   getTools: () => apiFetch<ToolSummary[]>("/api/tools"),
   getTool: (id: string) => apiFetch<ToolDetail>(`/api/tools/${id}`),
   getToolFiles: (id: string, category?: string, offset = 0, limit = 50) => {
@@ -791,4 +823,33 @@ export interface AskConversationDetail {
   cwd: string | null;
   created_at: string | null;
   updated_at: string | null;
+}
+
+export interface ProactiveSettings {
+  enabled: boolean;
+  morning_brief_enabled: boolean;
+  morning_brief_time: string;
+  evening_reflection_enabled: boolean;
+  evening_reflection_time: string;
+  device_alert_enabled: boolean;
+  quiet_hours_start: string;
+  quiet_hours_end: string;
+  timezone_offset_hours: number;
+  auto_approve_safe: boolean;
+}
+
+export interface AgentMissionItem {
+  id: string;
+  title: string;
+  goal: string;
+  status: "queued" | "running" | "waiting_approval" | "paused" | "succeeded" | "failed" | "cancelled";
+  risk_level: string;
+  current_step: number;
+  steps_count?: number;
+  steps?: any[];
+  pending_action?: any;
+  summary?: string;
+  error?: string;
+  last_heartbeat?: string;
+  created_at?: string;
 }

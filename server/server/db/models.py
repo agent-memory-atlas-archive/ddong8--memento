@@ -280,6 +280,8 @@ class User(Base):
     wechat_openid: Mapped[str | None] = mapped_column(String(64), unique=True, index=True)
     # Phone push settings: {"bark_url", "notify_risky", "notify_task_done"}.
     notify_settings: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}")
+    # 24/7 Always-on agent preferences: {"enabled", "morning_brief", "evening_reflection", "quiet_hours", etc.}
+    proactive_settings: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
@@ -851,3 +853,37 @@ class EvalRun(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     __table_args__ = (Index("idx_eval_run_user_at", "user_id", "created_at"),)
+
+
+# ---------------------------------------------------------------------------
+# 24/7 Autonomous Background Missions
+# ---------------------------------------------------------------------------
+class AgentMission(Base):
+    """Long-running autonomous agent missions scheduled and driven 24/7."""
+
+    __tablename__ = "agent_missions"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    goal: Mapped[str] = mapped_column(Text, nullable=False)
+    # queued | running | waiting_approval | paused | succeeded | failed | cancelled
+    status: Mapped[str] = mapped_column(String(40), default="running", nullable=False)
+    risk_level: Mapped[str] = mapped_column(String(20), default="low", nullable=False)
+    current_step: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    steps: Mapped[list] = mapped_column(JSONB, default=list, server_default="[]")
+    context: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}")
+    approval_token: Mapped[str | None] = mapped_column(String(64))
+    pending_action: Mapped[dict | None] = mapped_column(JSONB)
+    summary: Mapped[str | None] = mapped_column(Text)
+    error: Mapped[str | None] = mapped_column(Text)
+    last_heartbeat: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    user: Mapped["User"] = relationship()
+
+    __table_args__ = (
+        Index("idx_agent_missions_user_status", "user_id", "status"),
+        Index("idx_agent_missions_heartbeat", "status", "last_heartbeat"),
+    )

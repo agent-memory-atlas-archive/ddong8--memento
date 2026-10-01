@@ -403,6 +403,9 @@ export function UserMenu({ variant = "sidebar", onNavClick }: UserMenuProps) {
           </div>
 
           {/* Quick shortcuts */}
+          <MenuLink href="/profile?tab=proactive" icon="sparkles" onClick={handleItemClick}>
+            全天候管家
+          </MenuLink>
           <MenuLink href="/profile" icon="settings" onClick={handleItemClick}>
             {t.profile.title || "个人设置"}
           </MenuLink>

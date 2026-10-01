@@ -8,7 +8,7 @@ from collections.abc import AsyncGenerator
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .api import admin, ask, auth, conversations, daily, dashboard, data_io, devices, documents, events, health, hierarchy, ingest, install_bootstrap, learning, memory, notify, profile, projects, public, search, share, skills, todos, tools, updates
+from .api import admin, ask, auth, conversations, daily, dashboard, data_io, devices, documents, events, health, hierarchy, ingest, install_bootstrap, learning, memory, missions, notify, proactive, profile, projects, public, search, share, skills, todos, tools, updates
 # Aliased: `server.api.tasks` (remote device task queue) is a different module
 # from the `server.tasks` package (Celery jobs). Importing it bare here would
 # read as the latter.
@@ -81,6 +81,9 @@ def _run_migrations(conn) -> None:
     # User.notify_settings — phone push (Bark) preferences.
     if "notify_settings" not in user_cols:
         conn.execute(text("ALTER TABLE users ADD COLUMN notify_settings JSONB NOT NULL DEFAULT '{}'"))
+    # User.proactive_settings — 24/7 Always-on agent preferences (morning brief, evening reflection, quiet hours, auto-missions)
+    if "proactive_settings" not in user_cols:
+        conn.execute(text("ALTER TABLE users ADD COLUMN proactive_settings JSONB NOT NULL DEFAULT '{}'"))
 
     # User.github_id — GitHub OAuth login. Partial unique index: one account
     # per GitHub identity, while the many github_id IS NULL rows stay allowed.
@@ -402,7 +405,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     compaction_task = asyncio.create_task(_schedule_daily_compaction())
     # Fire-and-forget warmup of the embedding server (5s after boot)
     warmup_task = asyncio.create_task(_warm_embedding_server())
+    # Start 24/7 Always-on Proactive Agent Pulse service
+    from .services.pulse_service import start_proactive_pulse, stop_proactive_pulse
+    await start_proactive_pulse()
     yield
+    await stop_proactive_pulse()
     compaction_task.cancel()
     warmup_task.cancel()
     merge_task.cancel()
@@ -456,6 +463,8 @@ app.include_router(public.router)
 app.include_router(share.router)
 app.include_router(data_io.router)
 app.include_router(updates.router)
+app.include_router(missions.router)
+app.include_router(proactive.router)
 
 
 @app.get("/")
