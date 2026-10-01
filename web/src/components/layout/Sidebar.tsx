@@ -60,10 +60,8 @@ export default function Sidebar({ open, onClose }: { open: boolean; onClose: () 
     href: string;
     label: string;
     icon: IconName;
-    highlight?: boolean;
-    badge?: string;
   }[] = [
-    { href: "/ask", label: t.nav.ask, icon: "sparkles", highlight: true, badge: "AI" },
+    { href: "/ask", label: t.nav.ask, icon: "sparkles" },
     { href: "/memory", label: t.nav.memory || "Memory", icon: "brain" },
     { href: "/memory/persona", label: t.nav.persona, icon: "user" },
     { href: "/skills", label: t.nav.skills, icon: "zap" },
@@ -75,6 +73,20 @@ export default function Sidebar({ open, onClose }: { open: boolean; onClose: () 
     ...(isDesktop ? [{ href: "/collector", label: t.nav.collector, icon: "terminal" as IconName }] : []),
     ...(isAdmin ? [{ href: "/admin", label: t.nav.admin, icon: "lock" as IconName }] : []),
   ];
+
+  const [appVersion, setAppVersion] = useState(WEB_VERSION);
+
+  useEffect(() => {
+    authFetch(`${getApiBase()}/api/system/update/check`)
+      .then((r) => r.json())
+      .then((d) => {
+        if (d?.latest_version) {
+          const v = d.latest_version.startsWith("v") ? d.latest_version : `v${d.latest_version}`;
+          setAppVersion(v);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const OVERVIEW_HREF = "/app";
 
@@ -258,13 +270,15 @@ export default function Sidebar({ open, onClose }: { open: boolean; onClose: () 
         <div className="p-3">
           <div
             style={{
-              fontSize: 10.5,
+              fontSize: 11,
               color: "var(--aurora-fg4)",
               textAlign: "center",
               padding: "6px 0",
+              fontFamily: "var(--font-mono, ui-monospace, monospace)",
+              letterSpacing: "0.02em",
             }}
           >
-            {WEB_VERSION}
+            {appVersion}
           </div>
         </div>
       </aside>
@@ -277,7 +291,6 @@ function NavRow({
   label,
   icon,
   active,
-  highlight,
   badge,
   onClick,
 }: {
@@ -292,24 +305,15 @@ function NavRow({
   const [hover, setHover] = useState(false);
   const color = active
     ? "var(--aurora-accent)"
-    : highlight
-    ? "var(--aurora-fg1)"
     : hover
     ? "var(--aurora-fg1)"
     : "var(--aurora-fg2)";
 
   const bg = active
     ? "var(--aurora-accent-soft)"
-    : highlight
-    ? "color-mix(in srgb, var(--aurora-accent) 9%, transparent)"
     : hover
     ? "var(--aurora-chip)"
     : "transparent";
-
-  const border =
-    highlight && !active
-      ? "1px solid color-mix(in srgb, var(--aurora-accent) 22%, transparent)"
-      : "1px solid transparent";
 
   return (
     <Link
@@ -326,9 +330,8 @@ function NavRow({
         borderRadius: 12,
         color,
         background: bg,
-        border,
         fontSize: 13.5,
-        fontWeight: active || highlight ? 500 : 400,
+        fontWeight: active ? 600 : 400,
         letterSpacing: "-0.01em",
         transition: "all .15s",
       }}
@@ -336,7 +339,7 @@ function NavRow({
       <Icon
         name={icon}
         size={16}
-        style={highlight && !active ? { color: "var(--aurora-brand-from)" } : undefined}
+        color={active ? "var(--aurora-accent)" : undefined}
       />
       <span style={{ flex: 1 }}>{label}</span>
       {badge && (
@@ -346,10 +349,9 @@ function NavRow({
             fontWeight: 700,
             padding: "1.5px 6px",
             borderRadius: 6,
-            background: "var(--aurora-brand-grad)",
-            color: "#fff",
+            background: active ? "var(--aurora-accent)" : "var(--aurora-chip)",
+            color: active ? "#fff" : "var(--aurora-fg3)",
             letterSpacing: "0.05em",
-            boxShadow: "0 2px 6px -1px rgba(124,58,237,0.45)",
           }}
         >
           {badge}

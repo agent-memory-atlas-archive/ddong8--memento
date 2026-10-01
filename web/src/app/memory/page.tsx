@@ -319,9 +319,9 @@ export default function MemoryPage() {
         <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-[var(--aurora-surface)] border border-[var(--aurora-border)] self-start sm:self-auto">
           <button
             onClick={() => setActiveTab("tree")}
-            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-medium transition-all ${
               activeTab === "tree"
-                ? "bg-[var(--aurora-accent)] text-black shadow-xs"
+                ? "bg-[var(--aurora-surface-solid)] text-[var(--aurora-accent)] shadow-xs font-semibold"
                 : "text-[var(--aurora-fg3)] hover:text-[var(--aurora-fg1)]"
             }`}
           >
@@ -331,9 +331,9 @@ export default function MemoryPage() {
 
           <button
             onClick={() => setActiveTab("graph")}
-            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-medium transition-all ${
               activeTab === "graph"
-                ? "bg-[var(--aurora-accent)] text-black shadow-xs"
+                ? "bg-[var(--aurora-surface-solid)] text-[var(--aurora-accent)] shadow-xs font-semibold"
                 : "text-[var(--aurora-fg3)] hover:text-[var(--aurora-fg1)]"
             }`}
           >
@@ -343,9 +343,9 @@ export default function MemoryPage() {
 
           <button
             onClick={() => setActiveTab("search")}
-            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-medium transition-all ${
               activeTab === "search"
-                ? "bg-[var(--aurora-accent)] text-black shadow-xs"
+                ? "bg-[var(--aurora-surface-solid)] text-[var(--aurora-accent)] shadow-xs font-semibold"
                 : "text-[var(--aurora-fg3)] hover:text-[var(--aurora-fg1)]"
             }`}
           >
@@ -355,9 +355,9 @@ export default function MemoryPage() {
 
           <button
             onClick={() => setActiveTab("dreaming")}
-            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-medium transition-all ${
               activeTab === "dreaming"
-                ? "bg-[var(--aurora-accent)] text-black shadow-xs"
+                ? "bg-[var(--aurora-surface-solid)] text-[var(--aurora-accent)] shadow-xs font-semibold"
                 : "text-[var(--aurora-fg3)] hover:text-[var(--aurora-fg1)]"
             }`}
           >
