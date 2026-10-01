@@ -2,10 +2,12 @@ import * as SecureStore from "expo-secure-store";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { ApiError } from "./api";
+import { registerForPushNotificationsAsync, syncPushTokenToServer, unregisterPushTokenFromServer } from "./notifications";
 
 export const DEFAULT_SERVER = "https://mem.ihasy.com";
 const SERVER_KEY = "memento.server";
 const TOKEN_KEY = "memento.token";
+const PUSH_TOKEN_KEY = "memento.push_token";
 
 interface Session {
   ready: boolean;
@@ -50,10 +52,40 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     })();
   }, []);
 
+  // Whenever a valid user token is available, ensure mobile push token is registered to the server
+  useEffect(() => {
+    if (!ready || !token) return;
+    void (async () => {
+      try {
+        const pushToken = await registerForPushNotificationsAsync();
+        if (pushToken) {
+          await SecureStore.setItemAsync(PUSH_TOKEN_KEY, pushToken);
+          await syncPushTokenToServer(server, token, pushToken);
+        }
+      } catch (err) {
+        console.warn("Mobile push token auto-register failed:", err);
+      }
+    })();
+  }, [ready, server, token]);
+
   const signOut = useCallback(async () => {
-    await SecureStore.deleteItemAsync(TOKEN_KEY);
+    try {
+      const [storedToken, pushTok] = await Promise.all([
+        SecureStore.getItemAsync(TOKEN_KEY),
+        SecureStore.getItemAsync(PUSH_TOKEN_KEY),
+      ]);
+      if (storedToken && pushTok) {
+        await unregisterPushTokenFromServer(server, storedToken, pushTok);
+      }
+    } catch {
+      // ignore network errors on sign out
+    }
+    await Promise.all([
+      SecureStore.deleteItemAsync(TOKEN_KEY),
+      SecureStore.deleteItemAsync(PUSH_TOKEN_KEY),
+    ]);
     setToken(null);
-  }, []);
+  }, [server]);
 
   const signIn = useCallback(async (serverUrl: string, email: string, password: string) => {
     const base = (serverUrl.trim() || DEFAULT_SERVER).replace(/\/+$/, "");

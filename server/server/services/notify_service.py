@@ -153,6 +153,49 @@ def task_link(task_id: str) -> str | None:
     return f"{base}/tasks/{task_id}" if base else None
 
 
+async def send_expo_push(
+    tokens: list[str],
+    title: str,
+    body: str,
+    *,
+    url: str | None = None,
+    level: str = "active",
+) -> bool:
+    """Send native push notifications directly to the Memento mobile app via Expo Push service."""
+    if not tokens:
+        return False
+    messages = [
+        {
+            "to": tok,
+            "title": title,
+            "body": body,
+            "sound": "default",
+            "priority": "high" if level == "timeSensitive" else "default",
+            "data": {"url": url} if url else {},
+            "_displayInForeground": True,
+        }
+        for tok in tokens
+        if tok.startswith("ExponentPushToken") or tok.startswith("ExpoPushToken")
+    ]
+    if not messages:
+        return False
+
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.post(
+                "https://exp.host/--/api/v2/push/send",
+                json=messages,
+                headers={"Accept": "application/json", "Accept-Encoding": "gzip, deflate", "Content-Type": "application/json"},
+            )
+        if resp.status_code != 200:
+            logger.warning("Expo native push failed: HTTP %s %s", resp.status_code, resp.text[:200])
+            return False
+        return True
+    except httpx.HTTPError as e:
+        logger.warning("Expo native push failed: %s", e)
+        return False
+
+
 async def notify_user(
     user_id: uuid.UUID | str | None,
     kind: str,
@@ -161,7 +204,7 @@ async def notify_user(
     *,
     url: str | None = None,
 ) -> bool:
-    """Push to the user's phone if they set up Bark and haven't turned `kind` off.
+    """Push to the user's phone via native Memento app (or Bark/ntfy if configured).
 
     kind: "risky" (agent did something dangerous) | "task_done" (task finished
     while nobody was watching) | "health" (background AI jobs or nightly
@@ -173,15 +216,30 @@ async def notify_user(
     async with async_session_factory() as db:
         user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
     prefs = (user.notify_settings or {}) if user else {}
-    if not prefs.get("bark_url"):
-        return False
+    
     toggle = {
         "risky": "notify_risky", "health": "notify_health", "learning": "notify_learning", "todo": "notify_todo",
     }.get(kind, "notify_task_done")
     if not prefs.get(toggle, True):
         return False
     level = "timeSensitive" if kind == "risky" else "active"
-    return await send_bark(prefs["bark_url"], title, body, url=url, level=level)
+
+    sent = False
+
+    # 1. Native Memento Mobile App Push (No third-party app needed)
+    device_tokens = prefs.get("device_tokens") or []
+    if device_tokens:
+        native_ok = await send_expo_push(device_tokens, title, body, url=url, level=level)
+        if native_ok:
+            sent = True
+
+    # 2. Bark / ntfy channel (if configured as secondary or fallback)
+    if prefs.get("bark_url"):
+        bark_ok = await send_bark(prefs["bark_url"], title, body, url=url, level=level)
+        if bark_ok:
+            sent = True
+
+    return sent
 
 
 def allow_risky_push(task_id: str) -> bool:

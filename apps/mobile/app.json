@@ -28,6 +28,13 @@
       "expo-status-bar",
       "expo-secure-store",
       [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#7C3AED"
+        }
+      ],
+      [
         "expo-build-properties",
         {
           "ios": {

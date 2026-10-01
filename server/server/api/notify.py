@@ -25,9 +25,12 @@ class NotifySettingsBody(BaseModel):
 
 def _settings_out(user: User) -> dict:
     prefs = user.notify_settings or {}
+    device_tokens = prefs.get("device_tokens") or []
     return {
         "bark_configured": bool(prefs.get("bark_url")),
         "bark_masked": mask_push_url(prefs.get("bark_url")),
+        "device_tokens_count": len(device_tokens),
+        "native_configured": len(device_tokens) > 0,
         "notify_risky": prefs.get("notify_risky", True),
         "notify_task_done": prefs.get("notify_task_done", True),
         "notify_health": prefs.get("notify_health", True),
@@ -74,12 +77,80 @@ async def update_settings(
     return _settings_out(user)
 
 
+class DeviceTokenBody(BaseModel):
+    token: str
+    platform: str | None = "mobile"
+
+
+@router.post("/device-token")
+async def register_device_token(
+    body: DeviceTokenBody,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
+    """Register native mobile push token for Memento App."""
+    tok = body.token.strip()
+    if not tok:
+        raise HTTPException(status_code=400, detail="Token cannot be empty")
+
+    prefs = dict(user.notify_settings or {})
+    tokens: list[str] = list(prefs.get("device_tokens") or [])
+    if tok not in tokens:
+        tokens.append(tok)
+        prefs["device_tokens"] = tokens
+        user.notify_settings = prefs
+        await db.commit()
+    return {"status": "ok", "registered": True, "device_tokens_count": len(tokens)}
+
+
+@router.delete("/device-token")
+async def unregister_device_token(
+    body: DeviceTokenBody,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
+    """Unregister mobile push token upon sign-out."""
+    tok = body.token.strip()
+    prefs = dict(user.notify_settings or {})
+    tokens: list[str] = list(prefs.get("device_tokens") or [])
+    if tok in tokens:
+        tokens.remove(tok)
+        prefs["device_tokens"] = tokens
+        user.notify_settings = prefs
+        await db.commit()
+    return {"status": "ok", "unregistered": True}
+
+
 @router.post("/test")
 async def send_test(user: User = Depends(get_current_user)) -> dict:
-    bark_url = (user.notify_settings or {}).get("bark_url")
-    if not bark_url:
-        raise HTTPException(status_code=400, detail="还没有设置 Bark 推送地址")
-    ok = await send_bark(bark_url, "Memento 测试通知", "收到这条说明推送已经通了。之后危险操作和任务完成都会推到这里。")
-    if not ok:
-        raise HTTPException(status_code=502, detail="推送失败，请检查 Bark 地址是否正确")
-    return {"ok": True}
+    prefs = user.notify_settings or {}
+    bark_url = prefs.get("bark_url")
+    device_tokens = prefs.get("device_tokens") or []
+
+    if not bark_url and not device_tokens:
+        raise HTTPException(status_code=400, detail="未检测到已绑定的 Memento 手机端或外部推送地址")
+
+    from ..services.notify_service import send_expo_push
+    sent = False
+
+    if device_tokens:
+        native_ok = await send_expo_push(
+            device_tokens,
+            "Memento 手机端原生测试通知",
+            "恭喜！您的 Memento 移动端原生推送已完全通畅，无需借助任何第三方外部 App！",
+        )
+        if native_ok:
+            sent = True
+
+    if bark_url:
+        bark_ok = await send_bark(
+            bark_url,
+            "Memento 测试通知",
+            "收到这条说明推送已经通了。危险操作和任务完成都会推到这里。",
+        )
+        if bark_ok:
+            sent = True
+
+    if not sent:
+        raise HTTPException(status_code=502, detail="推送发送失败，请检查网络或重新登录移动端")
+    return {"ok": True, "native_mobile_sent": bool(device_tokens)}

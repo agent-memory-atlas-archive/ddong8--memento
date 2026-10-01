@@ -3,6 +3,7 @@ import { Redirect } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, BackHandler, Linking, Platform, StyleSheet, Text, View } from "react-native";
+import * as Notifications from "expo-notifications";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { WebView, type WebViewMessageEvent, type WebViewNavigation, type WebViewProps } from "react-native-webview";
 
@@ -56,6 +57,27 @@ export default function WebShell() {
     });
     return () => sub.remove();
   }, []);
+
+  // Open destination URL when a native push notification is tapped
+  useEffect(() => {
+    void Notifications.getLastNotificationResponseAsync().then((response) => {
+      const target = response?.notification.request.content.data?.url as string | undefined;
+      if (target && web.current) {
+        const fullUrl = target.startsWith("http") ? target : `${origin}${target.startsWith("/") ? "" : "/"}${target}`;
+        web.current.injectJavaScript(`window.location.assign(${JSON.stringify(fullUrl)}); true;`);
+      }
+    });
+
+    const sub = Notifications.addNotificationResponseReceivedListener((response) => {
+      const target = response.notification.request.content.data?.url as string | undefined;
+      if (target && web.current) {
+        const fullUrl = target.startsWith("http") ? target : `${origin}${target.startsWith("/") ? "" : "/"}${target}`;
+        web.current.injectJavaScript(`window.location.assign(${JSON.stringify(fullUrl)}); true;`);
+      }
+    });
+
+    return () => sub.remove();
+  }, [origin]);
 
   const onNavigation = useCallback(
     (nav: WebViewNavigation) => {
