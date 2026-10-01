@@ -46,6 +46,7 @@ export function UserMenu() {
           width: 32,
           height: 32,
           borderRadius: 9999,
+          overflow: "hidden",
           background: "var(--aurora-primary-grad)",
           color: "#fff",
           display: "inline-flex",
@@ -54,14 +55,24 @@ export function UserMenu() {
           fontSize: 13,
           fontWeight: 600,
           cursor: "pointer",
-          border: 0,
+          border: "1px solid var(--aurora-border)",
+          padding: 0,
           boxShadow: open
             ? "0 0 0 2px color-mix(in srgb, var(--aurora-accent) 40%, transparent)"
             : "none",
           transition: "box-shadow .15s",
         }}
       >
-        {initial}
+        {user.avatar_url ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={user.avatar_url}
+            alt={displayName}
+            style={{ width: "100%", height: "100%", objectFit: "cover" }}
+          />
+        ) : (
+          initial
+        )}
       </button>
 
       {open && (
@@ -71,7 +82,7 @@ export function UserMenu() {
             position: "absolute",
             top: "calc(100% + 8px)",
             right: 0,
-            minWidth: 220,
+            minWidth: 230,
             background: "var(--aurora-surface)",
             border: "1px solid var(--aurora-border)",
             borderRadius: 14,
@@ -82,56 +93,89 @@ export function UserMenu() {
             zIndex: 50,
           }}
         >
-          {/* Header: name + email + role chip */}
+          {/* Header: avatar + name + email + role chip */}
           <div
             style={{
               padding: "10px 12px 12px",
               borderBottom: "1px solid var(--aurora-border)",
               marginBottom: 4,
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
             }}
           >
             <div
               style={{
+                width: 36,
+                height: 36,
+                borderRadius: 9999,
+                overflow: "hidden",
+                background: "var(--aurora-primary-grad)",
+                color: "#fff",
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
                 fontSize: 14,
                 fontWeight: 600,
-                color: "var(--aurora-fg1)",
-                letterSpacing: "-0.01em",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
+                flexShrink: 0,
+                border: "1px solid var(--aurora-border)",
               }}
-              title={displayName}
             >
-              {displayName}
+              {user.avatar_url ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={user.avatar_url}
+                  alt={displayName}
+                  style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                />
+              ) : (
+                initial
+              )}
             </div>
-            {user.name && (
+            <div style={{ minWidth: 0, flex: 1 }}>
               <div
                 style={{
-                  fontSize: 11,
-                  color: "var(--aurora-fg4)",
-                  marginTop: 2,
+                  fontSize: 13,
+                  fontWeight: 600,
+                  color: "var(--aurora-fg1)",
+                  letterSpacing: "-0.01em",
                   overflow: "hidden",
                   textOverflow: "ellipsis",
                   whiteSpace: "nowrap",
                 }}
-                title={user.email}
+                title={displayName}
               >
-                {user.email}
+                {displayName}
               </div>
-            )}
-            <div
-              style={{
-                display: "inline-block",
-                marginTop: 6,
-                fontSize: 10,
-                padding: "2px 8px",
-                borderRadius: 9999,
-                background: "var(--aurora-chip)",
-                color: "var(--aurora-fg3)",
-                fontWeight: 500,
-              }}
-            >
-              {user.role}
+              {user.name && (
+                <div
+                  style={{
+                    fontSize: 11,
+                    color: "var(--aurora-fg4)",
+                    marginTop: 1,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                  title={user.email}
+                >
+                  {user.email}
+                </div>
+              )}
+              <div
+                style={{
+                  display: "inline-block",
+                  marginTop: 4,
+                  fontSize: 10,
+                  padding: "1px 6px",
+                  borderRadius: 9999,
+                  background: "var(--aurora-chip)",
+                  color: "var(--aurora-fg3)",
+                  fontWeight: 500,
+                }}
+              >
+                {user.role}
+              </div>
             </div>
           </div>
 

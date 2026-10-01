@@ -75,6 +75,11 @@ class Settings(BaseSettings):
     wechat_token: str = "memento_wx_token_2026"
     wechat_encoding_aes_key: str = ""
 
+    # WeChat Open Platform / Service Account OAuth login (optional enterprise integration)
+    wechat_app_id: str = ""
+    wechat_app_secret: str = ""
+    wechat_oauth_scope: str = "snsapi_login"  # snsapi_login (PC扫码) or snsapi_userinfo (服务号网页)
+
     def validate_production(self) -> None:
         """Refuse to start with dev defaults when debug is off."""
         bad = []

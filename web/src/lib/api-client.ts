@@ -368,6 +368,7 @@ export interface UserInfo {
   role: string;
   status: string;
   collector_token?: string | null;
+  avatar_url?: string | null;
 }
 
 // --- API functions ---
@@ -568,6 +569,33 @@ export const api = {
       body: JSON.stringify({ email, password }),
     }),
   getMe: (token: string) => apiFetch<UserInfo>("/api/auth/me", { token }),
+  updateProfile: (token: string, data: { name?: string | null; avatar_url?: string | null }) =>
+    apiFetch<UserInfo>("/api/auth/me", {
+      method: "PATCH",
+      token,
+      body: JSON.stringify(data),
+    }),
+  uploadAvatar: async (token: string, file: File): Promise<UserInfo> => {
+    const form = new FormData();
+    form.append("file", file);
+    const res = await fetch(`${getApiBase()}/api/auth/me/avatar`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body: form,
+    });
+    if (!res.ok) {
+      const txt = await res.text();
+      let msg = txt;
+      try {
+        const parsed = JSON.parse(txt);
+        if (parsed.detail) msg = parsed.detail;
+      } catch { /* fallback to txt */ }
+      throw new Error(msg);
+    }
+    return await res.json();
+  },
+  deleteAvatar: (token: string) =>
+    apiFetch<UserInfo>("/api/auth/me/avatar", { method: "DELETE", token }),
   refreshToken: (token: string) =>
     apiFetch<TokenResponse>("/api/auth/refresh", { method: "POST", token }),
   getWechatTicket: () => apiFetch<{ ticket: string; expires_in: number }>("/api/auth/wechat/ticket", { skipCache: true }),

@@ -15,9 +15,10 @@ type IconName =
   | "settings" | "target" | "code" | "terminal" | "edit"
   | "activity" | "zap" | "grid" | "inbox" | "command"
   | "arrow_up" | "arrow_down" | "refresh" | "check" | "close"
-  | "menu" | "trash" | "link" | "copy" | "external_link" | "eye";
+  | "menu" | "trash" | "link" | "copy" | "external_link" | "eye" | "camera";
 
 const PATHS: Record<IconName, React.ReactElement> = {
+  camera: <><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></>,
   home: <><path d="M3 11l9-8 9 8"/><path d="M5 10v10a1 1 0 0 0 1 1h4v-7h4v7h4a1 1 0 0 0 1-1V10"/></>,
   calendar: <><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></>,
   search: <><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></>,
