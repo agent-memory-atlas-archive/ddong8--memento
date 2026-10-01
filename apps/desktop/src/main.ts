@@ -210,7 +210,7 @@ async function checkForUpdates(manual: boolean): Promise<void> {
   try {
     const result = await autoUpdater.checkForUpdates();
     if (manual && !result?.isUpdateAvailable) {
-      void dialog.showMessageBox({ message: "已是最新版本", detail: `Memento Desktop ${app.getVersion()}` });
+      void dialog.showMessageBox({ message: "已是最新版本", detail: `Memento ${app.getVersion()}` });
     }
   } catch (e) {
     if (manual) void dialog.showMessageBox({ type: "warning", message: "检查更新失败", detail: e instanceof Error ? e.message : String(e) });
@@ -225,7 +225,7 @@ function setupUpdater(): void {
       type: "info",
       buttons: ["现在重启", "稍后"],
       defaultId: 0,
-      message: `Memento Desktop ${info.version} 已下载`,
+      message: `Memento ${info.version} 已下载`,
       detail: "重启后生效；也可以稍后退出时自动安装。",
     });
     if (response === 0) {

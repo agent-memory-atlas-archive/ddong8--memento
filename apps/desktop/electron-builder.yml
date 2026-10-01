@@ -1,6 +1,6 @@
 appId: com.ihasy.memento.desktop
-productName: Memento Desktop
-artifactName: Memento-Desktop-${version}-${os}-${arch}.${ext}
+productName: Memento
+artifactName: Memento-${version}-${os}-${arch}.${ext}
 directories:
   output: release
   buildResources: build
@@ -39,10 +39,10 @@ win:
 nsis:
   oneClick: true
   perMachine: false
-  shortcutName: Memento Desktop
+  shortcutName: Memento
 linux:
   # The default comes from the npm name (@memento/desktop), which isn't a valid file name.
-  executableName: memento-desktop
+  executableName: memento
   target:
     - target: AppImage
       arch: [x64]
