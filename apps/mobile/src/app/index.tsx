@@ -214,6 +214,7 @@ export default function WebShell() {
         onContentProcessDidTerminate={() => web.current?.reload()}
         onRenderProcessGone={() => web.current?.reload()}
         allowsBackForwardNavigationGestures
+        pullToRefreshEnabled={true}
         decelerationRate="normal"
         textZoom={100}
         webviewDebuggingEnabled={__DEV__}
