@@ -48,11 +48,17 @@ async def _run() -> dict:
                 continue
             totals["events"] += result["events"]
             totals["new_topics"] += len(result["new_topics"])
-            if result["new_topics"] and await ai_health.claim_alert(f"learned:{user.id}", PUSH_COOLDOWN):
+            auto_accepted = result.get("auto_accepted") or []
+            if auto_accepted and await ai_health.claim_alert(f"learned:auto:{user.id}", PUSH_COOLDOWN):
+                await notify_user(
+                    user.id, "learning", "Memento 已即时采纳新铁律",
+                    summarize_new_topics(auto_accepted) + "。该规则已自动同步写入常驻画像，后续所有交互和终端已即时生效。",
+                )
+            elif result["new_topics"] and await ai_health.claim_alert(f"learned:{user.id}", PUSH_COOLDOWN):
                 verb = "从最近 30 天里找到" if result["backfill"] else "刚学到"
                 await notify_user(
                     user.id, "learning", f"Memento {verb}新的规矩",
-                    summarize_new_topics(result["new_topics"]) + "。到「记忆库 → 常驻画像」确认后，各个 AI 工具下次同步就会用上。",
+                    summarize_new_topics(result["new_topics"]) + "。到「个人设置 → 常驻画像」确认后，各个 AI 工具下次同步就会用上。",
                 )
         return totals
 

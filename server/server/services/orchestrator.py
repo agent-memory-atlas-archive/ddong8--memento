@@ -862,16 +862,44 @@ async def _tool_memory(db: AsyncSession, user: User, name: str, args: dict) -> d
     return {"error": f"unknown tool: {name}"}
 
 
-async def agent_memory_prompt(db: AsyncSession, user: User) -> str:
-    """The memory-tool rules plus the published skills the agent can pull."""
+async def agent_memory_prompt(
+    db: AsyncSession, user: User, project: str | None = None, query: str | None = None
+) -> str:
+    """The memory-tool rules plus published profile, pitfalls, and available skills."""
     from ..db.models import Skill
+    from .guidance_service import guidance_for, render_guidance
+    from .profile_service import get_published_profile
 
-    skills = (await db.execute(
-        select(Skill).where(Skill.user_id == user.id, Skill.status == "published")
-        .order_by(Skill.last_seen_at.desc().nulls_last()).limit(20)
-    )).scalars().all()
-    listing = "\n".join(f"- {s.slug}：{s.description[:150]}" for s in skills) or "（还没有）"
-    return f"{ORCHESTRATOR_MEMORY}\n\n【可用技能】\n{listing}"
+    parts: list[str] = [ORCHESTRATOR_MEMORY]
+
+    # 1. Resident Profile (About Me)
+    try:
+        prof = await get_published_profile(db, user)
+        if prof and (prof.content or "").strip():
+            parts.append(f"【用户常驻画像与最高铁律 (关于我)】\n{prof.content.strip()}")
+    except Exception as e:
+        logger.warning("Failed to load user profile in agent_memory_prompt: %s", e)
+
+    # 2. Guidance (Rules & Pitfalls)
+    try:
+        g = await guidance_for(db, user, action="agent", project=project, query=query)
+        if g.get("rules") or g.get("pitfalls") or g.get("skills"):
+            parts.append(render_guidance(g))
+    except Exception as e:
+        logger.warning("Failed to load guidance in agent_memory_prompt: %s", e)
+
+    # 3. All Published Skills Listing
+    try:
+        skills = (await db.execute(
+            select(Skill).where(Skill.user_id == user.id, Skill.status == "published")
+            .order_by(Skill.last_seen_at.desc().nulls_last()).limit(20)
+        )).scalars().all()
+        listing = "\n".join(f"- {s.slug}：{s.description[:150]}" for s in skills) or "（还没有）"
+        parts.append(f"【全部可用技能列表】\n{listing}")
+    except Exception as e:
+        logger.warning("Failed to list skills in agent_memory_prompt: %s", e)
+
+    return "\n\n".join(parts)
 
 
 async def _dispatch_tool(db: AsyncSession, user: User, name: str, args: dict):

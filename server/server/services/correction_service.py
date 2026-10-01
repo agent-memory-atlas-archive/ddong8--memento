@@ -157,6 +157,30 @@ def over_limit(content: str) -> bool:
                for bucket in (scopes.projects, scopes.devices) for lines in bucket.values())
 
 
+def should_auto_accept(topic: CorrectionTopic, text: str) -> bool:
+    """Determine if a correction topic is high-confidence enough to auto-accept without waiting for manual confirmation.
+    
+    Conditions:
+    1. Repeated pushback (times >= 2) on the same topic, OR
+    2. Strong imperative/prohibitive rules (e.g. 必须, 严禁, 始终, 统一用, 不要用, 禁止, 先给结论, always, never)
+       under rule, communication, workflow, or tech category with a clear statement.
+    """
+    stmt = (topic.statement or "").strip()
+    if not stmt or len(stmt) < 4:
+        return False
+    if topic.times >= 2:
+        return True
+    strong_signals = (
+        "必须", "严禁", "始终", "统一用", "不要用", "不得", "别再", "禁止", "一律",
+        "先给结论", "直接给结论", "不用角标", "用中文", "中文回复", "不能", "铁律",
+        "always", "never", "must", "do not",
+    )
+    combined = f"{stmt} {text}".lower()
+    return any(sig in combined for sig in strong_signals) and topic.category in (
+        "rule", "communication", "workflow", "tech"
+    )
+
+
 def scope_for(kind: str, said: Said) -> str:
     """"project:chembook" / "device:DESKTOP-KR9IPP4" / "global", from where it was said."""
     if kind == "project" and said.project:
@@ -318,6 +342,7 @@ async def learn_from_corrections(db: AsyncSession, user: User) -> dict[str, Any]
             key=lambda pair: pair[0].said_at,
         )
         resolved: dict[int, CorrectionTopic] = {}
+        auto_accepted: list[CorrectionTopic] = []
         for s, n in occurrences:
             item = items[n]
             fp = fingerprint(s)
@@ -357,6 +382,18 @@ async def learn_from_corrections(db: AsyncSession, user: User) -> dict[str, Any]
             topic.times += 1
             topic.first_at = min(filter(None, [topic.first_at, s.said_at]))
             topic.last_at = max(filter(None, [topic.last_at, s.said_at]))
+
+            # Fast-path self-evolution: auto-accept high-confidence or repeated rules
+            if topic.status == "pending" and should_auto_accept(topic, s.text):
+                try:
+                    await accept_topic(db, user, topic)
+                    auto_accepted.append(topic)
+                    logger.info("Fast-path self-evolution: auto-accepted rule for user %s: %s", user.id, topic.statement)
+                except ProfileFull:
+                    logger.warning("Profile is full; leaving topic %s as pending", topic.id)
+                except Exception as e:
+                    logger.warning("Failed to auto-accept topic %s: %s", topic.id, e)
+
             db.add(CorrectionEvent(
                 user_id=user.id, topic_id=topic.id, quote=s.text, said_at=s.said_at,
                 repeat=repeat, already_learned=learned, fingerprint=fp,
@@ -369,6 +406,7 @@ async def learn_from_corrections(db: AsyncSession, user: User) -> dict[str, Any]
         "scanned": len(said),
         "events": events,
         "new_topics": [t.statement for t in new_topics if t.status == "pending"],
+        "auto_accepted": [t.statement for t in auto_accepted],
         "backfill": cursor is None,
     }
 

@@ -582,6 +582,8 @@ def _build_messages(
     images: list[str] | None = None,
     attachments: list[dict] | None = None,
     core_memories: list[UserMemory] | None = None,
+    user_profile_content: str | None = None,
+    guidance_data: dict | None = None,
 ) -> list[dict]:
     context = "\n\n".join(
         f"[{i + 1}] {s['title']} ({s['tool_id']}, {s['relative_path']})\n{s['excerpt']}"
@@ -589,6 +591,19 @@ def _build_messages(
     ) or "(没有检索到相关资料)"
 
     system_prompt = SYSTEM_PROMPT
+
+    # 1. Resident User Profile (Highest priority: About Me, Rules, Preferences)
+    if user_profile_content and user_profile_content.strip():
+        system_prompt += f"\n\n【用户常驻画像与最高铁律 (关于我)】\n{user_profile_content.strip()}"
+
+    # 2. Guidance (Rules & Pitfalls & Verified Skills)
+    if guidance_data:
+        from ..services.guidance_service import render_guidance
+        rendered_g = render_guidance(guidance_data)
+        if rendered_g.strip():
+            system_prompt += f"\n\n{rendered_g.strip()}"
+
+    # 3. Core Memories
     if core_memories:
         core_snippets = "\n".join(
             f"- [{m.category}/{m.key}]: {m.content}" for m in core_memories
@@ -817,6 +832,24 @@ async def _append_conversation_turns(
             if cwd:
                 conv.cwd = cwd
             await session.commit()
+
+            # Fast-path self-evolution: if the user's message contains pushback or correction signals,
+            # immediately trigger a background scan to absorb rules without waiting for nightly runs.
+            user_id_val = conv.user_id
+            from ..services.correction_service import looks_like_pushback, learn_from_corrections
+            from ..services.notify_service import spawn
+
+            if looks_like_pushback(user_content):
+                async def _bg_instant_learn():
+                    try:
+                        async with async_session_factory() as sdb:
+                            u = await sdb.get(User, user_id_val)
+                            if u:
+                                await learn_from_corrections(sdb, u)
+                    except Exception as ex:
+                        logger.debug("Background instant correction scan skipped: %s", ex)
+
+                spawn(_bg_instant_learn())
     except Exception as e:
         logger.exception("Failed to persist conversation %s turns: %s", conv_id, e)
 
@@ -1367,6 +1400,19 @@ async def ask(
         limit=12,
     )
 
+    # 1. Fetch published resident profile (About Me & core rules)
+    from ..services.profile_service import get_published_profile
+    prof = await get_published_profile(db, _user)
+    user_prof_content = prof.content.strip() if prof and (prof.content or "").strip() else None
+
+    # 2. Fetch guidance (pitfalls, rules, verified skills)
+    from ..services.guidance_service import guidance_for
+    guidance_data = None
+    try:
+        guidance_data = await guidance_for(db, _user, action="ask", project=body.project_id, query=question)
+    except Exception as e:
+        logger.warning("Failed to load guidance in ask: %s", e)
+
     messages = _build_messages(
         question,
         sources,
@@ -1377,6 +1423,8 @@ async def ask(
         images=body.images,
         attachments=body.attachments,
         core_memories=core_mems,
+        user_profile_content=user_prof_content,
+        guidance_data=guidance_data,
     )
 
     is_agent = (body.agent_mode or (bool(device_id) and device_id != "ask_only")) and device_id != "ask_only"
@@ -1387,7 +1435,7 @@ async def ask(
     if is_agent:
         from ..services.orchestrator import ORCHESTRATOR_SYSTEM, agent_memory_prompt, run_agent_loop
 
-        system_content = ORCHESTRATOR_SYSTEM + "\n\n" + await agent_memory_prompt(db, _user)
+        system_content = ORCHESTRATOR_SYSTEM + "\n\n" + await agent_memory_prompt(db, _user, project=body.project_id, query=question)
         if core_mems:
             core_snippets = "\n".join(
                 f"- [{m.category}/{m.key}]: {m.content}" for m in core_mems
