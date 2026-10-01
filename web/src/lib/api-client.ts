@@ -569,6 +569,15 @@ export const api = {
   getMe: (token: string) => apiFetch<UserInfo>("/api/auth/me", { token }),
   refreshToken: (token: string) =>
     apiFetch<TokenResponse>("/api/auth/refresh", { method: "POST", token }),
+  getWechatTicket: () => apiFetch<{ ticket: string; expires_in: number }>("/api/auth/wechat/ticket"),
+  pollWechatTicket: (ticket: string) =>
+    apiFetch<{
+      status: "pending" | "success" | "expired" | "not_found" | "registration_closed" | "account_disabled";
+      access_token?: string;
+      user_id?: string;
+      role?: string;
+      detail?: string;
+    }>(`/api/auth/wechat/poll?ticket=${encodeURIComponent(ticket)}`),
   // === Account-level backup/restore ===
   //
   // exportData hits a binary endpoint so we go around apiFetch's

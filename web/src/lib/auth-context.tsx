@@ -9,6 +9,7 @@ interface AuthState {
   token: string | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
+  setAccessToken: (token: string) => Promise<UserInfo>;
   register: (email: string, password: string, name?: string, inviteCode?: string) => Promise<UserInfo>;
   logout: () => void;
   refreshMe: () => Promise<UserInfo | null>;
@@ -171,6 +172,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     maybePostTokenToDesktop(me.collector_token);
   };
 
+  const setAccessToken = async (newToken: string) => {
+    setToken(newToken);
+    localStorage.setItem("dr_token", newToken);
+    const me = await api.getMe(newToken);
+    setUser(me);
+    maybePostTokenToDesktop(me.collector_token);
+    return me;
+  };
+
   const register = async (email: string, password: string, name?: string, inviteCode?: string) => {
     return await api.register(email, password, name, inviteCode);
   };
@@ -194,7 +204,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, token, loading, login, register, logout, refreshMe, setUser }}>
+    <AuthContext.Provider value={{ user, token, loading, login, setAccessToken, register, logout, refreshMe, setUser }}>
       {children}
     </AuthContext.Provider>
   );

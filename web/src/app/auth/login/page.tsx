@@ -8,8 +8,10 @@ import { useI18n } from "@/lib/i18n";
 import { Icon } from "@/components/aurora/Icon";
 import { Btn, Glass, GhostInput } from "@/components/aurora/primitives";
 import { GithubLoginSection, useGithubEnabled, useOauthErrorMessage } from "../github-login";
+import { WechatLoginSection, WechatMark } from "../wechat-login";
 
 export default function LoginPage() {
+  const [authTab, setAuthTab] = useState<"wechat" | "password">("wechat");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -77,7 +79,7 @@ export default function LoginPage() {
         </h1>
         <p
           style={{
-            margin: "6px 0 22px",
+            margin: "6px 0 20px",
             fontSize: 13,
             color: "var(--aurora-fg3)",
             textAlign: "center",
@@ -86,42 +88,110 @@ export default function LoginPage() {
         >
           {t.app.title}
         </p>
-        <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          {banner && (
-            <div
-              style={{
-                padding: 10,
-                borderRadius: 10,
-                background: "rgba(239,68,68,0.10)",
-                color: "#B91C1C",
-                fontSize: 13,
-                letterSpacing: "-0.005em",
-              }}
-            >
-              {banner}
-            </div>
-          )}
-          <GhostInput
-            type="email"
-            placeholder={t.auth.email}
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-            icon="user"
-          />
-          <GhostInput
-            type="password"
-            placeholder={t.auth.password}
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            icon="lock"
-          />
-          <Btn type="submit" size="lg" style={{ marginTop: 6, width: "100%", justifyContent: "center" }} iconRight="arrow_right">
-            {t.login}
-          </Btn>
-        </form>
-        {githubEnabled && <GithubLoginSection />}
+
+        {/* Tab Switcher */}
+        <div
+          style={{
+            display: "flex",
+            background: "var(--aurora-bg2)",
+            borderRadius: 12,
+            padding: 3,
+            marginBottom: 20,
+            border: "1px solid var(--aurora-border)",
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => setAuthTab("wechat")}
+            style={{
+              flex: 1,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 6,
+              padding: "8px 0",
+              fontSize: 13,
+              fontWeight: authTab === "wechat" ? 600 : 400,
+              color: authTab === "wechat" ? "var(--aurora-fg1)" : "var(--aurora-fg4)",
+              background: authTab === "wechat" ? "var(--aurora-bg1)" : "transparent",
+              borderRadius: 10,
+              border: "none",
+              cursor: "pointer",
+              boxShadow: authTab === "wechat" ? "0 2px 8px rgba(0,0,0,0.06)" : "none",
+              transition: "all 0.15s ease",
+            }}
+          >
+            <WechatMark size={16} />
+            微信扫码
+          </button>
+          <button
+            type="button"
+            onClick={() => setAuthTab("password")}
+            style={{
+              flex: 1,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 6,
+              padding: "8px 0",
+              fontSize: 13,
+              fontWeight: authTab === "password" ? 600 : 400,
+              color: authTab === "password" ? "var(--aurora-fg1)" : "var(--aurora-fg4)",
+              background: authTab === "password" ? "var(--aurora-bg1)" : "transparent",
+              borderRadius: 10,
+              border: "none",
+              cursor: "pointer",
+              boxShadow: authTab === "password" ? "0 2px 8px rgba(0,0,0,0.06)" : "none",
+              transition: "all 0.15s ease",
+            }}
+          >
+            <Icon name="lock" size={15} />
+            密码登录
+          </button>
+        </div>
+
+        {authTab === "wechat" ? (
+          <WechatLoginSection />
+        ) : (
+          <>
+            <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              {banner && (
+                <div
+                  style={{
+                    padding: 10,
+                    borderRadius: 10,
+                    background: "rgba(239,68,68,0.10)",
+                    color: "#B91C1C",
+                    fontSize: 13,
+                    letterSpacing: "-0.005em",
+                  }}
+                >
+                  {banner}
+                </div>
+              )}
+              <GhostInput
+                type="email"
+                placeholder={t.auth.email}
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                icon="user"
+              />
+              <GhostInput
+                type="password"
+                placeholder={t.auth.password}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                icon="lock"
+              />
+              <Btn type="submit" size="lg" style={{ marginTop: 6, width: "100%", justifyContent: "center" }} iconRight="arrow_right">
+                {t.login}
+              </Btn>
+            </form>
+            {githubEnabled && <GithubLoginSection />}
+          </>
+        )}
         <p style={{ textAlign: "center", fontSize: 12, color: "var(--aurora-fg4)", marginTop: 18 }}>
           {t.auth.noAccount}{" "}
           <Link href="/auth/register" style={{ color: "var(--aurora-accent)", fontWeight: 500 }}>
