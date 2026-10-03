@@ -8,6 +8,8 @@ import {
   type AppStateStatus,
   BackHandler,
   Keyboard,
+  type KeyboardEvent,
+  LayoutAnimation,
   Linking,
   Platform,
   Pressable,
@@ -235,13 +237,26 @@ export default function WebShell() {
   const [page, setPage] = useState<{ bg: string; dark: boolean } | null>(null);
   const [activeTab, setActiveTab] = useState<TabId | null>("ask");
   const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [initialLoaded, setInitialLoaded] = useState(false);
 
   useEffect(() => {
     const showEvt = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
     const hideEvt = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
-    const showSub = Keyboard.addListener(showEvt, () => setKeyboardVisible(true));
-    const hideSub = Keyboard.addListener(hideEvt, () => setKeyboardVisible(false));
+    const showSub = Keyboard.addListener(showEvt, (e: KeyboardEvent) => {
+      if (Platform.OS === "ios") {
+        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      }
+      setKeyboardVisible(true);
+      setKeyboardHeight(e.endCoordinates.height);
+    });
+    const hideSub = Keyboard.addListener(hideEvt, () => {
+      if (Platform.OS === "ios") {
+        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      }
+      setKeyboardVisible(false);
+      setKeyboardHeight(0);
+    });
     return () => {
       showSub.remove();
       hideSub.remove();
@@ -426,48 +441,50 @@ export default function WebShell() {
     <View style={{ flex: 1, backgroundColor: bg }}>
       <StatusBar style={dark ? "light" : "dark"} />
       <View style={{ height: insets.top, backgroundColor: bg }} />
-      <WebView
-        ref={web}
-        source={{ uri: start }}
-        style={{ flex: 1, backgroundColor: bg }}
-        applicationNameForUserAgent={USER_AGENT_SUFFIX}
-        injectedJavaScript={INJECTED_CLIENT_HELPERS}
-        injectedJavaScriptBeforeContentLoaded={INJECTED_CLIENT_HELPERS}
-        onMessage={onMessage}
-        onNavigationStateChange={onNavigation}
-        onShouldStartLoadWithRequest={onShouldStart}
-        onOpenWindow={(e) => onOpenWindow(e.nativeEvent.targetUrl)}
-        onContentProcessDidTerminate={() => web.current?.reload()}
-        onRenderProcessGone={() => web.current?.reload()}
-        allowsBackForwardNavigationGestures
-        pullToRefreshEnabled={true}
-        bounces={true}
-        overScrollMode="never"
-        showsHorizontalScrollIndicator={false}
-        showsVerticalScrollIndicator={false}
-        dataDetectorTypes="none"
-        decelerationRate="normal"
-        textZoom={100}
-        automaticallyAdjustContentInsets={false}
-        contentInsetAdjustmentBehavior="never"
-        keyboardDisplayRequiresUserAction={false}
-        hideKeyboardAccessoryView={true}
-        webviewDebuggingEnabled={__DEV__}
-        startInLoadingState={!initialLoaded}
-        onLoadEnd={() => setInitialLoaded(true)}
-        renderLoading={() => (
-          <View style={[StyleSheet.absoluteFill, { alignItems: "center", justifyContent: "center", backgroundColor: bg }]}>
-            <ActivityIndicator color={t.accent} />
-          </View>
-        )}
-        renderError={() => (
-          <View style={[StyleSheet.absoluteFill, { alignItems: "center", justifyContent: "center", gap: 14, padding: 24, backgroundColor: t.bg }]}>
-            <Text style={{ fontSize: 16, fontWeight: "600", color: t.fg1 }}>连不上 Memento</Text>
-            <Text style={{ fontSize: 13, color: t.fg3, textAlign: "center" }}>检查网络后重试（{origin}）</Text>
-            <Button onPress={() => web.current?.reload()}>重试</Button>
-          </View>
-        )}
-      />
+      <View style={{ flex: 1, marginBottom: Platform.OS === "ios" ? keyboardHeight : 0 }}>
+        <WebView
+          ref={web}
+          source={{ uri: start }}
+          style={{ flex: 1, backgroundColor: bg }}
+          applicationNameForUserAgent={USER_AGENT_SUFFIX}
+          injectedJavaScript={INJECTED_CLIENT_HELPERS}
+          injectedJavaScriptBeforeContentLoaded={INJECTED_CLIENT_HELPERS}
+          onMessage={onMessage}
+          onNavigationStateChange={onNavigation}
+          onShouldStartLoadWithRequest={onShouldStart}
+          onOpenWindow={(e) => onOpenWindow(e.nativeEvent.targetUrl)}
+          onContentProcessDidTerminate={() => web.current?.reload()}
+          onRenderProcessGone={() => web.current?.reload()}
+          allowsBackForwardNavigationGestures
+          pullToRefreshEnabled={true}
+          bounces={true}
+          overScrollMode="never"
+          showsHorizontalScrollIndicator={false}
+          showsVerticalScrollIndicator={false}
+          dataDetectorTypes="none"
+          decelerationRate="normal"
+          textZoom={100}
+          automaticallyAdjustContentInsets={false}
+          contentInsetAdjustmentBehavior="never"
+          keyboardDisplayRequiresUserAction={false}
+          hideKeyboardAccessoryView={true}
+          webviewDebuggingEnabled={__DEV__}
+          startInLoadingState={!initialLoaded}
+          onLoadEnd={() => setInitialLoaded(true)}
+          renderLoading={() => (
+            <View style={[StyleSheet.absoluteFill, { alignItems: "center", justifyContent: "center", backgroundColor: bg }]}>
+              <ActivityIndicator color={t.accent} />
+            </View>
+          )}
+          renderError={() => (
+            <View style={[StyleSheet.absoluteFill, { alignItems: "center", justifyContent: "center", gap: 14, padding: 24, backgroundColor: t.bg }]}>
+              <Text style={{ fontSize: 16, fontWeight: "600", color: t.fg1 }}>连不上 Memento</Text>
+              <Text style={{ fontSize: 13, color: t.fg3, textAlign: "center" }}>检查网络后重试（{origin}）</Text>
+              <Button onPress={() => web.current?.reload()}>重试</Button>
+            </View>
+          )}
+        />
+      </View>
       {!keyboardVisible ? (
         <View
           style={{

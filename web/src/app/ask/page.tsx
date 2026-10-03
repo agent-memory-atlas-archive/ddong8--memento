@@ -2551,6 +2551,11 @@ function AskPageContent() {
                 type="text"
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
+                onFocus={() => {
+                  setTimeout(() => {
+                    bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+                  }, 120);
+                }}
                 onKeyDown={onKeyDown}
                 placeholder={placeholderText}
                 icon={
