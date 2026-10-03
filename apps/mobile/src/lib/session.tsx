@@ -1,5 +1,6 @@
 import * as SecureStore from "expo-secure-store";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { Platform, Settings } from "react-native";
 
 import { ApiError } from "./api";
 import { registerForPushNotificationsAsync, syncPushTokenToServer, unregisterPushTokenFromServer } from "./notifications";
@@ -8,6 +9,19 @@ export const DEFAULT_SERVER = "https://mem.ihasy.com";
 const SERVER_KEY = "memento.server";
 const TOKEN_KEY = "memento.token";
 const PUSH_TOKEN_KEY = "memento.push_token";
+
+function syncCredentialsToNative(server: string, token: string | null) {
+  if (Platform.OS === "ios") {
+    try {
+      Settings.set({
+        memento_server: (server.trim() || DEFAULT_SERVER).replace(/\/+$/, ""),
+        memento_token: token || "",
+      });
+    } catch (e) {
+      console.warn("Failed to sync credentials to iOS UserDefaults:", e);
+    }
+  }
+}
 
 interface Session {
   ready: boolean;
@@ -68,6 +82,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     })();
   }, [ready, server, token]);
 
+  // Whenever server or token changes, keep iOS UserDefaults in sync for native background health/sleep tasks
+  useEffect(() => {
+    if (!ready) return;
+    syncCredentialsToNative(server, token);
+  }, [ready, server, token]);
+
   const signOut = useCallback(async () => {
     try {
       const [storedToken, pushTok] = await Promise.all([
@@ -84,6 +104,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       SecureStore.deleteItemAsync(TOKEN_KEY),
       SecureStore.deleteItemAsync(PUSH_TOKEN_KEY),
     ]);
+    syncCredentialsToNative(server, null);
     setToken(null);
   }, [server]);
 
@@ -100,6 +121,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     }
     const { access_token } = (await res.json()) as { access_token: string };
     await Promise.all([SecureStore.setItemAsync(SERVER_KEY, base), SecureStore.setItemAsync(TOKEN_KEY, access_token)]);
+    syncCredentialsToNative(base, access_token);
     setServer(base);
     setToken(access_token);
   }, []);
@@ -107,6 +129,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const signInWithToken = useCallback(async (serverUrl: string, accessToken: string) => {
     const base = (serverUrl.trim() || DEFAULT_SERVER).replace(/\/+$/, "");
     await Promise.all([SecureStore.setItemAsync(SERVER_KEY, base), SecureStore.setItemAsync(TOKEN_KEY, accessToken)]);
+    syncCredentialsToNative(base, accessToken);
     setServer(base);
     setToken(accessToken);
   }, []);

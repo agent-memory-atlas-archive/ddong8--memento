@@ -409,7 +409,7 @@ export function LifeRhythmView() {
                   • <b className="text-[var(--aurora-fg2)]">Mac 桌面端</b>：已内置原生秒级前台窗口探针，自动无感统计 Cursor、VS Code、Chrome、微信等活跃应用耗时。
                 </div>
                 <div className="leading-relaxed">
-                  • <b className="text-[var(--aurora-fg2)]">iPhone 手机</b>：由于 iOS 沙盒限制，支持点击顶部「📸 手机截图智能解析」上传“设置 - 屏幕使用时间”截图（AI 视觉秒级提取真实数据），或配置 iOS 快捷指令定时同步。
+                  • <b className="text-[var(--aurora-fg2)]">iPhone 手机</b>：已支持 Apple HealthKit（健康）全自动静默同步就寝、起床及精准睡眠时长；各 App 屏幕时长支持点击顶部「📸 手机截图智能解析」上传系统屏幕时间截图（AI 视觉秒级提取真实数据）。
                 </div>
                 <div className="leading-relaxed">
                   • <b className="text-[var(--aurora-fg2)]">Android 手机</b>：开启 Memento 移动端「应用使用情况」权限即可全自动后台读取各 App 时长。
