@@ -8,6 +8,7 @@ import { useI18n } from "@/lib/i18n";
 import { Icon, ToolGlyph } from "@/components/aurora/Icon";
 import { BrandMark } from "@/components/aurora/BrandMark";
 import { Btn, Chip, Glass, GhostInput, TopBar } from "@/components/aurora/primitives";
+import { showInAppToast } from "@/lib/native-notify";
 import MarkdownViewer from "@/components/viewers/MarkdownViewer";
 import { ExecutionTabs, ToolCallItem } from "@/components/ExecutionCard";
 import { mergeTaskEvent, type TaskEvent } from "@memento/core";
@@ -570,28 +571,47 @@ function AskPageContent() {
     }
   }, []);
 
-  // Voice Input (Speech-to-Text) with real-time recognition
+  // Voice Input (Speech-to-Text) with real-time recognition & smart mobile fallback
   const [isRecordingVoice, setIsRecordingVoice] = useState(false);
+  const [speechHint, setSpeechHint] = useState<string | null>(null);
+  const speechHintTimer = useRef<NodeJS.Timeout | null>(null);
   const recognitionRef = useRef<any>(null);
+  const inputElRef = useRef<HTMLInputElement>(null);
 
   const toggleVoiceInput = useCallback(() => {
+    // 1. Instant tactile feedback
+    if (typeof window !== "undefined" && (window as any).__memento_haptic) {
+      try {
+        (window as any).__memento_haptic("medium");
+      } catch {}
+    }
+
     if (isRecordingVoice) {
       if (recognitionRef.current) {
         try {
           recognitionRef.current.stop();
-        } catch {
-          // ignore
-        }
+        } catch {}
       }
       setIsRecordingVoice(false);
       return;
     }
 
     const SpeechRecognition =
-      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      typeof window !== "undefined"
+        ? (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+        : null;
 
     if (!SpeechRecognition) {
-      alert(isZh ? "当前环境暂不支持浏览器内置语音识别，请直接键入文本" : "Speech recognition not supported in this browser");
+      // In iOS App (WKWebView), Apple intentionally blocks the Web Speech API.
+      // Smoothly focus input to bring up the iOS native keyboard with Apple Neural Engine dictation mic.
+      inputElRef.current?.focus();
+      const msg = isZh
+        ? "已为您呼出键盘，点击键盘右下角「麦克风」🎤 即可使用苹果原生神经引擎极速听写！"
+        : "Keyboard opened. Tap the mic 🎤 on your keyboard to dictate.";
+      showInAppToast(isZh ? "🎙️ 语音听写提示" : "Voice Dictation", msg);
+      setSpeechHint(msg);
+      if (speechHintTimer.current) clearTimeout(speechHintTimer.current);
+      speechHintTimer.current = setTimeout(() => setSpeechHint(null), 6000);
       return;
     }
 
@@ -603,6 +623,7 @@ function AskPageContent() {
 
       recognition.onstart = () => {
         setIsRecordingVoice(true);
+        setSpeechHint(null);
       };
 
       recognition.onresult = (event: any) => {
@@ -621,6 +642,17 @@ function AskPageContent() {
       recognition.onerror = (e: any) => {
         console.warn("Speech recognition error:", e);
         setIsRecordingVoice(false);
+        const errType = e?.error;
+        if (errType === "not-allowed" || errType === "service-not-allowed") {
+          inputElRef.current?.focus();
+          const fallbackMsg = isZh
+            ? "语音权限受限，已为您呼出键盘，可直接点击键盘右下角「麦克风」🎤 听写"
+            : "Microphone blocked. Please use the keyboard dictation mic.";
+          showInAppToast(isZh ? "🎙️ 语音提示" : "Voice Notice", fallbackMsg);
+          setSpeechHint(fallbackMsg);
+          if (speechHintTimer.current) clearTimeout(speechHintTimer.current);
+          speechHintTimer.current = setTimeout(() => setSpeechHint(null), 6000);
+        }
       };
 
       recognition.onend = () => {
@@ -632,6 +664,14 @@ function AskPageContent() {
     } catch (err) {
       console.warn("Failed to start speech recognition:", err);
       setIsRecordingVoice(false);
+      inputElRef.current?.focus();
+      const fallbackMsg = isZh
+        ? "已为您呼出键盘，点击键盘右下角「麦克风」🎤 即可使用原生神经引擎语音打字！"
+        : "Keyboard opened. Tap the mic 🎤 on your keyboard to dictate.";
+      showInAppToast(isZh ? "🎙️ 语音听写提示" : "Voice Dictation", fallbackMsg);
+      setSpeechHint(fallbackMsg);
+      if (speechHintTimer.current) clearTimeout(speechHintTimer.current);
+      speechHintTimer.current = setTimeout(() => setSpeechHint(null), 6000);
     }
   }, [isRecordingVoice, isZh]);
 
@@ -2669,9 +2709,48 @@ function AskPageContent() {
               </div>
             )}
 
+            {/* Speech Hint Floating Pill */}
+            {speechHint && (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  padding: "5px 12px",
+                  marginBottom: 6,
+                  borderRadius: 10,
+                  background: "rgba(124, 58, 237, 0.12)",
+                  border: "1px solid rgba(124, 58, 237, 0.3)",
+                  fontSize: 12,
+                  color: "#A78BFA",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span>🎙️</span>
+                  <span>{speechHint}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSpeechHint(null)}
+                  style={{
+                    background: "none",
+                    border: "none",
+                    color: "inherit",
+                    cursor: "pointer",
+                    fontSize: 13,
+                    opacity: 0.7,
+                    padding: "0 4px",
+                  }}
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+
             {/* Input box and action button */}
             <div style={{ display: "flex", gap: 8, alignItems: "center", width: "100%", minWidth: 0, boxSizing: "border-box" }}>
               <GhostInput
+                inputRef={inputElRef}
                 type="text"
                 value={input}
                 onChange={(e) => setInput(e.target.value)}

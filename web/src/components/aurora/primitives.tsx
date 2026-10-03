@@ -127,13 +127,14 @@ interface GhostInputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, "s
   icon?: Parameters<typeof Icon>[0]["name"];
   wrapStyle?: CSSProperties;
   wrapClassName?: string;
+  inputRef?: React.Ref<HTMLInputElement>;
 }
 
-export function GhostInput({ icon, wrapStyle, wrapClassName, className, style, ...rest }: GhostInputProps) {
+export function GhostInput({ icon, wrapStyle, wrapClassName, className, style, inputRef, ...rest }: GhostInputProps) {
   return (
     <label className={["aurora-input", wrapClassName ?? ""].join(" ")} style={{ minWidth: 0, ...wrapStyle }}>
       {icon && <Icon name={icon} size={15} style={{ color: "var(--aurora-fg3)", flexShrink: 0 }} />}
-      <input {...rest} className={className} style={{ minWidth: 0, ...style }} />
+      <input ref={inputRef} {...rest} className={className} style={{ minWidth: 0, ...style }} />
     </label>
   );
 }

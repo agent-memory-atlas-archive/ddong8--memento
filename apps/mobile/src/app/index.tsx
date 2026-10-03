@@ -210,9 +210,14 @@ const INJECTED_CLIENT_HELPERS = `(() => {
       return ret;
     };
   };
-  history.pushState = wrapHistory("pushState");
-  history.replaceState = wrapHistory("replaceState");
-  window.addEventListener("popstate", postRoute);
+  // 8. Robust Alert Fallback Bridge: never let alert() get silently swallowed
+  window.alert = function(msg) {
+    try {
+      if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
+        window.ReactNativeWebView.postMessage(JSON.stringify({ type: "notify", title: "Memento 提示", body: String(msg) }));
+      }
+    } catch (e) {}
+  };
 })();
 true;`;
 
@@ -468,6 +473,8 @@ export default function WebShell() {
           contentInsetAdjustmentBehavior="never"
           keyboardDisplayRequiresUserAction={false}
           hideKeyboardAccessoryView={true}
+          allowsInlineMediaPlayback={true}
+          mediaCapturePermissionGrantType="grant"
           webviewDebuggingEnabled={__DEV__}
           startInLoadingState={!initialLoaded}
           onLoadEnd={() => setInitialLoaded(true)}

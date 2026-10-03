@@ -8,7 +8,11 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.ihasy.memento.mobile"
+      "bundleIdentifier": "com.ihasy.memento.mobile",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "Memento 需要使用麦克风以支持语音吩咐与实时听写功能。",
+        "NSSpeechRecognitionUsageDescription": "Memento 需要语音识别权限以将您的语音吩咐实时转录为文字。"
+      }
     },
     "android": {
       "adaptiveIcon": {
