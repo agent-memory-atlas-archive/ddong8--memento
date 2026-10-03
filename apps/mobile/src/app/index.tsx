@@ -26,12 +26,13 @@ import { triggerLocalNotification } from "../lib/notifications";
 import { useSession } from "../lib/session";
 import { useTheme } from "../lib/theme";
 
-type TabId = "ask" | "daily" | "devices" | "profile";
+type TabId = "ask" | "memory" | "daily" | "inbox" | "profile";
 
 const TABS: Array<{ id: TabId; label: string; icon: IconName; path: string }> = [
   { id: "ask", label: "AI 执事", icon: "message", path: "/ask" },
+  { id: "memory", label: "认知大脑", icon: "brain", path: "/memory" },
   { id: "daily", label: "作息节律", icon: "clock", path: "/daily" },
-  { id: "devices", label: "多端设备", icon: "devices", path: "/devices" },
+  { id: "inbox", label: "工作待办", icon: "layers", path: "/inbox" },
   { id: "profile", label: "个人中心", icon: "user", path: "/profile" },
 ];
 
@@ -217,6 +218,7 @@ export default function WebShell() {
   const [page, setPage] = useState<{ bg: string; dark: boolean } | null>(null);
   const [activeTab, setActiveTab] = useState<TabId | null>("ask");
   const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [initialLoaded, setInitialLoaded] = useState(false);
 
   useEffect(() => {
     const showEvt = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
@@ -430,7 +432,8 @@ export default function WebShell() {
         decelerationRate="normal"
         textZoom={100}
         webviewDebuggingEnabled={__DEV__}
-        startInLoadingState
+        startInLoadingState={!initialLoaded}
+        onLoadEnd={() => setInitialLoaded(true)}
         renderLoading={() => (
           <View style={[StyleSheet.absoluteFill, { alignItems: "center", justifyContent: "center", backgroundColor: bg }]}>
             <ActivityIndicator color={t.accent} />
@@ -471,7 +474,14 @@ export default function WebShell() {
                   onPress={() => {
                     void Haptics.selectionAsync();
                     setActiveTab(tab.id);
-                    web.current?.injectJavaScript(`window.location.assign(${JSON.stringify(origin + tab.path)}); true;`);
+                    const script = `(() => {
+                      if (typeof window.__memento_client_push === "function") {
+                        window.__memento_client_push(${JSON.stringify(tab.path)});
+                      } else {
+                        window.location.assign(${JSON.stringify(origin + tab.path)});
+                      }
+                    })(); true;`;
+                    web.current?.injectJavaScript(script);
                   }}
                   style={({ pressed }) => [
                     styles.tabItem,

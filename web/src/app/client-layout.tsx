@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { AuthProvider, useAuth } from "@/lib/auth-context";
 import { DeviceProvider } from "@/lib/device-context";
 import { ThemeProvider } from "@/lib/theme-context";
@@ -67,6 +67,20 @@ function AppShell({ children }: { children: React.ReactNode }) {
   const { token, loading } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const pathname = usePathname();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      (window as unknown as { __memento_client_push?: (path: string) => void }).__memento_client_push = (path: string) => {
+        router.push(path);
+      };
+    }
+    return () => {
+      if (typeof window !== "undefined") {
+        delete (window as unknown as { __memento_client_push?: unknown }).__memento_client_push;
+      }
+    };
+  }, [router]);
 
   // Always plain layout for the marketing landing page — its own nav is
   // rendered by the landing component itself.
