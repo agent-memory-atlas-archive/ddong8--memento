@@ -208,12 +208,28 @@ export default function SkillsPage() {
       skill.edited_by_user === true ? s.editedByYou : "",
     ].filter(Boolean);
     return (
-      <div key={id} style={{ padding: "14px 0", borderTop: "1px solid var(--aurora-border)" }}>
-        <div style={{ fontSize: 15, fontWeight: 600, color: "var(--aurora-fg1)" }}>{str(skill.title)}</div>
-        <div style={{ fontSize: 12, color: "var(--aurora-fg3)", marginTop: 3, ...mono }}>
-          /{str(skill.slug)} · {meta.join(" · ")}
+      <div
+        key={id}
+        className="p-4 sm:p-5 rounded-2xl border border-[var(--aurora-border)] bg-[var(--aurora-surface-solid)] shadow-xs hover:border-[var(--aurora-border-strong)] transition-all mb-3.5"
+      >
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2.5 mb-2.5 border-b border-[var(--aurora-border)]">
+          <div className="flex items-center gap-2">
+            <span className="font-bold text-sm sm:text-base text-[var(--aurora-fg1)]">{str(skill.title)}</span>
+            <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-[var(--aurora-chip)] text-[var(--aurora-fg2)] font-semibold border border-[var(--aurora-border)]">
+              /{str(skill.slug)}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-1.5 text-[11px] text-[var(--aurora-fg4)] font-mono">
+            {meta.map((m, i) => (
+              <span key={i} className="px-1.5 py-0.5 rounded bg-[var(--aurora-chip)]">
+                {m}
+              </span>
+            ))}
+          </div>
         </div>
-        <p style={{ margin: "8px 0 0", fontSize: 13.5, lineHeight: 1.55, color: "var(--aurora-fg2)" }}>{str(skill.description)}</p>
+
+        <p className="text-xs sm:text-sm text-[var(--aurora-fg2)] leading-relaxed mb-3">{str(skill.description)}</p>
 
         {update && (
           <div style={{ marginTop: 10, padding: 10, borderRadius: 10, background: "rgba(217,119,6,0.08)", border: "1px solid rgba(217,119,6,0.3)" }}>

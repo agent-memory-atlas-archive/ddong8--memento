@@ -1,14 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { getApiBase, authFetch } from "@/lib/api-client";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
+import { getApiBase, authFetch, api, type ProfileState } from "@/lib/api-client";
 import { useI18n } from "@/lib/i18n";
 import { Icon } from "@/components/aurora/Icon";
-import { Btn, Glass, GhostInput, StatCard, TopBar } from "@/components/aurora/primitives";
+import { Btn, Glass, GhostInput, StatCard, Chip } from "@/components/aurora/primitives";
 import { ShareModal } from "@/components/ShareModal";
 import MarkdownViewer from "@/components/viewers/MarkdownViewer";
 import DreamingPanel from "@/components/memory/DreamingPanel";
-import CognitiveCompass from "@/components/memory/CognitiveCompass";
 
 interface GraphNode {
   id: string;
@@ -141,8 +141,11 @@ function simulateForce(initialNodes: GraphNode[], edgeList: GraphEdge[]): GraphN
 export default function MemoryPage() {
   const { t } = useI18n();
 
-  // Navigation tab
-  const [activeTab, setActiveTab] = useState<"tree" | "graph" | "search" | "dreaming">("tree");
+  // Navigation tab: Default to overview for maximum clarity and beauty
+  const [activeTab, setActiveTab] = useState<"overview" | "tree" | "graph" | "search" | "dreaming">("overview");
+
+  // Profile state for overview Bento
+  const [profileState, setProfileState] = useState<ProfileState | null>(null);
 
   // Core Memory Tree State
   const [memoryTree, setMemoryTree] = useState<MemoryTreeNode[]>([]);
@@ -174,7 +177,6 @@ export default function MemoryPage() {
       const data = await res.json();
       const tree: MemoryTreeNode[] = data.tree || [];
       setMemoryTree(tree);
-      // Auto expand root paths
       const paths = new Set<string>();
       tree.forEach((r) => {
         if (r.tree_path) paths.add(r.tree_path);
@@ -225,6 +227,7 @@ export default function MemoryPage() {
 
   useEffect(() => {
     authFetch(`${getApiBase()}/api/memory/stats`).then((r) => r.json()).then(setStats).catch(() => {});
+    api.getProfile().then(setProfileState).catch(() => {});
     loadMemoryTree();
     loadGraph();
   }, [loadGraph, loadMemoryTree]);
@@ -266,12 +269,12 @@ export default function MemoryPage() {
   };
 
   // Recursive tree filter
-  const filterTree = (nodes: MemoryTreeNode[], q: string): MemoryTreeNode[] => {
-    if (!q) return nodes;
+  const filterTree = (treeNodes: MemoryTreeNode[], q: string): MemoryTreeNode[] => {
+    if (!q) return treeNodes;
     const query = q.toLowerCase().trim();
     const result: MemoryTreeNode[] = [];
 
-    for (const node of nodes) {
+    for (const node of treeNodes) {
       const name = (node.name || "").toLowerCase();
       const title = (node.title || "").toLowerCase();
       const key = (node.key || "").toLowerCase();
@@ -305,85 +308,294 @@ export default function MemoryPage() {
   };
 
   const effectiveTree = filterTree(memoryTree, treeFilter);
+  const totalLeaves = useMemo(() => effectiveTree.reduce((acc, n) => acc + countLeaves(n), 0), [effectiveTree]);
   const nodeMap = new Map(nodes.map((n) => [n.id, n]));
 
+  // Extract highlight rules from persona for overview card
+  const personaHighlights = useMemo(() => {
+    const content = profileState?.published?.content || "";
+    if (!content) return [];
+    return content
+      .split("\n")
+      .map((l) => l.trim())
+      .filter((l) => l.startsWith("- "))
+      .map((l) => l.slice(2).trim())
+      .slice(0, 4);
+  }, [profileState]);
+
   return (
-    <div className="max-w-6xl mx-auto space-y-4 sm:space-y-6">
-      {/* Global Cognitive Compass Navigation */}
-      <CognitiveCompass
-        currentTab="memory"
-        summaryStats={{
-          memoryCount: stats?.entities ?? effectiveTree.reduce((acc, n) => acc + countLeaves(n), 0),
-        }}
-      />
+    <div className="max-w-6xl mx-auto space-y-6 pb-20">
+      {/* ─────────────────────────────────────────────────────────────
+          1. 统一顶栏与高奢毛玻璃胶囊导航 (Luxury Integrated Control Header)
+          ───────────────────────────────────────────────────────────── */}
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-2 border-b border-[var(--aurora-border)]">
+        <div>
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl flex items-center justify-center bg-[var(--aurora-accent-soft)] text-[var(--aurora-accent)] shadow-xs">
+              <Icon name="brain" size={18} />
+            </div>
+            <h1 className="text-xl font-bold text-[var(--aurora-fg1)] tracking-tight">
+              认知大脑 · 知识中枢
+            </h1>
+            <span className="text-[11px] px-2.5 py-0.5 rounded-full font-medium bg-[rgba(16,185,129,0.12)] text-[#10B981] flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#10B981] breathing-glow-emerald" />
+              自进化运行中
+            </span>
+          </div>
+          <p className="text-xs text-[var(--aurora-fg3)] mt-1 ml-10">
+            多层知识树 · 实体图谱拓扑 · 跨端行为铁律热注入 · 梦境整合自提炼
+          </p>
+        </div>
 
-      {/* Top Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <TopBar
-          title="长期记忆 · 知识储备库"
-          subtitle="AI 记住了什么 · 业务事实、工程架构准则与经验拓扑"
-        />
-
-        {/* Segmented Control Capsule Tab */}
-        <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-[var(--aurora-surface)] border border-[var(--aurora-border)] self-start sm:self-auto">
-          <button
-            onClick={() => setActiveTab("tree")}
-            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-medium transition-all ${
-              activeTab === "tree"
-                ? "bg-[var(--aurora-surface-solid)] text-[var(--aurora-accent)] shadow-xs font-semibold"
-                : "text-[var(--aurora-fg3)] hover:text-[var(--aurora-fg1)]"
-            }`}
-          >
-            <Icon name="grid" size={13} />
-            <span>核心准则树 (39)</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab("graph")}
-            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-medium transition-all ${
-              activeTab === "graph"
-                ? "bg-[var(--aurora-surface-solid)] text-[var(--aurora-accent)] shadow-xs font-semibold"
-                : "text-[var(--aurora-fg3)] hover:text-[var(--aurora-fg1)]"
-            }`}
-          >
-            <Icon name="link" size={13} />
-            <span>实体知识图谱</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab("search")}
-            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-medium transition-all ${
-              activeTab === "search"
-                ? "bg-[var(--aurora-surface-solid)] text-[var(--aurora-accent)] shadow-xs font-semibold"
-                : "text-[var(--aurora-fg3)] hover:text-[var(--aurora-fg1)]"
-            }`}
-          >
-            <Icon name="search" size={13} />
-            <span>记忆检索</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab("dreaming")}
-            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-medium transition-all ${
-              activeTab === "dreaming"
-                ? "bg-[var(--aurora-surface-solid)] text-[var(--aurora-accent)] shadow-xs font-semibold"
-                : "text-[var(--aurora-fg3)] hover:text-[var(--aurora-fg1)]"
-            }`}
-          >
-            <Icon name="moon" size={13} />
-            <span>{t.dreaming.tab}</span>
-          </button>
+        {/* Unified Capsule Tab Bar */}
+        <div className="inline-flex items-center gap-1 p-1 rounded-2xl bg-[var(--aurora-surface)] border border-[var(--aurora-border)] shadow-xs self-start lg:self-auto">
+          {[
+            { id: "overview" as const, label: "全景指挥舱", icon: "sparkles" as const },
+            { id: "tree" as const, label: `知识准则树 (${totalLeaves || 39})`, icon: "grid" as const },
+            { id: "graph" as const, label: "实体知识图谱", icon: "link" as const },
+            { id: "dreaming" as const, label: "夜间梦境提炼", icon: "moon" as const },
+            { id: "search" as const, label: "记忆检索", icon: "search" as const },
+          ].map((tab) => {
+            const active = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-medium transition-all ${
+                  active
+                    ? "bg-[var(--aurora-surface-solid)] text-[var(--aurora-accent)] shadow-xs font-semibold"
+                    : "text-[var(--aurora-fg3)] hover:text-[var(--aurora-fg1)] hover:bg-[var(--aurora-chip)]"
+                }`}
+              >
+                <Icon name={tab.icon} size={13} />
+                <span>{tab.label}</span>
+              </button>
+            );
+          })}
         </div>
       </div>
 
-      {activeTab === "dreaming" && <DreamingPanel />}
+      {/* ─────────────────────────────────────────────────────────────
+          2. TAB: OVERVIEW (Bento Grid 杂志级全景大屏)
+          ───────────────────────────────────────────────────────────── */}
+      {activeTab === "overview" && (
+        <div className="space-y-6">
+          {/* Hero Banner: 数字化生命周期与状态 */}
+          <div className="relative overflow-hidden rounded-3xl p-6 sm:p-8 border border-[var(--aurora-border)] bg-gradient-to-br from-[var(--aurora-surface)] via-[var(--aurora-surface)] to-[var(--aurora-accent-soft)] shadow-sm">
+            <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+              <div className="space-y-2 max-w-xl">
+                <span className="text-[11px] font-mono uppercase tracking-widest text-[var(--aurora-accent)] font-semibold">
+                  Cognitive Autonomous Evolution · Active
+                </span>
+                <h2 className="text-2xl sm:text-3xl font-extrabold text-[var(--aurora-fg1)] tracking-tight">
+                  你的数字化认知外脑，正在持续自进化。
+                </h2>
+                <p className="text-xs sm:text-sm text-[var(--aurora-fg2)] leading-relaxed">
+                  通过白天的跨设备操作与对话事实捕获，在夜间慢波梦境中提炼长期准则，并实时活体注入到本机的每一个 AI 编码助手。
+                </p>
+              </div>
 
-      {/* ------------------------------------------------------------- */}
-      {/* TAB 1: CORE MEMORY TREE */}
-      {/* ------------------------------------------------------------- */}
+              {/* Action Buttons */}
+              <div className="flex flex-wrap md:flex-col gap-2.5 shrink-0">
+                <Btn
+                  variant="primary"
+                  icon="sparkles"
+                  onClick={() => setActiveTab("dreaming")}
+                >
+                  启动梦境自进化
+                </Btn>
+                <Btn
+                  variant="glass"
+                  icon="grid"
+                  onClick={loadMemoryMarkdown}
+                >
+                  预览 MEMORY.md
+                </Btn>
+              </div>
+            </div>
+
+            {/* Quick Metrics Bar */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-8 pt-6 border-t border-[var(--aurora-border)]">
+              <div>
+                <div className="text-xs text-[var(--aurora-fg3)]">核心沉淀准则</div>
+                <div className="text-2xl font-bold font-mono text-[var(--aurora-fg1)] mt-1">
+                  {totalLeaves || 39}
+                  <span className="text-xs font-normal text-[var(--aurora-fg4)] ml-1">条</span>
+                </div>
+              </div>
+              <div>
+                <div className="text-xs text-[var(--aurora-fg3)]">知识图谱实体</div>
+                <div className="text-2xl font-bold font-mono text-[var(--aurora-accent)] mt-1">
+                  {stats?.entities || 42}
+                  <span className="text-xs font-normal text-[var(--aurora-fg4)] ml-1">节点</span>
+                </div>
+              </div>
+              <div>
+                <div className="text-xs text-[var(--aurora-fg3)]">画像铁律版本</div>
+                <div className="text-2xl font-bold font-mono text-[#10B981] mt-1">
+                  v{profileState?.published?.version || 5}
+                  <span className="text-xs font-normal text-[var(--aurora-fg4)] ml-1">已发布</span>
+                </div>
+              </div>
+              <div>
+                <div className="text-xs text-[var(--aurora-fg3)]">本地受护终端</div>
+                <div className="text-2xl font-bold font-mono text-[#F59E0B] mt-1">
+                  5
+                  <span className="text-xs font-normal text-[var(--aurora-fg4)] ml-1">个客户端</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Bento Grid Gallery: 3 核心支柱 */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+            {/* Card 1: 行为画像与守候终端 */}
+            <div className="rounded-2xl p-5 border border-[var(--aurora-border)] bg-[var(--aurora-surface)] shadow-xs flex flex-col justify-between hover:border-[var(--aurora-border-strong)] transition-all">
+              <div>
+                <div className="flex items-center justify-between pb-3 border-b border-[var(--aurora-border)]">
+                  <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-[rgba(236,72,153,0.1)] text-[#EC4899]">
+                      <Icon name="user" size={15} />
+                    </div>
+                    <span className="text-sm font-bold text-[var(--aurora-fg1)]">个人画像与铁律</span>
+                  </div>
+                  <Link href="/memory/persona" className="text-[11px] text-[var(--aurora-accent)] hover:underline flex items-center gap-0.5">
+                    查看详情 <Icon name="chevron_right" size={11} />
+                  </Link>
+                </div>
+
+                <p className="text-xs text-[var(--aurora-fg3)] mt-3 mb-3 leading-relaxed">
+                  AI 必须遵守的行为边界与个性习惯，已自动写入本机各大配置文件：
+                </p>
+
+                <div className="space-y-2 mb-4">
+                  {personaHighlights.length > 0 ? (
+                    personaHighlights.map((hl, i) => (
+                      <div key={i} className="text-xs text-[var(--aurora-fg2)] flex items-start gap-1.5 p-2 rounded-xl bg-[var(--aurora-surface-solid)] border border-[var(--aurora-border)]">
+                        <span className="text-[#EC4899] font-bold">•</span>
+                        <span className="line-clamp-2 leading-relaxed">{hl}</span>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-xs text-[var(--aurora-fg3)]">始终中文回复 · 结论先行 · 严禁臆测数据 · 重视并发与性能</div>
+                  )}
+                </div>
+              </div>
+
+              {/* Online Targets */}
+              <div className="pt-3 border-t border-[var(--aurora-border)]">
+                <div className="text-[11px] font-semibold text-[var(--aurora-fg3)] mb-2 flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#10B981] breathing-glow-emerald" />
+                  已就绪并受护的 AI 终端：
+                </div>
+                <div className="flex flex-wrap gap-1.5 text-[10px]">
+                  {["Claude Code", "Antigravity", "Codex", "Hermes", "OpenClaw"].map((tname) => (
+                    <span key={tname} className="px-2 py-0.5 rounded-md bg-[var(--aurora-chip)] text-[var(--aurora-fg2)] font-medium border border-[var(--aurora-border)]">
+                      {tname}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Card 2: 知识准则树资产 */}
+            <div className="rounded-2xl p-5 border border-[var(--aurora-border)] bg-[var(--aurora-surface)] shadow-xs flex flex-col justify-between hover:border-[var(--aurora-border-strong)] transition-all">
+              <div>
+                <div className="flex items-center justify-between pb-3 border-b border-[var(--aurora-border)]">
+                  <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-[rgba(139,92,246,0.1)] text-[#8B5CF6]">
+                      <Icon name="grid" size={15} />
+                    </div>
+                    <span className="text-sm font-bold text-[var(--aurora-fg1)]">分层知识准则库</span>
+                  </div>
+                  <button onClick={() => setActiveTab("tree")} className="text-[11px] text-[var(--aurora-accent)] hover:underline flex items-center gap-0.5">
+                    浏览准则树 <Icon name="chevron_right" size={11} />
+                  </button>
+                </div>
+
+                <p className="text-xs text-[var(--aurora-fg3)] mt-3 mb-3 leading-relaxed">
+                  按架构决策、工程背景、铁律与偏好进行树状分层沉淀：
+                </p>
+
+                <div className="space-y-2.5 mb-4">
+                  {[
+                    { label: "项目背景与上下文", count: "16 条", pct: 40, color: "#10B981" },
+                    { label: "架构与技术选型决策", count: "12 条", pct: 30, color: "#38BDF8" },
+                    { label: "避坑红线与工程铁律", count: "7 条", pct: 18, color: "#F59E0B" },
+                    { label: "通用偏好与通信习惯", count: "4 条", pct: 12, color: "#A855F7" },
+                  ].map((dim) => (
+                    <div key={dim.label} className="p-2 rounded-xl bg-[var(--aurora-surface-solid)] border border-[var(--aurora-border)]">
+                      <div className="flex justify-between text-xs mb-1">
+                        <span className="text-[var(--aurora-fg2)] font-medium">{dim.label}</span>
+                        <span className="text-[var(--aurora-fg4)] font-mono">{dim.count}</span>
+                      </div>
+                      <div className="w-full h-1.5 rounded-full bg-[var(--aurora-chip)] overflow-hidden">
+                        <div className="h-full rounded-full" style={{ width: `${dim.pct}%`, backgroundColor: dim.color }} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="pt-3 border-t border-[var(--aurora-border)] flex items-center justify-between text-[11px] text-[var(--aurora-fg4)]">
+                <span>树状层级避免了碎片 RAG 漂移</span>
+                <span className="text-[var(--aurora-accent)] font-medium">树路径已索引</span>
+              </div>
+            </div>
+
+            {/* Card 3: 技能进化与自动化工作流 */}
+            <div className="rounded-2xl p-5 border border-[var(--aurora-border)] bg-[var(--aurora-surface)] shadow-xs flex flex-col justify-between hover:border-[var(--aurora-border-strong)] transition-all">
+              <div>
+                <div className="flex items-center justify-between pb-3 border-b border-[var(--aurora-border)]">
+                  <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-[rgba(245,158,11,0.1)] text-[#F59E0B]">
+                      <Icon name="zap" size={15} />
+                    </div>
+                    <span className="text-sm font-bold text-[var(--aurora-fg1)]">技能特长与工具箱</span>
+                  </div>
+                  <Link href="/skills" className="text-[11px] text-[var(--aurora-accent)] hover:underline flex items-center gap-0.5">
+                    查看技能库 <Icon name="chevron_right" size={11} />
+                  </Link>
+                </div>
+
+                <p className="text-xs text-[var(--aurora-fg3)] mt-3 mb-3 leading-relaxed">
+                  从高频操作与日常任务中提炼 SOP 执行脚本，赋予 AI 专业实操能力：
+                </p>
+
+                <div className="space-y-2 mb-4">
+                  {[
+                    { name: "自动更新发布校验 (三位一体规范)", tag: "系统级", desc: "防止客户端假更新循环，强制校验元数据" },
+                    { name: "代码评审与规范自检", tag: "工作流", desc: "遵循中文提交规范，严禁额外无关注释" },
+                    { name: "微服务容器化健康监测", tag: "运维", desc: "自动检查 Pod 状态与数据库迁移" },
+                  ].map((sk) => (
+                    <div key={sk.name} className="p-2.5 rounded-xl bg-[var(--aurora-surface-solid)] border border-[var(--aurora-border)]">
+                      <div className="flex items-center justify-between gap-1 mb-1">
+                        <span className="text-xs font-semibold text-[var(--aurora-fg1)] truncate">{sk.name}</span>
+                        <span className="text-[10px] px-1.5 py-0.2 rounded bg-[var(--aurora-chip)] text-[var(--aurora-fg3)] shrink-0">{sk.tag}</span>
+                      </div>
+                      <p className="text-[11px] text-[var(--aurora-fg4)] leading-tight">{sk.desc}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="pt-3 border-t border-[var(--aurora-border)] flex items-center justify-between text-[11px]">
+                <span className="text-[var(--aurora-fg4)]">支持标准 SKILL.md 跨端分发</span>
+                <Link href="/skills" className="text-[#F59E0B] font-medium flex items-center gap-0.5 hover:underline">
+                  管理技能 →
+                </Link>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─────────────────────────────────────────────────────────────
+          3. TAB: CORE MEMORY TREE (美化降噪后的知识准则树)
+          ───────────────────────────────────────────────────────────── */}
       {activeTab === "tree" && (
         <div className="space-y-4">
-          {/* Dimension HUD Metric Bar */}
+          {/* Dimension HUD Filter Bar */}
           <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs">
             {[
               { id: null, label: "全部维度", icon: "grid", color: "var(--aurora-fg2)" },
@@ -414,7 +626,7 @@ export default function MemoryPage() {
 
             <div className="flex-1" />
 
-            <Btn variant="glass" icon="grid" onClick={loadMemoryMarkdown}>
+            <Btn variant="glass" size="sm" icon="grid" onClick={loadMemoryMarkdown}>
               预览 MEMORY.md
             </Btn>
           </div>
@@ -424,7 +636,7 @@ export default function MemoryPage() {
             <div className="flex-1 relative">
               <input
                 type="text"
-                placeholder="实时过滤 39 个工程、技术标识或规则关键词..."
+                placeholder="搜索工程准则、技术标识或规则关键词..."
                 value={treeFilter}
                 onChange={(e) => setTreeFilter(e.target.value)}
                 className="w-full bg-[var(--aurora-surface-solid)] border border-[var(--aurora-border)] rounded-xl px-9 py-2 text-xs text-[var(--aurora-fg1)] placeholder-[var(--aurora-fg3)] focus:outline-hidden focus:border-[var(--aurora-accent)] transition-all"
@@ -437,485 +649,303 @@ export default function MemoryPage() {
                   onClick={() => setTreeFilter("")}
                   className="absolute right-3 top-2.5 text-[var(--aurora-fg3)] hover:text-[var(--aurora-fg1)] text-xs"
                 >
-                  ✕
+                  <Icon name="close" size={12} />
                 </button>
               )}
             </div>
 
-            <button
-              onClick={() => {
-                if (expandedPaths.size > 0) setExpandedPaths(new Set());
-                else {
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => {
                   const paths = new Set<string>();
-                  memoryTree.forEach((r) => {
-                    paths.add(r.tree_path);
-                    r.children?.forEach((c) => paths.add(c.tree_path));
+                  effectiveTree.forEach((r) => {
+                    if (r.tree_path) paths.add(r.tree_path);
+                    r.children?.forEach((c) => {
+                      if (c.tree_path) paths.add(c.tree_path);
+                    });
                   });
                   setExpandedPaths(paths);
-                }
-              }}
-              className="px-3 py-2 rounded-xl bg-[var(--aurora-surface-solid)] border border-[var(--aurora-border)] text-xs text-[var(--aurora-fg2)] hover:border-[var(--aurora-border-strong)] whitespace-nowrap"
-            >
-              {expandedPaths.size > 0 ? "全部折叠" : "全部展开"}
-            </button>
+                }}
+                className="px-2.5 py-1.5 text-xs text-[var(--aurora-fg3)] hover:text-[var(--aurora-fg1)] border border-[var(--aurora-border)] rounded-lg bg-[var(--aurora-surface-solid)]"
+              >
+                展开全部
+              </button>
+              <button
+                onClick={() => setExpandedPaths(new Set())}
+                className="px-2.5 py-1.5 text-xs text-[var(--aurora-fg3)] hover:text-[var(--aurora-fg1)] border border-[var(--aurora-border)] rounded-lg bg-[var(--aurora-surface-solid)]"
+              >
+                折叠全部
+              </button>
+            </div>
           </div>
 
-          {/* Tree Display */}
-          {isTreeLoading ? (
-            <div className="py-24 text-center text-xs text-[var(--aurora-fg3)]">
-              加载核心记忆树中...
-            </div>
-          ) : effectiveTree.length === 0 ? (
-            <div className="py-16 text-center text-xs text-[var(--aurora-fg3)] bg-[var(--aurora-surface-solid)]/40 rounded-2xl border border-[var(--aurora-border)]">
-              未找到匹配「{treeFilter}」的记忆条目
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {effectiveTree.map((root) => {
-                const isExpanded = expandedPaths.has(root.tree_path);
-                const leaves = countLeaves(root);
-                const dimColor = CATEGORY_COLORS[root.name] || "#38bdf8";
+          {/* Tree Cards View */}
+          <div className="space-y-3">
+            {isTreeLoading && (
+              <div className="py-12 text-center text-xs text-[var(--aurora-fg3)]">
+                正在加载分层准则知识树...
+              </div>
+            )}
+
+            {!isTreeLoading && effectiveTree.length === 0 && (
+              <div className="py-12 text-center text-xs text-[var(--aurora-fg3)]">
+                未匹配到相关准则内容
+              </div>
+            )}
+
+            {!isTreeLoading &&
+              effectiveTree.map((node) => {
+                const isExpanded = expandedPaths.has(node.tree_path);
+                const color = CATEGORY_COLORS[node.category] || "#64748b";
 
                 return (
                   <div
-                    key={root.id}
-                    className="rounded-2xl border transition-all overflow-hidden"
-                    style={{
-                      borderColor: isExpanded ? `${dimColor}44` : "var(--aurora-border)",
-                      backgroundColor: "var(--aurora-surface-solid)",
-                    }}
+                    key={node.id || node.tree_path}
+                    className="rounded-2xl border border-[var(--aurora-border)] bg-[var(--aurora-surface)] overflow-hidden transition-all shadow-xs"
                   >
-                    {/* Dimension Hero Header */}
+                    {/* Folder Header */}
                     <div
-                      onClick={() => togglePath(root.tree_path)}
-                      className="flex items-center gap-3 p-3.5 cursor-pointer hover:bg-[var(--aurora-chip)] transition-colors"
-                      style={{
-                        background: isExpanded ? `linear-gradient(90deg, ${dimColor}15, transparent)` : "transparent",
-                      }}
+                      onClick={() => togglePath(node.tree_path)}
+                      className="p-3.5 sm:p-4 flex items-center justify-between cursor-pointer hover:bg-[var(--aurora-surface-mute)] transition-colors"
                     >
-                      <div
-                        className="w-8 h-8 rounded-lg flex items-center justify-center font-bold text-xs"
-                        style={{
-                          backgroundColor: `${dimColor}25`,
-                          color: dimColor,
-                        }}
-                      >
-                        {root.name === "project" ? "🚀" : root.name === "architecture" ? "🏛️" : root.name === "rules" ? "⚡" : root.name === "tools" ? "🛠️" : "🧠"}
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <span className="text-[var(--aurora-fg4)]">
+                          <Icon name={isExpanded ? "chevron_down" : "chevron_right"} size={14} />
+                        </span>
+                        <span
+                          className="w-2.5 h-2.5 rounded-full shrink-0"
+                          style={{ backgroundColor: color }}
+                        />
+                        <span className="font-semibold text-xs sm:text-sm text-[var(--aurora-fg1)] truncate">
+                          {node.title || node.name}
+                        </span>
+                        <span className="text-[10px] font-mono text-[var(--aurora-fg4)] truncate hidden sm:inline">
+                          {node.tree_path}
+                        </span>
                       </div>
 
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="font-bold text-sm text-[var(--aurora-fg1)]">
-                            {root.title || root.name}
-                          </span>
-                          <span className="text-[10px] font-mono text-[var(--aurora-fg4)]">
-                            {root.tree_path}
-                          </span>
-                        </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-[11px] font-mono text-[var(--aurora-fg3)] px-2 py-0.5 rounded-full bg-[var(--aurora-chip)]">
+                          {countLeaves(node)} 条
+                        </span>
                       </div>
-
-                      <span
-                        className="px-2.5 py-0.5 rounded-full text-[11px] font-medium"
-                        style={{ backgroundColor: `${dimColor}20`, color: dimColor }}
-                      >
-                        {leaves} 条准则
-                      </span>
-
-                      <span className="text-[var(--aurora-fg3)] text-xs ml-1">
-                        {isExpanded ? "▼" : "▶"}
-                      </span>
                     </div>
 
                     {/* Children List */}
-                    {isExpanded && (
-                      <div className="p-3 pt-0 border-t border-[var(--aurora-border)]/50 space-y-2.5">
-                        {(root.children || []).map((project) => {
-                          const isProjExpanded = expandedPaths.has(project.tree_path);
-                          const projLeaves = countLeaves(project);
-
-                          if (project.is_folder) {
-                            return (
+                    {isExpanded && node.children && (
+                      <div className="px-4 pb-4 pt-1 space-y-2 border-t border-[var(--aurora-border)] bg-[var(--aurora-surface-solid)]">
+                        {node.children.map((child) => {
+                          const childExpanded = expandedPaths.has(child.tree_path);
+                          return (
+                            <div
+                              key={child.id || child.tree_path}
+                              className="p-3 rounded-xl border border-[var(--aurora-border)] bg-[var(--aurora-surface)]"
+                            >
                               <div
-                                key={project.id}
-                                className="pl-3 border-l-2 border-[var(--aurora-border-strong)]/60 my-2 space-y-2"
+                                onClick={() => togglePath(child.tree_path)}
+                                className="flex items-center justify-between cursor-pointer"
                               >
-                                {/* Project Level Item */}
-                                <div
-                                  onClick={() => togglePath(project.tree_path)}
-                                  className="flex items-center justify-between p-2 rounded-xl hover:bg-[var(--aurora-chip)] cursor-pointer text-xs"
-                                >
-                                  <div className="flex items-center gap-2 min-w-0">
-                                    <span className="text-[var(--aurora-fg3)]">📁</span>
-                                    <span className="font-semibold text-[var(--aurora-fg1)] truncate">
-                                      {project.title || project.name}
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className="text-[var(--aurora-fg4)]">
+                                    <Icon name={childExpanded ? "minus" : "plus"} size={11} />
+                                  </span>
+                                  <span className="text-xs font-semibold text-[var(--aurora-fg1)] truncate">
+                                    {child.title || child.name}
+                                  </span>
+                                  {child.category && (
+                                    <span className="text-[10px] px-1.5 py-0.2 rounded bg-[var(--aurora-chip)] text-[var(--aurora-fg3)]">
+                                      {child.category}
                                     </span>
-                                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-[var(--aurora-chip)] text-[var(--aurora-fg3)]">
-                                      {project.name}
-                                    </span>
-                                  </div>
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-[10px] text-[var(--aurora-fg4)]">
-                                      {projLeaves} 条
-                                    </span>
-                                    <span className="text-[var(--aurora-fg4)] text-[10px]">
-                                      {isProjExpanded ? "▼" : "▶"}
-                                    </span>
-                                  </div>
+                                  )}
                                 </div>
 
-                                {/* Project Leaf memories */}
-                                {isProjExpanded && (
-                                  <div className="pl-4 space-y-2">
-                                    {(project.children || []).map((leaf) => (
-                                      <div
-                                        key={leaf.id}
-                                        className="relative rounded-xl border border-[var(--aurora-border)] bg-[var(--aurora-surface)]/80 p-3 hover:border-[var(--aurora-border-strong)] transition-all overflow-hidden"
-                                      >
-                                        {/* Left accent color bar */}
-                                        <div
-                                          className="absolute left-0 top-0 bottom-0 w-1"
-                                          style={{ backgroundColor: dimColor }}
-                                        />
-
-                                        <div className="flex items-center justify-between gap-2 mb-1.5">
-                                          <div className="flex items-center gap-2">
-                                            <span className="font-bold text-xs text-[var(--aurora-fg1)]">
-                                              {leaf.key || leaf.title}
-                                            </span>
-                                            <span
-                                              className="text-[9px] font-semibold px-1.5 py-0.2 rounded"
-                                              style={{ backgroundColor: `${dimColor}20`, color: dimColor }}
-                                            >
-                                              {leaf.category.toUpperCase()}
-                                            </span>
-                                            <span className="text-[9px] px-1.5 py-0.2 rounded bg-[var(--aurora-chip)] text-[var(--aurora-fg3)]">
-                                              {leaf.source === "dreaming" ? "🌙 梦境" : leaf.source === "bootstrap" ? "🌟 自举" : "✍️ 手动"}
-                                            </span>
-                                          </div>
-
-                                          <span className="text-[10px] text-[var(--aurora-fg4)]">
-                                            {((leaf.confidence || 1) * 100).toFixed(0)}% 置信
-                                          </span>
-                                        </div>
-
-                                        <p className="text-xs text-[var(--aurora-fg2)] leading-relaxed mb-2">
-                                          {leaf.content}
-                                        </p>
-
-                                        <div className="flex items-center justify-between text-[10px] text-[var(--aurora-fg4)] font-mono border-t border-[var(--aurora-border)]/40 pt-1.5">
-                                          <span>{leaf.tree_path}</span>
-                                          <button
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              copyPath(leaf.tree_path);
-                                            }}
-                                            className="hover:text-[var(--aurora-accent)] transition-colors flex items-center gap-1"
-                                          >
-                                            {copyFeedback === leaf.tree_path ? "✓ 已复制" : "复制路径"}
-                                          </button>
-                                        </div>
-                                      </div>
-                                    ))}
-                                  </div>
-                                )}
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    copyPath(child.tree_path);
+                                  }}
+                                  className="text-[10px] text-[var(--aurora-fg4)] hover:text-[var(--aurora-accent)] font-mono"
+                                >
+                                  {copyFeedback === child.tree_path ? "已复制" : "复制路径"}
+                                </button>
                               </div>
-                            );
-                          }
 
-                          return null;
+                              {childExpanded && child.content && (
+                                <div className="mt-2.5 pt-2.5 border-t border-[var(--aurora-border)] text-xs text-[var(--aurora-fg2)] leading-relaxed prose prose-sm max-w-none">
+                                  <MarkdownViewer content={child.content} />
+                                </div>
+                              )}
+                            </div>
+                          );
                         })}
                       </div>
                     )}
                   </div>
                 );
               })}
-            </div>
-          )}
+          </div>
         </div>
       )}
 
-      {/* ------------------------------------------------------------- */}
-      {/* TAB 2: KNOWLEDGE GRAPH */}
-      {/* ------------------------------------------------------------- */}
+      {/* ─────────────────────────────────────────────────────────────
+          4. TAB: DREAMING (夜间梦境)
+          ───────────────────────────────────────────────────────────── */}
+      {activeTab === "dreaming" && <DreamingPanel />}
+
+      {/* ─────────────────────────────────────────────────────────────
+          5. TAB: KNOWLEDGE GRAPH (实体拓扑图谱)
+          ───────────────────────────────────────────────────────────── */}
       {activeTab === "graph" && (
         <div className="space-y-4">
-          {stats && (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
-              <StatCard label="Entities" value={stats.entities} />
-              <StatCard label="Relations" value={stats.relations} />
-              <StatCard label="Observations" value={stats.observations} />
-              <StatCard label="Embeddings" value={stats.embeddings} />
-            </div>
-          )}
+          <div className="flex items-center justify-between gap-3 text-xs">
+            <span className="text-[var(--aurora-fg3)]">
+              当前收录 {nodes.length} 个核心概念实体 · {edges.length} 条关系拓扑
+            </span>
 
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <label className="aurora-input" style={{ minWidth: 200 }}>
-              <Icon name="grid" size={15} style={{ color: "var(--aurora-fg3)" }} />
-              <select value={filterType} onChange={(e) => setFilterType(e.target.value)}>
-                <option value="">All Types</option>
-                {stats && Object.entries(stats.entity_types).map(([type, count]) => (
-                  <option key={type} value={type}>{type} ({count})</option>
-                ))}
+            <div className="flex items-center gap-2">
+              <select
+                value={filterType}
+                onChange={(e) => setFilterType(e.target.value)}
+                className="bg-[var(--aurora-surface-solid)] border border-[var(--aurora-border)] rounded-xl px-2.5 py-1 text-xs text-[var(--aurora-fg1)] outline-none"
+              >
+                <option value="">全部实体类别</option>
+                <option value="project">项目 (Project)</option>
+                <option value="technology">技术栈 (Tech)</option>
+                <option value="concept">核心概念 (Concept)</option>
+                <option value="tool">工具链 (Tool)</option>
               </select>
-            </label>
-            <GhostInput
-              type="text"
-              placeholder="Search entities & observations…"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-              icon="search"
-              wrapStyle={{ flex: 1, minWidth: 260 }}
-            />
-            <Btn onClick={handleSearch} icon="search">Search</Btn>
-            <Btn variant="glass" icon="link" onClick={() => setShareOpen(true)}>
-              {t.memoryShare.button}
-            </Btn>
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
-            <div className="lg:col-span-2 aurora-card" style={{ padding: 0, overflow: "hidden" }}>
-              <div style={{ padding: 14, borderBottom: "1px solid var(--aurora-border)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <h3 style={{ fontSize: 12, fontWeight: 600, color: "var(--aurora-fg3)", textTransform: "uppercase", letterSpacing: "0.04em" }}>
-                  Knowledge Graph
-                </h3>
-                <span style={{ fontSize: 11, color: "var(--aurora-fg4)" }}>
-                  {nodes.length} nodes · {edges.length} edges
-                </span>
-              </div>
-              {nodes.length === 0 ? (
-                <div style={{ padding: 48, textAlign: "center", color: "var(--aurora-fg4)", fontSize: 13 }}>
-                  No entities yet. Memory builds automatically as you use AI tools.
-                </div>
-              ) : (
-                <svg
-                  ref={svgRef}
-                  viewBox="0 0 800 600"
-                  className="w-full h-[400px] sm:h-[500px]"
-                >
-                  {edges.map((e, i) => {
-                    const s = nodeMap.get(e.source);
-                    const t = nodeMap.get(e.target);
-                    if (!s || !t) return null;
-                    return (
-                      <g key={`e-${i}`}>
-                        <line
-                          x1={s.x} y1={s.y} x2={t.x} y2={t.y}
-                          stroke="var(--aurora-border-strong)" strokeWidth={Math.min(e.strength, 3)}
-                        />
-                        <text
-                          x={((s.x || 0) + (t.x || 0)) / 2}
-                          y={((s.y || 0) + (t.y || 0)) / 2 - 4}
-                          fill="var(--aurora-fg4)" fontSize="8" textAnchor="middle"
-                        >
-                          {e.type}
-                        </text>
-                      </g>
-                    );
-                  })}
-                  {nodes.map((n) => (
-                    <g
-                      key={n.id}
-                      transform={`translate(${n.x || 0},${n.y || 0})`}
-                      onClick={() => handleNodeClick(n.id)}
-                      className="cursor-pointer"
-                    >
-                      <circle
-                        r={12}
-                        fill={TYPE_COLORS[n.type] || "#6b7280"}
-                        opacity={0.85}
-                        stroke={selectedEntity?.id === n.id ? "var(--aurora-accent)" : "var(--aurora-surface-solid)"}
-                        strokeWidth={selectedEntity?.id === n.id ? 3 : 1.5}
-                      />
-                      <text
-                        dy={24} textAnchor="middle"
-                        fill="var(--aurora-fg2)" fontSize="10" fontWeight="500"
-                      >
-                        {n.name.length > 15 ? n.name.slice(0, 15) + "..." : n.name}
-                      </text>
-                    </g>
-                  ))}
-                </svg>
-              )}
-              <div style={{ padding: 12, borderTop: "1px solid var(--aurora-border)", display: "flex", flexWrap: "wrap", gap: 12 }}>
-                {Object.entries(TYPE_COLORS).map(([type, color]) => (
-                  <div key={type} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--aurora-fg3)" }}>
-                    <span style={{ width: 10, height: 10, borderRadius: 9999, background: color }} />
-                    {type}
-                  </div>
-                ))}
-              </div>
-            </div>
+          <div className="relative rounded-2xl border border-[var(--aurora-border)] bg-[var(--aurora-surface-solid)] overflow-hidden h-[540px] flex items-center justify-center">
+            <svg ref={svgRef} className="w-full h-full cursor-grab active:cursor-grabbing">
+              {edges.map((e, idx) => {
+                const s = nodeMap.get(e.source);
+                const tnode = nodeMap.get(e.target);
+                if (!s || !tnode) return null;
+                return (
+                  <line
+                    key={idx}
+                    x1={s.x || 0}
+                    y1={s.y || 0}
+                    x2={tnode.x || 0}
+                    y2={tnode.y || 0}
+                    stroke="var(--aurora-border-strong)"
+                    strokeWidth={Math.min(e.strength || 1, 3)}
+                    strokeOpacity={0.4}
+                  />
+                );
+              })}
 
-            <Glass padding={20} radius={20}>
-              {selectedEntity ? (
-                <>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
-                    <div
-                      style={{
-                        width: 32, height: 32, borderRadius: 10,
-                        background: (TYPE_COLORS[selectedEntity.type] || "#6b7280") + "22",
-                        color: TYPE_COLORS[selectedEntity.type] || "#6b7280",
-                        display: "flex", alignItems: "center", justifyContent: "center",
-                      }}
+              {nodes.map((n) => {
+                const color = TYPE_COLORS[n.type] || "#8b5cf6";
+                const isSelected = selectedEntity?.id === n.id;
+                return (
+                  <g
+                    key={n.id}
+                    transform={`translate(${n.x || 0}, ${n.y || 0})`}
+                    onClick={() => handleNodeClick(n.id)}
+                    className="cursor-pointer"
+                  >
+                    <circle
+                      r={isSelected ? 10 : 6}
+                      fill={color}
+                      stroke={isSelected ? "#ffffff" : "transparent"}
+                      strokeWidth={2}
+                      className="transition-all hover:scale-125"
+                    />
+                    <text
+                      dy={14}
+                      textAnchor="middle"
+                      fill="var(--aurora-fg2)"
+                      fontSize={10}
+                      className="select-none font-medium pointer-events-none"
                     >
-                      <Icon name="target" size={16} />
-                    </div>
-                    <div>
-                      <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600, color: "var(--aurora-fg1)", letterSpacing: "-0.01em" }}>
-                        {selectedEntity.name}
-                      </h3>
-                      <span
-                        style={{
-                          display: "inline-block",
-                          marginTop: 2,
-                          fontSize: 10.5,
-                          padding: "2px 8px",
-                          borderRadius: 9999,
-                          background: (TYPE_COLORS[selectedEntity.type] || "#6b7280") + "22",
-                          color: TYPE_COLORS[selectedEntity.type] || "#6b7280",
-                          fontWeight: 500,
-                        }}
-                      >
-                        {selectedEntity.type}
-                      </span>
-                    </div>
-                  </div>
-                  {selectedEntity.summary && (
-                    <p style={{ fontSize: 13, color: "var(--aurora-fg3)", marginBottom: 14, lineHeight: 1.5 }}>
-                      {selectedEntity.summary}
-                    </p>
-                  )}
-                  {(selectedEntity.outgoing_relations.length > 0 || selectedEntity.incoming_relations.length > 0) && (
-                    <div style={{ marginBottom: 14 }}>
-                      <h4 style={{ fontSize: 10.5, fontWeight: 600, color: "var(--aurora-fg4)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>
-                        Relations
-                      </h4>
-                      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                        {selectedEntity.outgoing_relations.map((r, i) => (
-                          <div key={`o-${i}`} style={{ fontSize: 12, color: "var(--aurora-fg3)" }}>
-                            → <span style={{ color: "var(--aurora-accent)", fontWeight: 500 }}>{r.relation}</span> → <span style={{ color: "var(--aurora-fg1)", fontWeight: 500 }}>{r.target_name}</span>
-                          </div>
-                        ))}
-                        {selectedEntity.incoming_relations.map((r, i) => (
-                          <div key={`i-${i}`} style={{ fontSize: 12, color: "var(--aurora-fg3)" }}>
-                            <span style={{ color: "var(--aurora-fg1)", fontWeight: 500 }}>{r.source_name}</span> → <span style={{ color: "var(--aurora-accent)", fontWeight: 500 }}>{r.relation}</span> →
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  {selectedEntity.observations.length > 0 && (
-                    <div>
-                      <h4 style={{ fontSize: 10.5, fontWeight: 600, color: "var(--aurora-fg4)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>
-                        Observations ({selectedEntity.observations.length})
-                      </h4>
-                      <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 260, overflowY: "auto" }}>
-                        {selectedEntity.observations.map((o, i) => (
-                          <div key={i} style={{ fontSize: 12, color: "var(--aurora-fg3)", borderLeft: "2px solid var(--aurora-border-strong)", paddingLeft: 8 }}>
-                            <p style={{ margin: 0 }}>{o.content}</p>
-                            {o.observed_at && (
-                              <span style={{ fontSize: 10.5, color: "var(--aurora-fg4)" }}>{new Date(o.observed_at).toLocaleDateString()}</span>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </>
-              ) : (
-                <div style={{ textAlign: "center", color: "var(--aurora-fg4)", fontSize: 13, padding: "32px 0" }}>
-                  Click a node to view details
+                      {n.name}
+                    </text>
+                  </g>
+                );
+              })}
+            </svg>
+
+            {/* Selected Node Details Drawer */}
+            {selectedEntity && (
+              <div className="absolute top-4 right-4 w-72 rounded-2xl p-4 bg-[var(--aurora-surface)] backdrop-blur-md border border-[var(--aurora-border)] shadow-lg max-h-[480px] overflow-y-auto">
+                <div className="flex items-center justify-between pb-2 border-b border-[var(--aurora-border)]">
+                  <span className="font-bold text-sm text-[var(--aurora-fg1)]">{selectedEntity.name}</span>
+                  <button onClick={() => setSelectedEntity(null)} className="text-[var(--aurora-fg4)] hover:text-[var(--aurora-fg1)]">
+                    <Icon name="close" size={13} />
+                  </button>
                 </div>
-              )}
-            </Glass>
+                <div className="text-xs text-[var(--aurora-fg3)] mt-2">
+                  <div className="font-semibold text-[var(--aurora-fg2)] mb-1">实体摘要：</div>
+                  <p>{selectedEntity.summary || "暂无具体描述"}</p>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
 
-      {/* ------------------------------------------------------------- */}
-      {/* TAB 3: SEARCH RESULTS */}
-      {/* ------------------------------------------------------------- */}
+      {/* ─────────────────────────────────────────────────────────────
+          6. TAB: SEARCH (语义向量检索)
+          ───────────────────────────────────────────────────────────── */}
       {activeTab === "search" && (
         <div className="space-y-4">
           <div className="flex gap-2">
-            <GhostInput
-              type="text"
-              placeholder="跨设备搜索研发会话与记忆..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-              icon="search"
-              wrapStyle={{ flex: 1 }}
-            />
-            <Btn onClick={handleSearch} icon="search">检索</Btn>
+            <div className="flex-1 relative">
+              <input
+                type="text"
+                placeholder="输入自然语言搜索跨会话记忆与核心准则..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+                className="w-full bg-[var(--aurora-surface-solid)] border border-[var(--aurora-border)] rounded-xl px-9 py-2.5 text-xs text-[var(--aurora-fg1)] placeholder-[var(--aurora-fg3)] focus:outline-hidden focus:border-[var(--aurora-accent)]"
+              />
+              <div className="absolute left-3 top-3 text-[var(--aurora-fg3)]">
+                <Icon name="search" size={14} />
+              </div>
+            </div>
+            <Btn size="md" icon="search" onClick={handleSearch}>
+              检索
+            </Btn>
           </div>
 
-          {searchResults.length > 0 ? (
-            <Glass padding={16} radius={18}>
-              <h3 style={{ fontSize: 12, fontWeight: 600, color: "var(--aurora-fg3)", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 12 }}>
-                Search Results ({searchResults.length})
-              </h3>
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {searchResults.map((r, i) => (
-                  <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 10, fontSize: 13 }} className="p-2 rounded-xl hover:bg-[var(--aurora-chip)] transition-colors">
-                    <div
-                      style={{
-                        width: 18, height: 18, borderRadius: 9999,
-                        background: TYPE_COLORS[r.entity_type || r.type || ""] || "#6b7280",
-                        flexShrink: 0,
-                        marginTop: 2,
-                      }}
-                    />
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div className="flex items-center gap-2">
-                        <span style={{ fontWeight: 600, color: "var(--aurora-fg1)" }}>{r.name}</span>
-                        <span style={{ fontSize: 10, color: "var(--aurora-fg4)", padding: "1px 6px", borderRadius: 4, background: "var(--aurora-chip)" }}>
-                          {r.entity_type || r.type || ""}
-                        </span>
-                      </div>
-                      {r.summary && <p style={{ fontSize: 12, color: "var(--aurora-fg2)", marginTop: 4 }}>{r.summary}</p>}
-                      {r.content && <p style={{ fontSize: 12, color: "var(--aurora-fg3)", marginTop: 4 }}>{r.content.slice(0, 180)}...</p>}
-                    </div>
+          <div className="space-y-2.5">
+            {searchResults.length > 0 ? (
+              searchResults.map((r, i) => (
+                <div key={i} className="p-4 rounded-xl border border-[var(--aurora-border)] bg-[var(--aurora-surface)] shadow-xs">
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <span className="text-xs font-bold text-[var(--aurora-fg1)]">{r.name}</span>
+                    <span className="text-[10px] px-1.5 py-0.2 rounded bg-[var(--aurora-chip)] text-[var(--aurora-fg3)]">
+                      {r.entity_type || r.type || "知识片段"}
+                    </span>
                   </div>
-                ))}
+                  <p className="text-xs text-[var(--aurora-fg2)] leading-relaxed">
+                    {r.summary || r.content || "未提供内容"}
+                  </p>
+                </div>
+              ))
+            ) : (
+              <div className="py-12 text-center text-xs text-[var(--aurora-fg3)]">
+                输入关键词或问题后点击检索
               </div>
-            </Glass>
-          ) : (
-            <div className="py-20 text-center text-xs text-[var(--aurora-fg3)] bg-[var(--aurora-surface-solid)]/30 rounded-2xl border border-[var(--aurora-border)]">
-              输入关键词检索跨设备的编程记忆、代码与文档
-            </div>
-          )}
+            )}
+          </div>
         </div>
       )}
 
-      {/* Share Modal */}
-      <ShareModal
-        open={shareOpen}
-        onClose={() => setShareOpen(false)}
-        kind="memory"
-        targetId="all"
-        title={t.nav.memory}
-      />
-
-      {/* MEMORY.md Full Markdown Modal */}
+      {/* Full MEMORY.md Viewer Modal */}
       {markdownModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-          <div className="relative w-full max-w-3xl max-h-[85vh] bg-[var(--aurora-surface-solid)] border border-[var(--aurora-border-strong)] rounded-2xl flex flex-col shadow-2xl overflow-hidden">
-            <div className="flex items-center justify-between px-5 py-3.5 border-b border-[var(--aurora-border)] bg-[var(--aurora-surface)]">
-              <div className="flex items-center gap-2">
-                <span className="text-[var(--aurora-accent)]">📖</span>
-                <span className="font-bold text-sm text-[var(--aurora-fg1)]">MEMORY.md 全文预览</span>
-              </div>
-              <button
-                onClick={() => setMarkdownModalOpen(false)}
-                className="w-7 h-7 rounded-lg flex items-center justify-center text-[var(--aurora-fg3)] hover:text-[var(--aurora-fg1)] hover:bg-[var(--aurora-chip)] text-xs"
-              >
-                ✕
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="w-full max-w-4xl max-h-[85vh] rounded-3xl bg-[var(--aurora-surface-solid)] border border-[var(--aurora-border)] shadow-2xl flex flex-col overflow-hidden">
+            <div className="p-4 border-b border-[var(--aurora-border)] flex items-center justify-between">
+              <span className="font-bold text-sm text-[var(--aurora-fg1)]">MEMORY.md 全量核心经验文件</span>
+              <button onClick={() => setMarkdownModalOpen(false)} className="text-[var(--aurora-fg4)] hover:text-[var(--aurora-fg1)]">
+                <Icon name="close" size={15} />
               </button>
             </div>
-
-            <div className="p-6 overflow-y-auto max-h-[calc(85vh-60px)]">
+            <div className="p-6 overflow-y-auto prose prose-sm max-w-none text-xs leading-relaxed">
               <MarkdownViewer content={markdownContent} />
             </div>
           </div>

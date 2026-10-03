@@ -570,3 +570,38 @@ aside input,
   -webkit-app-region: no-drag;
 }
 
+/* =========================================================================
+   Cognitive Brain & Luxury Aurora UI Utilities
+   ========================================================================= */
+.aurora-glass-panel {
+  background: var(--aurora-surface);
+  backdrop-filter: var(--aurora-blur-heavy);
+  -webkit-backdrop-filter: var(--aurora-blur-heavy);
+  border: 1px solid var(--aurora-border);
+  box-shadow: var(--aurora-card-shadow);
+  border-radius: var(--aurora-radius-card);
+}
+
+.aurora-gradient-text {
+  background: var(--aurora-brand-grad);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+@keyframes breathingGlow {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.85;
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4);
+  }
+  50% {
+    transform: scale(1.08);
+    opacity: 1;
+    box-shadow: 0 0 10px 3px rgba(16, 185, 129, 0.6);
+  }
+}
+
+.breathing-glow-emerald {
+  animation: breathingGlow 2.5s infinite ease-in-out;
+}
+

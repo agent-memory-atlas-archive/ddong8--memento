@@ -188,19 +188,25 @@ function DeviceTargets({
                 display: "inline-flex",
                 alignItems: "center",
                 gap: 8,
-                padding: "7px 12px",
-                borderRadius: 12,
+                padding: "8px 14px",
+                borderRadius: 14,
                 cursor: "pointer",
                 border: `1px solid ${on ? "var(--aurora-accent)" : "var(--aurora-border)"}`,
-                background: on ? "var(--aurora-accent-soft)" : "var(--aurora-chip)",
+                background: on ? "var(--aurora-surface-solid)" : "var(--aurora-chip)",
                 color: on ? "var(--aurora-fg1)" : "var(--aurora-fg3)",
                 fontSize: 12.5,
                 textAlign: "left",
+                boxShadow: on ? "0 2px 10px rgba(109, 40, 217, 0.12)" : "none",
               }}
             >
-              <BrandMark id={tool} size={15} colored={on} tint={on ? undefined : "var(--aurora-fg3)"} />
+              <BrandMark id={tool} size={16} colored={on} tint={on ? undefined : "var(--aurora-fg3)"} />
               <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.25 }}>
-                <span style={{ fontWeight: on ? 600 : 500 }}>{TARGET_META[tool]?.label || tool}</span>
+                <span style={{ fontWeight: on ? 600 : 500, display: "flex", alignItems: "center", gap: 5 }}>
+                  {TARGET_META[tool]?.label || tool}
+                  {on && (
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#10B981] breathing-glow-emerald inline-block" />
+                  )}
+                </span>
                 <span style={{ fontSize: 10.5, color: "var(--aurora-fg4)", fontFamily: "ui-monospace, monospace" }}>
                   {TARGET_META[tool]?.file}
                 </span>
@@ -414,14 +420,27 @@ export default function PersonaPage() {
                   </span>
                 </div>
 
-                <ul className="space-y-2 text-xs text-[var(--aurora-fg2)] leading-relaxed">
+                <div className="space-y-2.5">
                   {sec.items.map((item, itemIdx) => (
-                    <li key={itemIdx} className="flex items-start gap-2">
-                      <span className="mt-1 text-[var(--aurora-accent)] shrink-0">•</span>
-                      <span>{item}</span>
-                    </li>
+                    <div
+                      key={itemIdx}
+                      className="p-3 rounded-xl bg-[var(--aurora-surface-solid)] border border-[var(--aurora-border)] shadow-xs hover:border-[var(--aurora-border-strong)] transition-all flex items-start gap-2.5 text-xs text-[var(--aurora-fg2)] leading-relaxed"
+                    >
+                      <span
+                        className="w-4 h-4 rounded-md flex items-center justify-center shrink-0 font-mono text-[10px] font-bold mt-0.5"
+                        style={{
+                          backgroundColor: `${sec.accent}18`,
+                          color: sec.accent,
+                        }}
+                      >
+                        {itemIdx + 1}
+                      </span>
+                      <span className="flex-1 font-normal select-text">
+                        {item}
+                      </span>
+                    </div>
                   ))}
-                </ul>
+                </div>
               </div>
             ))}
           </div>
