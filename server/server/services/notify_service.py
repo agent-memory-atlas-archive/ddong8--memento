@@ -47,9 +47,11 @@ def parse_push_url(raw: str | None) -> tuple[str, str, str] | None:
     if not parts:
         return None
     
-    # Bark
+    # Bark (official Bark endpoint requires https)
     if "api.day.app" in parsed.netloc:
-        return "bark", f"{parsed.scheme}://{parsed.netloc}", parts[0]
+        if parsed.scheme != "https":
+            return None
+        return "bark", f"https://{parsed.netloc}", parts[0]
     
     # ntfy (either ntfy.sh or self-hosted ntfy instance)
     if "ntfy" in parsed.netloc or len(parts) == 1:
@@ -59,6 +61,11 @@ def parse_push_url(raw: str | None) -> tuple[str, str, str] | None:
 
 
 def parse_bark_url(raw: str | None) -> tuple[str, str] | None:
+    if not raw:
+        return None
+    parsed = urlparse(raw.strip())
+    if parsed.scheme != "https":
+        return None
     res = parse_push_url(raw)
     if not res:
         return None
