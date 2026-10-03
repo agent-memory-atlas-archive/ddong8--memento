@@ -190,6 +190,12 @@ async def send_expo_push(
         if resp.status_code != 200:
             logger.warning("Expo native push failed: HTTP %s %s", resp.status_code, resp.text[:200])
             return False
+
+        data = resp.json()
+        tickets = data.get("data") or []
+        for ticket in tickets:
+            if ticket.get("status") == "error":
+                logger.warning("Expo Push delivery error: %s (%s)", ticket.get("message"), ticket.get("details"))
         return True
     except httpx.HTTPError as e:
         logger.warning("Expo native push failed: %s", e)
