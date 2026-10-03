@@ -162,21 +162,37 @@ function showWindow(path?: string): void {
 }
 
 function showNotification(title: string, body: string, targetUrl?: string): void {
-  if (!Notification.isSupported()) return;
-  const iconPath = join(__dirname, "static", "tray.png");
-  let icon = nativeImage.createFromPath(iconPath);
-  if (icon.isEmpty()) {
-    icon = nativeImage.createFromPath(join(__dirname, "static", "trayTemplate.png"));
+  // On macOS (Darwin), use osascript fail-safe to guarantee system banner popup
+  if (process.platform === "darwin") {
+    try {
+      const { exec } = require("node:child_process");
+      const cleanTitle = (title || "Memento").replace(/["\\]/g, "");
+      const cleanBody = (body || "").replace(/["\\]/g, "");
+      exec(`osascript -e 'display notification "${cleanBody}" with title "${cleanTitle}" sound name "default"'`);
+    } catch {
+      // ignore
+    }
   }
-  const notification = new Notification({
-    title,
-    body,
-    icon: icon.isEmpty() ? undefined : icon,
-  });
-  notification.on("click", () => {
-    showWindow(targetUrl);
-  });
-  notification.show();
+
+  if (!Notification.isSupported()) return;
+  try {
+    const iconPath = join(__dirname, "static", "tray.png");
+    let icon = nativeImage.createFromPath(iconPath);
+    if (icon.isEmpty()) {
+      icon = nativeImage.createFromPath(join(__dirname, "static", "trayTemplate.png"));
+    }
+    const notification = new Notification({
+      title,
+      body,
+      icon: icon.isEmpty() ? undefined : icon,
+    });
+    notification.on("click", () => {
+      showWindow(targetUrl);
+    });
+    notification.show();
+  } catch {
+    // ignore
+  }
 }
 
 let notifyPollTimer: NodeJS.Timeout | null = null;

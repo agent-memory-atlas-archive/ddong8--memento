@@ -150,8 +150,8 @@ async def send_test(
     item = {
         "id": str(uuid.uuid4()),
         "kind": "test",
-        "title": "Memento 手机端原生测试通知",
-        "body": "恭喜！您的 Memento 移动端原生通知已完全通畅，无需借助任何第三方外部 App！",
+        "title": "🔔 Memento 本机与全终端原生测试通知",
+        "body": "恭喜！您的 Memento 桌面电脑与移动终端原生通知通道已完全通畅！",
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
     feed = list(prefs.get("recent_notifications") or [])

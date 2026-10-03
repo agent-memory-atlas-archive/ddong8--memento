@@ -192,7 +192,7 @@ export function ProactiveAgentView() {
                 </span>
               </div>
               <p className="text-xs text-[var(--aurora-fg3)] mt-1.5 leading-relaxed max-w-xl">
-                脱离浏览器窗口限制，在云端常驻跳动。自动执行晨间日程简报、夜间认知进化与梦境整理，并在设备异常或临期待办出现时主动向您手机汇报。
+                脱离浏览器窗口限制，在云端常驻跳动。自动执行晨间日程简报、夜间认知进化与梦境整理，并在设备异常或临期待办出现时主动向您的电脑与移动设备汇报。
               </p>
             </div>
           </div>
@@ -336,7 +336,7 @@ export function ProactiveAgentView() {
             <div>
               <div className="text-xs font-semibold text-[var(--aurora-fg1)]">低风险指令自动放行</div>
               <div className="text-[11px] text-[var(--aurora-fg4)] mt-0.5">
-                对查询、状态拉取、只读检测等安全指令自动执行；高危指令（删除、代码强制推送）挂起推送到手机审批
+                对查询、状态拉取、只读检测等安全指令自动执行；高危指令（删除、代码强制推送）挂起并弹出系统审批提醒
               </div>
             </div>
             <input
@@ -351,7 +351,7 @@ export function ProactiveAgentView() {
             <div>
               <div className="text-xs font-semibold text-[var(--aurora-fg1)]">终端设备掉线预警</div>
               <div className="text-[11px] text-[var(--aurora-fg4)] mt-0.5">
-                当常驻执行的某台电脑或服务器意外离线超过 5 分钟，及时向手机推送提醒
+                当常驻执行的某台电脑或服务器意外离线超过 5 分钟，及时向本机电脑与移动终端推送告警
               </div>
             </div>
             <input
@@ -366,7 +366,7 @@ export function ProactiveAgentView() {
             <div>
               <div className="text-xs font-semibold text-[var(--aurora-fg1)]">夜间免打扰时段（Quiet Hours）</div>
               <div className="text-[11px] text-[var(--aurora-fg4)] mt-0.5">
-                该时段内后台静默维护与沉淀，严禁向手机发送震动与弹窗通知
+                该时段内后台静默维护与沉淀，严禁向任何终端发送弹窗或声音打扰
               </div>
             </div>
             <div className="flex items-center gap-2 text-xs font-mono">
