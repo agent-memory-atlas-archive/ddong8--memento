@@ -8,15 +8,7 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.ihasy.memento.mobile",
-      "infoPlist": {
-        "NSHealthShareUsageDescription": "Memento 需要读取您的健康睡眠与作息数据，以便全自动同步精力与生活节律分析。",
-        "NSHealthUpdateUsageDescription": "Memento 需要访问您的健康数据以保持作息同步。"
-      },
-      "entitlements": {
-        "com.apple.developer.healthkit": true,
-        "com.apple.developer.healthkit.access": []
-      }
+      "bundleIdentifier": "com.ihasy.memento.mobile"
     },
     "android": {
       "adaptiveIcon": {
@@ -34,7 +26,6 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "./plugins/withHealthKit.js",
       "expo-router",
       "expo-status-bar",
       "expo-secure-store",
