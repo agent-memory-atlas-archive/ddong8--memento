@@ -1,12 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { api } from "@/lib/api-client";
 import { fmt, useI18n } from "@/lib/i18n";
-import { Btn, Chip, Glass, TopBar } from "@/components/aurora/primitives";
+import { Btn, Chip, Glass } from "@/components/aurora/primitives";
 import { Icon } from "@/components/aurora/Icon";
 import MarkdownViewer from "@/components/viewers/MarkdownViewer";
-import CognitiveCompass from "@/components/memory/CognitiveCompass";
 
 type Obj = Record<string, unknown>;
 const obj = (v: unknown): Obj => (v && typeof v === "object" && !Array.isArray(v) ? (v as Obj) : {});
@@ -27,8 +26,8 @@ const mono: CSSProperties = { fontFamily: "ui-monospace, SFMono-Regular, Menlo, 
 const field: CSSProperties = {
   width: "100%",
   fontSize: 13,
-  padding: "8px 10px",
-  borderRadius: 10,
+  padding: "8px 12px",
+  borderRadius: 12,
   border: "1px solid var(--aurora-border-strong)",
   background: "var(--aurora-surface-solid)",
   color: "var(--aurora-fg1)",
@@ -61,7 +60,7 @@ function SkillEditor({ skill, busy, onSave, onCancel }: { skill: Obj; busy: bool
     </div>
   );
   return (
-    <div style={{ marginTop: 10 }}>
+    <div className="mt-3 p-4 rounded-2xl bg-[var(--aurora-surface-mute)] border border-[var(--aurora-border)]">
       {label(s.fieldTitle)}
       <input value={title} onChange={(e) => setTitle(e.target.value)} style={field} />
       {label(s.fieldSlug, s.fieldSlugHint)}
@@ -69,8 +68,8 @@ function SkillEditor({ skill, busy, onSave, onCancel }: { skill: Obj; busy: bool
       {label(s.fieldDescription, s.fieldDescriptionHint)}
       <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3} style={{ ...field, resize: "vertical" }} />
       {label(s.fieldBody)}
-      <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={16} style={{ ...field, ...mono, lineHeight: 1.55, resize: "vertical" }} />
-      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 10, flexWrap: "wrap" }}>
+      <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={14} style={{ ...field, ...mono, lineHeight: 1.55, resize: "vertical" }} />
+      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 12, flexWrap: "wrap" }}>
         <Btn variant="ghost" size="sm" onClick={onCancel} disabled={busy}>
           {t.cancel}
         </Btn>
@@ -98,8 +97,7 @@ export default function SkillsPage() {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [editing, setEditing] = useState<string | null>(null);
   const [showUpdate, setShowUpdate] = useState<string | null>(null);
-  const [showArchived, setShowArchived] = useState(false);
-  const [showReviews, setShowReviews] = useState(false);
+  const [activeTab, setActiveTab] = useState<"published" | "drafts" | "reviews" | "archived">("published");
   const poll = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const job = reviews.job ? obj(reviews.job) : null;
@@ -194,140 +192,12 @@ export default function SkillsPage() {
   const devices = list(data?.devices);
   const statusLabels: Record<string, string> = { draft: s.statusDraft, published: s.statusPublished, dismissed: s.statusDismissed, retired: s.statusRetired };
 
-  const renderSkill = (skill: Obj) => {
-    const id = str(skill.id);
-    const status = str(skill.status) || "draft";
-    const disabled = busy !== null;
-    const update = skill.pending_update ? obj(skill.pending_update) : null;
-    const evidence = list(skill.evidence);
-    const meta = [
-      str(skill.project),
-      status === "published" ? `v${str(skill.version)}` : "",
-      fmt(s.seenTimes, { n: num(skill.times_seen) || 1 }),
-      skill.last_seen_at ? fmt(s.lastSeen, { at: time(skill.last_seen_at) }) : "",
-      skill.edited_by_user === true ? s.editedByYou : "",
-    ].filter(Boolean);
-    return (
-      <div
-        key={id}
-        className="p-4 sm:p-5 rounded-2xl border border-[var(--aurora-border)] bg-[var(--aurora-surface-solid)] shadow-xs hover:border-[var(--aurora-border-strong)] transition-all mb-3.5"
-      >
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2.5 mb-2.5 border-b border-[var(--aurora-border)]">
-          <div className="flex items-center gap-2">
-            <span className="font-bold text-sm sm:text-base text-[var(--aurora-fg1)]">{str(skill.title)}</span>
-            <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-[var(--aurora-chip)] text-[var(--aurora-fg2)] font-semibold border border-[var(--aurora-border)]">
-              /{str(skill.slug)}
-            </span>
-          </div>
-
-          <div className="flex items-center gap-1.5 text-[11px] text-[var(--aurora-fg4)] font-mono">
-            {meta.map((m, i) => (
-              <span key={i} className="px-1.5 py-0.5 rounded bg-[var(--aurora-chip)]">
-                {m}
-              </span>
-            ))}
-          </div>
-        </div>
-
-        <p className="text-xs sm:text-sm text-[var(--aurora-fg2)] leading-relaxed mb-3">{str(skill.description)}</p>
-
-        {update && (
-          <div style={{ marginTop: 10, padding: 10, borderRadius: 10, background: "rgba(217,119,6,0.08)", border: "1px solid rgba(217,119,6,0.3)" }}>
-            <div style={{ fontSize: 12.5, color: "#B45309", lineHeight: 1.45 }}>{fmt(s.updateFound, { reason: str(update.reason) })}</div>
-            {showUpdate === id && (
-              <div style={{ marginTop: 8 }}>
-                <p style={{ margin: "0 0 8px", fontSize: 13, color: "var(--aurora-fg2)" }}>{str(update.description)}</p>
-                <div className="prose prose-sm max-w-none">
-                  <MarkdownViewer content={str(update.body)} />
-                </div>
-              </div>
-            )}
-            <div style={{ display: "flex", gap: 6, justifyContent: "flex-end", marginTop: 6, flexWrap: "wrap" }}>
-              <Btn variant="ghost" size="sm" disabled={disabled} onClick={() => act(id, () => api.skillAction(id, "update/discard"))}>
-                {s.no}
-              </Btn>
-              <Btn variant="glass" size="sm" onClick={() => setShowUpdate(showUpdate === id ? null : id)}>
-                {showUpdate === id ? s.hide : s.look}
-              </Btn>
-              <Btn size="sm" disabled={disabled} onClick={() => act(id, () => api.skillAction(id, "update/apply"), s.updateApplied)}>
-                {s.apply}
-              </Btn>
-            </div>
-          </div>
-        )}
-
-        {editing === id ? (
-          <SkillEditor
-            skill={skill}
-            busy={disabled}
-            onCancel={() => setEditing(null)}
-            onSave={(edits, publish) =>
-              publish && status === "draft"
-                ? act(id, () => api.publishSkill(id, edits), s.publishedNotice)
-                : act(id, () => api.editSkill(id, edits), status === "draft" ? s.saved : s.savedNewVersion)
-            }
-          />
-        ) : (
-          <>
-            <button
-              type="button"
-              onClick={() => toggle(id)}
-              style={{ display: "inline-flex", alignItems: "center", gap: 4, marginTop: 8, background: "none", border: 0, padding: 0, cursor: "pointer", color: "var(--aurora-accent)", fontSize: 12.5 }}
-            >
-              <Icon name={expanded.has(id) ? "minus" : "plus"} size={12} />
-              {expanded.has(id) ? s.hideSteps : s.showSteps}
-            </button>
-            {expanded.has(id) && (
-              <div style={{ marginTop: 8 }}>
-                <div className="prose prose-sm max-w-none" style={{ padding: 12, borderRadius: 10, background: "var(--aurora-surface-mute)" }}>
-                  <MarkdownViewer content={str(skill.body)} />
-                </div>
-                {evidence
-                  .slice(-3)
-                  .reverse()
-                  .map((e, i) => (
-                    <div key={i} style={{ fontSize: 12, color: "var(--aurora-fg3)", marginTop: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                      {fmt(s.fromSession, { title: str(e.title), tool: str(e.tool_id), at: time(e.at) })}
-                    </div>
-                  ))}
-              </div>
-            )}
-            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 8, flexWrap: "wrap" }}>
-              {status === "draft" && (
-                <>
-                  <Btn variant="ghost" size="sm" disabled={disabled} onClick={() => act(id, () => api.skillAction(id, "dismiss"))}>
-                    {s.no}
-                  </Btn>
-                  <Btn variant="glass" size="sm" icon="edit" disabled={disabled} onClick={() => setEditing(id)}>
-                    {s.edit}
-                  </Btn>
-                  <Btn size="sm" icon="rocket" disabled={disabled} onClick={() => act(id, () => api.publishSkill(id), s.publishedNotice)}>
-                    {busy === id ? s.working : s.publish}
-                  </Btn>
-                </>
-              )}
-              {status === "published" && (
-                <>
-                  <Btn variant="ghost" size="sm" disabled={disabled} onClick={() => act(id, () => api.skillAction(id, "retire"), s.retiredNotice)}>
-                    {s.retire}
-                  </Btn>
-                  <Btn variant="glass" size="sm" icon="edit" disabled={disabled} onClick={() => setEditing(id)}>
-                    {s.edit}
-                  </Btn>
-                </>
-              )}
-            </div>
-          </>
-        )}
-      </div>
-    );
-  };
-
   const reviewList = list(reviews.reviews);
   const stats = obj(reviews.stats);
   const outcomes = obj(stats.outcomes);
   const outcomeLabels: Record<string, string> = { done: s.outcomeDone, partial: s.outcomePartial, failed: s.outcomeFailed, chat: s.outcomeChat, error: s.outcomeError, unknown: s.outcomeUnknown };
   const outcomeTone = (o: string) => (o === "done" ? "success" : o === "failed" || o === "error" ? "danger" : o === "partial" ? "warn" : "neutral");
+
   const learned = (r: Obj) => {
     const parts: string[] = [];
     if (r.skill != null) {
@@ -339,146 +209,383 @@ export default function SkillsPage() {
     if (num(r.todos_done) > 0) parts.push(fmt(s.learnedTodosDone, { n: num(r.todos_done) }));
     return parts.length ? parts.join(" · ") : s.learnedNothing;
   };
+
   const deviceSummary = (d: Obj) => {
     if (count(d.targets) === 0) return s.deviceNoTools;
-    const status = obj(d.status);
-    if (!status.results) return s.deviceWaiting;
-    const c = skillResultCounts(obj(status.results));
+    const devStatus = obj(d.status);
+    if (!devStatus.results) return s.deviceWaiting;
+    const c = skillResultCounts(obj(devStatus.results));
     const parts = [
       c.ok ? fmt(s.deviceWritten, { n: c.ok }) : "",
       c.kept ? fmt(s.deviceKept, { n: c.kept }) : "",
       c.skipped ? fmt(s.deviceSkipped, { n: c.skipped }) : "",
       c.error ? fmt(s.deviceErrors, { n: c.error }) : "",
     ].filter(Boolean);
-    return `${parts.length ? parts.join(" · ") : s.deviceNoSkills} · ${time(status.reported_at)}`;
+    return `${parts.length ? parts.join(" · ") : s.deviceNoSkills} · ${time(devStatus.reported_at)}`;
   };
 
-  const draftsList = data ? list(data.drafts) : [];
-  const publishedList = data ? list(data.published) : [];
+  const renderSkillCard = (skill: Obj) => {
+    const id = str(skill.id);
+    const status = str(skill.status) || "draft";
+    const disabled = busy !== null;
+    const update = skill.pending_update ? obj(skill.pending_update) : null;
+    const evidence = list(skill.evidence);
+    const isExpanded = expanded.has(id);
+
+    return (
+      <div
+        key={id}
+        className="p-5 rounded-2xl border border-[var(--aurora-border)] bg-[var(--aurora-surface)] shadow-xs hover:border-[var(--aurora-border-strong)] transition-all flex flex-col justify-between"
+      >
+        <div>
+          {/* Card Header */}
+          <div className="flex items-start justify-between gap-3 pb-3 mb-3 border-b border-[var(--aurora-border)]">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl flex items-center justify-center bg-[rgba(245,158,11,0.12)] text-[#F59E0B]">
+                <Icon name="zap" size={16} />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-[var(--aurora-fg1)]">
+                  {str(skill.title)}
+                </h3>
+                <span className="text-[11px] font-mono text-[var(--aurora-fg4)]">
+                  /{str(skill.slug)}
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1.5 shrink-0">
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-[var(--aurora-chip)] text-[var(--aurora-fg2)] font-semibold">
+                {status === "published" ? `v${str(skill.version || "1.0")}` : "草稿"}
+              </span>
+              {skill.project ? (
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-[rgba(16,185,129,0.1)] text-[#10B981] font-medium">
+                  {str(skill.project)}
+                </span>
+              ) : null}
+            </div>
+          </div>
+
+          <p className="text-xs text-[var(--aurora-fg2)] leading-relaxed mb-4">
+            {str(skill.description)}
+          </p>
+
+          {/* Update Notice */}
+          {update && (
+            <div className="mb-3 p-3 rounded-xl bg-[rgba(217,119,6,0.08)] border border-[rgba(217,119,6,0.25)] text-xs">
+              <div className="font-semibold text-[#B45309] mb-1">发现新版技能演进建议：</div>
+              <p className="text-[var(--aurora-fg3)]">{str(update.reason)}</p>
+              {showUpdate === id && (
+                <div className="mt-2 pt-2 border-t border-[rgba(217,119,6,0.2)] prose prose-sm max-w-none text-xs">
+                  <MarkdownViewer content={str(update.body)} />
+                </div>
+              )}
+              <div className="flex gap-2 justify-end mt-2">
+                <Btn variant="ghost" size="sm" onClick={() => act(id, () => api.skillAction(id, "update/discard"))}>忽略</Btn>
+                <Btn variant="glass" size="sm" onClick={() => setShowUpdate(showUpdate === id ? null : id)}>
+                  {showUpdate === id ? "收起" : "对比变更"}
+                </Btn>
+                <Btn size="sm" onClick={() => act(id, () => api.skillAction(id, "update/apply"), s.updateApplied)}>应用更新</Btn>
+              </div>
+            </div>
+          )}
+
+          {/* Expanded Step Body */}
+          {isExpanded && (
+            <div className="mb-3 p-3.5 rounded-xl bg-[var(--aurora-surface-solid)] border border-[var(--aurora-border)]">
+              <div className="prose prose-sm max-w-none text-xs leading-relaxed">
+                <MarkdownViewer content={str(skill.body)} />
+              </div>
+              {evidence.length > 0 && (
+                <div className="mt-2.5 pt-2 border-t border-[var(--aurora-border)] text-[11px] text-[var(--aurora-fg4)]">
+                  提炼自最近真实操作会话：{str(evidence[evidence.length - 1]?.title || "日常编码实践")}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Card Footer Actions */}
+        <div className="pt-3 border-t border-[var(--aurora-border)] flex items-center justify-between">
+          <button
+            type="button"
+            onClick={() => toggle(id)}
+            className="text-xs text-[var(--aurora-accent)] hover:underline flex items-center gap-1 font-medium"
+          >
+            <Icon name={isExpanded ? "minus" : "plus"} size={11} />
+            <span>{isExpanded ? "收起步骤指令" : "查看执行指令"}</span>
+          </button>
+
+          <div className="flex items-center gap-1.5">
+            {status === "draft" && (
+              <>
+                <Btn variant="ghost" size="sm" disabled={disabled} onClick={() => act(id, () => api.skillAction(id, "dismiss"))}>
+                  放弃
+                </Btn>
+                <Btn variant="glass" size="sm" icon="edit" disabled={disabled} onClick={() => setEditing(id)}>
+                  编辑
+                </Btn>
+                <Btn size="sm" icon="rocket" disabled={disabled} onClick={() => act(id, () => api.publishSkill(id), s.publishedNotice)}>
+                  发布
+                </Btn>
+              </>
+            )}
+            {status === "published" && (
+              <>
+                <Btn variant="ghost" size="sm" disabled={disabled} onClick={() => act(id, () => api.skillAction(id, "retire"), s.retiredNotice)}>
+                  归档
+                </Btn>
+                <Btn variant="glass" size="sm" icon="edit" disabled={disabled} onClick={() => setEditing(id)}>
+                  微调
+                </Btn>
+              </>
+            )}
+          </div>
+        </div>
+
+        {editing === id && (
+          <SkillEditor
+            skill={skill}
+            busy={disabled}
+            onCancel={() => setEditing(null)}
+            onSave={(edits, publish) =>
+              publish && status === "draft"
+                ? act(id, () => api.publishSkill(id, edits), s.publishedNotice)
+                : act(id, () => api.editSkill(id, edits), status === "draft" ? s.saved : s.savedNewVersion)
+            }
+          />
+        )}
+      </div>
+    );
+  };
 
   return (
-    <div className="w-full max-w-5xl mx-auto pb-16 min-w-0">
-      {/* Global Cognitive Compass Navigation */}
-      <CognitiveCompass
-        currentTab="skills"
-        summaryStats={{
-          skillsCount: draftsList.length + publishedList.length,
-        }}
-      />
+    <div className="max-w-6xl mx-auto space-y-6 pb-20">
+      {/* ─────────────────────────────────────────────────────────────
+          1. 统一顶栏 (Single-Row Modern Header)
+          ───────────────────────────────────────────────────────────── */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-[var(--aurora-border)]">
+        <div>
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl flex items-center justify-center bg-[rgba(245,158,11,0.12)] text-[#F59E0B] shadow-xs">
+              <Icon name="zap" size={18} />
+            </div>
+            <h1 className="text-xl font-bold text-[var(--aurora-fg1)] tracking-tight">
+              技能进化 · 特长与工具箱
+            </h1>
+            <span className="text-[11px] px-2.5 py-0.5 rounded-full font-medium bg-[rgba(16,185,129,0.12)] text-[#10B981] flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#10B981] breathing-glow-emerald" />
+              Agent Skill 协议就绪
+            </span>
+          </div>
+          <p className="text-xs text-[var(--aurora-fg3)] mt-1 ml-10">
+            AI 会执行什么 · 从高频操作中沉淀出标准 SOP、自动化执行脚本与工业级专业本领
+          </p>
+        </div>
 
-      <TopBar
-        title="技能进化 · 特长与工具箱"
-        subtitle="AI 会执行什么 · 从日常会话与任务中提炼 SOP、执行脚本与标准化工作流"
-        right={
-          <Btn variant="glass" size="sm" icon="refresh" disabled={reviewRunning || busy !== null} onClick={reviewNow}>
+        <div className="flex items-center gap-2 self-start sm:self-auto">
+          <Btn
+            variant="glass"
+            size="sm"
+            icon="refresh"
+            disabled={reviewRunning || busy !== null}
+            onClick={reviewNow}
+          >
             {reviewRunning ? s.reviewing : "自动审查提炼技能"}
           </Btn>
-        }
-      />
+        </div>
+      </div>
+
       {error && (
-        <Glass padding={14} radius={14} style={{ marginBottom: 14, color: "#DC2626", fontSize: 13 }}>
+        <Glass padding={14} radius={14} style={{ color: "#DC2626", fontSize: 13 }}>
           {error}
         </Glass>
       )}
       {notice && (
-        <Glass padding={14} radius={14} style={{ marginBottom: 14, color: "var(--aurora-fg2)", fontSize: 13 }}>
+        <Glass padding={14} radius={14} style={{ color: "var(--aurora-fg2)", fontSize: 13 }}>
           {notice}
         </Glass>
       )}
-      {!data && !error && <p style={{ color: "var(--aurora-fg3)", fontSize: 13 }}>{t.loading}</p>}
-      {job?.finished_at != null && !reviewRunning && (
-        <p style={{ margin: "-10px 0 14px", fontSize: 12, color: "var(--aurora-fg3)" }}>{fmt(s.lastManualReview, { at: time(job.finished_at) })}</p>
+
+      {/* ─────────────────────────────────────────────────────────────
+          2. Hero 技能进化大屏 (Skill Evolution Cockpit)
+          ───────────────────────────────────────────────────────────── */}
+      <div className="relative overflow-hidden rounded-3xl p-6 sm:p-8 border border-[var(--aurora-border)] bg-gradient-to-br from-[var(--aurora-surface)] via-[var(--aurora-surface)] to-[rgba(245,158,11,0.06)] shadow-sm">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+          <div className="space-y-2 max-w-xl">
+            <span className="text-[11px] font-mono uppercase tracking-widest text-[#F59E0B] font-semibold">
+              Autonomous Skill Library · v1.0
+            </span>
+            <h2 className="text-2xl sm:text-3xl font-extrabold text-[var(--aurora-fg1)] tracking-tight">
+              赋予 AI 执行专业任务的硬核本领。
+            </h2>
+            <p className="text-xs sm:text-sm text-[var(--aurora-fg2)] leading-relaxed">
+              支持工业级标准 `SKILL.md` 规范。通过 Memento 的日常会话复盘，系统自动发掘高价值可复用动作，沉淀为开箱即用的自动化工具，全端设备秒级下发生效。
+            </p>
+          </div>
+
+          {/* Quick Metrics */}
+          <div className="flex gap-4 shrink-0 bg-[var(--aurora-surface-solid)] p-4 rounded-2xl border border-[var(--aurora-border)] shadow-xs">
+            <div className="px-3 border-r border-[var(--aurora-border)]">
+              <div className="text-[11px] text-[var(--aurora-fg3)]">活跃技能</div>
+              <div className="text-2xl font-bold font-mono text-[#F59E0B] mt-0.5">
+                {published.length}
+                <span className="text-xs font-normal text-[var(--aurora-fg4)] ml-1">项</span>
+              </div>
+            </div>
+            <div className="px-3 border-r border-[var(--aurora-border)]">
+              <div className="text-[11px] text-[var(--aurora-fg3)]">待审提炼</div>
+              <div className="text-2xl font-bold font-mono text-[var(--aurora-fg1)] mt-0.5">
+                {drafts.length}
+                <span className="text-xs font-normal text-[var(--aurora-fg4)] ml-1">条</span>
+              </div>
+            </div>
+            <div className="px-3">
+              <div className="text-[11px] text-[var(--aurora-fg3)]">跨端分发</div>
+              <div className="text-2xl font-bold font-mono text-[#10B981] mt-0.5">
+                {devices.length || 1}
+                <span className="text-xs font-normal text-[var(--aurora-fg4)] ml-1">台</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ─────────────────────────────────────────────────────────────
+          3. 胶囊过滤器 (Filter Pills)
+          ───────────────────────────────────────────────────────────── */}
+      <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-[var(--aurora-surface)] border border-[var(--aurora-border)] shadow-xs self-start">
+        {[
+          { id: "published" as const, label: `活跃技能 (${published.length})`, icon: "zap" as const },
+          { id: "drafts" as const, label: `待审草稿 (${drafts.length})`, icon: "edit" as const },
+          { id: "reviews" as const, label: `审查动态 (${reviewList.length})`, icon: "sparkles" as const },
+          { id: "archived" as const, label: `历史归档 (${archived.length})`, icon: "minus" as const },
+        ].map((tab) => {
+          const active = activeTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-medium transition-all ${
+                active
+                  ? "bg-[var(--aurora-surface-solid)] text-[#F59E0B] shadow-xs font-semibold"
+                  : "text-[var(--aurora-fg3)] hover:text-[var(--aurora-fg1)] hover:bg-[var(--aurora-chip)]"
+              }`}
+            >
+              <Icon name={tab.icon} size={13} />
+              <span>{tab.label}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* ─────────────────────────────────────────────────────────────
+          4. 技能网格 (Bento Skill Cards)
+          ───────────────────────────────────────────────────────────── */}
+      {activeTab === "published" && (
+        <div>
+          {published.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {published.map(renderSkillCard)}
+            </div>
+          ) : (
+            <Glass padding={24} radius={18} className="text-center text-xs text-[var(--aurora-fg3)]">
+              暂无已发布的活跃技能，请在上方点击「自动审查提炼技能」发掘日常编码 SOP。
+            </Glass>
+          )}
+        </div>
       )}
 
-      {data && (
-        <>
-          {drafts.length > 0 && (
-            <Glass padding="clamp(14px, 3vw, 20px)" radius={18} style={{ marginBottom: 14, border: "1px solid var(--aurora-accent)" }}>
-              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <Chip tone="accent">{s.statusDraft}</Chip>
-                <span style={{ fontSize: 12, color: "var(--aurora-fg3)" }}>{fmt(s.draftsCaption, { n: drafts.length })}</span>
-              </div>
-              <div style={{ marginTop: 6 }}>{drafts.map(renderSkill)}</div>
+      {activeTab === "drafts" && (
+        <div>
+          {drafts.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {drafts.map(renderSkillCard)}
+            </div>
+          ) : (
+            <Glass padding={24} radius={18} className="text-center text-xs text-[var(--aurora-fg3)]">
+              暂无待审阅的草稿技能。系统在夜间或手动审查时会自动提炼新技能。
             </Glass>
           )}
-          {published.length > 0 && (
-            <Glass padding="clamp(14px, 3vw, 20px)" radius={18} style={{ marginBottom: 14 }}>
-              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <Chip tone="success">{s.statusPublished}</Chip>
-                <span style={{ fontSize: 12, color: "var(--aurora-fg3)" }}>{fmt(s.publishedCaption, { n: published.length })}</span>
-              </div>
-              <div style={{ marginTop: 6 }}>{published.map(renderSkill)}</div>
-            </Glass>
-          )}
-          {drafts.length === 0 && published.length === 0 && (
-            <Glass padding={24} radius={18} style={{ marginBottom: 14, textAlign: "center" }}>
-              <Icon name="zap" size={26} style={{ color: "var(--aurora-fg3)" }} />
-              <div style={{ fontSize: 14, fontWeight: 600, color: "var(--aurora-fg1)", marginTop: 8 }}>{s.emptyTitle}</div>
-              <p style={{ margin: "4px 0 0", fontSize: 12.5, color: "var(--aurora-fg3)", lineHeight: 1.55 }}>{s.emptyHint}</p>
-            </Glass>
-          )}
+        </div>
+      )}
 
-          {archived.length > 0 && (
-            <Glass padding="12px 18px" radius={18} style={{ marginBottom: 14 }}>
-              <button type="button" onClick={() => setShowArchived((v) => !v)} style={{ display: "flex", width: "100%", alignItems: "center", background: "none", border: 0, padding: 0, cursor: "pointer", color: "var(--aurora-fg2)", fontSize: 13.5 }}>
-                <span style={{ flex: 1, textAlign: "left" }}>{fmt(s.archivedTitle, { n: archived.length })}</span>
-                <Icon name={showArchived ? "minus" : "plus"} size={14} />
-              </button>
-              {showArchived &&
-                archived.map((a) => (
-                  <div key={str(a.id)} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 0", borderTop: "1px solid var(--aurora-border)", marginTop: 8 }}>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 13.5, color: "var(--aurora-fg1)" }}>{str(a.title)}</div>
-                      <div style={{ fontSize: 12, color: "var(--aurora-fg3)" }}>
-                        {statusLabels[str(a.status)] ?? str(a.status)} · /{str(a.slug)}
-                      </div>
-                    </div>
-                    <Btn variant="ghost" size="sm" disabled={busy !== null} onClick={() => act(str(a.id), () => api.skillAction(str(a.id), "restore"), s.restoredNotice)}>
-                      {s.restore}
-                    </Btn>
-                  </div>
-                ))}
-            </Glass>
-          )}
-
-          <Glass padding="12px 18px" radius={18} style={{ marginBottom: 14 }}>
-            <button type="button" onClick={() => setShowReviews((v) => !v)} style={{ display: "flex", width: "100%", alignItems: "center", background: "none", border: 0, padding: 0, cursor: "pointer", textAlign: "left" }}>
-              <span style={{ flex: 1 }}>
-                <span style={{ display: "block", fontSize: 13.5, color: "var(--aurora-fg2)" }}>{s.reviewsTitle}</span>
-                <span style={{ display: "block", fontSize: 12, color: "var(--aurora-fg3)", marginTop: 2 }}>
-                  {reviewList.length === 0
-                    ? s.noReviews
-                    : fmt(s.reviewStats, { n: num(stats.sessions), done: num(outcomes.done), partial: num(outcomes.partial), failed: num(outcomes.failed) })}
-                </span>
-              </span>
-              <Icon name={showReviews ? "minus" : "plus"} size={14} style={{ color: "var(--aurora-fg3)" }} />
-            </button>
-            {showReviews &&
-              reviewList.slice(0, 20).map((r, i) => (
-                <div key={i} style={{ padding: "10px 0", borderTop: "1px solid var(--aurora-border)", marginTop: i === 0 ? 10 : 0 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      {activeTab === "reviews" && (
+        <div className="space-y-3">
+          {reviewList.length > 0 ? (
+            reviewList.slice(0, 20).map((r, i) => (
+              <div
+                key={i}
+                className="p-4 rounded-2xl border border-[var(--aurora-border)] bg-[var(--aurora-surface)] shadow-xs flex flex-col gap-1.5"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
                     <Chip tone={outcomeTone(str(r.outcome))}>{outcomeLabels[str(r.outcome)] ?? str(r.outcome)}</Chip>
-                    <span style={{ flex: 1, minWidth: 0, fontSize: 13, color: "var(--aurora-fg1)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{str(r.title)}</span>
-                    <span style={{ fontSize: 11.5, color: "var(--aurora-fg3)" }}>{time(r.reviewed_at)}</span>
+                    <span className="font-semibold text-xs text-[var(--aurora-fg1)] truncate max-w-md">{str(r.title)}</span>
                   </div>
-                  {str(r.summary) && <p style={{ margin: "4px 0 0", fontSize: 12.5, color: "var(--aurora-fg2)", lineHeight: 1.45 }}>{str(r.summary)}</p>}
-                  <div style={{ fontSize: 12, color: "var(--aurora-fg3)", marginTop: 2 }}>{fmt(s.learned, { what: learned(obj(r.result)) })}</div>
+                  <span className="text-[11px] font-mono text-[var(--aurora-fg4)]">{time(r.reviewed_at)}</span>
                 </div>
-              ))}
-          </Glass>
-
-          {devices.length > 0 && (
-            <Glass padding="clamp(14px, 3vw, 20px)" radius={18}>
-              <div style={{ fontSize: 13.5, fontWeight: 600, color: "var(--aurora-fg1)", marginBottom: 8 }}>{s.devicesTitle}</div>
-              {devices.map((d, i) => (
-                <div key={i} style={{ display: "flex", gap: 12, padding: "5px 0", fontSize: 13 }}>
-                  <span style={{ flex: 1, minWidth: 0, color: "var(--aurora-fg2)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{str(d.name)}</span>
-                  <span style={{ fontSize: 12, color: "var(--aurora-fg3)", textAlign: "right" }}>{deviceSummary(d)}</span>
+                {str(r.summary) && (
+                  <p className="text-xs text-[var(--aurora-fg2)] leading-relaxed mt-1">{str(r.summary)}</p>
+                )}
+                <div className="text-[11px] text-[var(--aurora-fg3)] mt-1 font-mono">
+                  {learned(obj(r.result))}
                 </div>
-              ))}
+              </div>
+            ))
+          ) : (
+            <Glass padding={24} radius={18} className="text-center text-xs text-[var(--aurora-fg3)]">
+              暂无审查会话记录
             </Glass>
           )}
-        </>
+        </div>
+      )}
+
+      {activeTab === "archived" && (
+        <div className="space-y-3">
+          {archived.length > 0 ? (
+            archived.map((a) => (
+              <div
+                key={str(a.id)}
+                className="p-4 rounded-2xl border border-[var(--aurora-border)] bg-[var(--aurora-surface)] shadow-xs flex items-center justify-between"
+              >
+                <div>
+                  <div className="text-sm font-semibold text-[var(--aurora-fg1)]">{str(a.title)}</div>
+                  <div className="text-xs text-[var(--aurora-fg4)] font-mono mt-0.5">
+                    {statusLabels[str(a.status)] ?? str(a.status)} · /{str(a.slug)}
+                  </div>
+                </div>
+                <Btn variant="ghost" size="sm" disabled={busy !== null} onClick={() => act(str(a.id), () => api.skillAction(str(a.id), "restore"), s.restoredNotice)}>
+                  恢复技能
+                </Btn>
+              </div>
+            ))
+          ) : (
+            <Glass padding={24} radius={18} className="text-center text-xs text-[var(--aurora-fg3)]">
+              暂无已归档技能
+            </Glass>
+          )}
+        </div>
+      )}
+
+      {/* ─────────────────────────────────────────────────────────────
+          5. 设备端生效报告 (Device Sync Matrix)
+          ───────────────────────────────────────────────────────────── */}
+      {devices.length > 0 && (
+        <div className="rounded-3xl p-5 border border-[var(--aurora-border)] bg-[var(--aurora-surface)] shadow-xs">
+          <div className="flex items-center gap-2 pb-3 mb-2 border-b border-[var(--aurora-border)]">
+            <Icon name="devices" size={15} />
+            <span className="font-bold text-xs text-[var(--aurora-fg1)]">各设备技能分发生效状态</span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {devices.map((d, i) => (
+              <div key={i} className="p-3 rounded-xl bg-[var(--aurora-surface-solid)] border border-[var(--aurora-border)] flex items-center justify-between text-xs">
+                <span className="font-semibold text-[var(--aurora-fg1)] truncate">{str(d.name)}</span>
+                <span className="text-[11px] text-[var(--aurora-fg3)] font-mono">{deviceSummary(d)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
     </div>
   );
