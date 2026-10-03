@@ -282,6 +282,8 @@ class User(Base):
     notify_settings: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}")
     # 24/7 Always-on agent preferences: {"enabled", "morning_brief", "evening_reflection", "quiet_hours", etc.}
     proactive_settings: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}")
+    # Custom LLM API settings: {"custom_enabled", "provider", "base_url", "api_key", "model", "background_model", "temperature", etc.}
+    llm_settings: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 

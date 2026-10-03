@@ -30,16 +30,69 @@ class AIProviderConfig:
     timeout: float = 120.0
 
 
-def get_ai_providers(background: bool = False) -> list[AIProviderConfig]:
+def get_system_default_llm_info() -> dict:
+    """Return default system LLM configuration info (read-only for client reference)."""
+    return {
+        "base_url": os.environ.get("MEMENTO_AI_BASE_URL", "https://coding.dashscope.aliyuncs.com/v1").rstrip("/"),
+        "model": os.environ.get("MEMENTO_AI_MODEL", "kimi-k2.5").strip(),
+        "background_model": os.environ.get("MEMENTO_AI_BACKGROUND_MODEL", "").strip(),
+        "has_api_key": bool(os.environ.get("MEMENTO_AI_API_KEY", "").strip()),
+        "fallback_model": os.environ.get("MEMENTO_AI_FALLBACK_MODEL", "qwen3.8-27b").strip(),
+    }
+
+
+def get_ai_providers(
+    background: bool = False,
+    user: Any = None,
+    custom_settings: dict | None = None,
+) -> list[AIProviderConfig]:
     """Return all configured AI providers in fallback priority order.
 
-    background=True puts MEMENTO_AI_BACKGROUND_MODEL (same endpoint and key as
-    the primary) first, for extraction and summary jobs that want a fast
-    non-thinking model; the primary model stays next in line.
+    If the user has custom_enabled=True in llm_settings (or custom_settings is passed),
+    the user's configured provider is placed first with highest priority.
     """
     providers: list[AIProviderConfig] = []
 
-    # 1. Primary provider (MEMENTO_AI_*)
+    # 1. User-customized provider (highest priority if enabled)
+    user_settings = custom_settings
+    if not user_settings and user and hasattr(user, "llm_settings"):
+        user_settings = user.llm_settings
+
+    if user_settings and user_settings.get("custom_enabled"):
+        u_base_url = (user_settings.get("base_url") or "").rstrip("/")
+        u_api_key = (user_settings.get("api_key") or "").strip()
+        u_model = (user_settings.get("model") or "").strip()
+        u_bg_model = (user_settings.get("background_model") or "").strip()
+
+        if u_base_url and u_model:
+            effective_key = u_api_key or "no-key-required"
+            if background and u_bg_model and u_bg_model != u_model:
+                providers.append(AIProviderConfig(
+                    name="user_custom_background",
+                    base_url=u_base_url,
+                    api_key=effective_key,
+                    model=u_bg_model,
+                ))
+            providers.append(AIProviderConfig(
+                name="user_custom",
+                base_url=u_base_url,
+                api_key=effective_key,
+                model=u_model,
+            ))
+
+        if user_settings.get("fallback_enabled"):
+            fb_url = (user_settings.get("fallback_base_url") or "").rstrip("/")
+            fb_key = (user_settings.get("fallback_api_key") or "").strip()
+            fb_model = (user_settings.get("fallback_model") or "").strip()
+            if fb_url and fb_model:
+                providers.append(AIProviderConfig(
+                    name="user_custom_fallback",
+                    base_url=fb_url,
+                    api_key=fb_key or "no-key-required",
+                    model=fb_model,
+                ))
+
+    # 2. System Primary provider (MEMENTO_AI_*)
     primary_url = os.environ.get("MEMENTO_AI_BASE_URL", "https://coding.dashscope.aliyuncs.com/v1").rstrip("/")
     primary_key = os.environ.get("MEMENTO_AI_API_KEY", "").strip()
     primary_model = os.environ.get("MEMENTO_AI_MODEL", "kimi-k2.5").strip()
@@ -60,7 +113,7 @@ def get_ai_providers(background: bool = False) -> list[AIProviderConfig]:
             model=primary_model,
         ))
 
-    # 2. Fallback provider (OneAPI with self-deployed qwen3.8-27b)
+    # 3. Fallback provider (OneAPI with self-deployed qwen3.8-27b)
     fallback_url = os.environ.get(
         "MEMENTO_AI_FALLBACK_BASE_URL",
         "https://oneapi.aiphacas.com/v1",
@@ -80,7 +133,7 @@ def get_ai_providers(background: bool = False) -> list[AIProviderConfig]:
             model=fallback_model,
         ))
 
-    # 3. Additional providers from MEMENTO_AI_PROVIDERS JSON array
+    # 4. Additional providers from MEMENTO_AI_PROVIDERS JSON array
     raw_json = os.environ.get("MEMENTO_AI_PROVIDERS", "").strip()
     if raw_json:
         try:
@@ -107,6 +160,8 @@ async def call_chat_completion(
     max_tokens: int = 1500,
     timeout: float = 120.0,
     background: bool = False,
+    user: Any = None,
+    custom_settings: dict | None = None,
 ) -> tuple[dict, AIProviderConfig]:
     """Call chat/completions with automatic fallback across all configured providers.
 
@@ -117,7 +172,7 @@ async def call_chat_completion(
     Returns (response_json_dict, provider_used).
     Raises RuntimeError if all providers fail.
     """
-    providers = get_ai_providers(background=background)
+    providers = get_ai_providers(background=background, user=user, custom_settings=custom_settings)
     if not providers:
         raise RuntimeError("No AI API providers configured (missing API keys)")
 
@@ -280,9 +335,11 @@ async def stream_chat_completion(
     temperature: float = 0.3,
     max_tokens: int = 2500,
     timeout: float = 120.0,
+    user: Any = None,
+    custom_settings: dict | None = None,
 ) -> AsyncGenerator[dict[str, str], None]:
     """Stream text chunks (type: 'thinking' | 'content') from chat/completions with automatic fallback."""
-    providers = get_ai_providers()
+    providers = get_ai_providers(background=False, user=user, custom_settings=custom_settings)
     if not providers:
         raise RuntimeError("No AI API providers configured (missing API keys)")
 
@@ -394,6 +451,9 @@ async def call_plain_chat(
     temperature: float = 0.3,
     max_tokens: int = 1500,
     timeout: float = 120.0,
+    user: Any = None,
+    custom_settings: dict | None = None,
+    background: bool = True,
 ) -> str | None:
     """Plain completion for background jobs (extraction, summaries, profile), returning
     the clean response string or None. Asks reasoning models not to think."""
@@ -404,7 +464,9 @@ async def call_plain_chat(
             temperature=temperature,
             max_tokens=max_tokens,
             timeout=timeout,
-            background=True,
+            background=background,
+            user=user,
+            custom_settings=custom_settings,
         )
         choices = data.get("choices") or []
         if choices:

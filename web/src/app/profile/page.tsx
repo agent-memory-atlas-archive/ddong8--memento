@@ -15,8 +15,9 @@ import { CollectorView } from "@/components/collector/CollectorView";
 import { StatusView } from "@/components/status/StatusView";
 import { ProactiveAgentView } from "@/components/profile/ProactiveAgentView";
 import { LifeRhythmView } from "@/components/life/LifeRhythmView";
+import { LLMSettingsView } from "@/components/profile/LLMSettingsView";
 
-type TabKey = "proactive" | "life" | "account" | "devices" | "collector" | "health" | "admin";
+type TabKey = "proactive" | "llm" | "life" | "account" | "devices" | "collector" | "health" | "admin";
 
 type ImportSummary = {
   machine_id: string;
@@ -54,7 +55,7 @@ function ProfileContent() {
 
   useEffect(() => {
     const paramTab = searchParams.get("tab") as TabKey | null;
-    if (paramTab && ["proactive", "account", "devices", "collector", "health", "admin"].includes(paramTab)) {
+    if (paramTab && ["proactive", "llm", "life", "account", "devices", "collector", "health", "admin"].includes(paramTab)) {
       setActiveTab(paramTab);
     }
   }, [searchParams]);
@@ -76,6 +77,7 @@ function ProfileContent() {
 
   const TABS: { id: TabKey; label: string; icon: Parameters<typeof Icon>[0]["name"]; adminOnly?: boolean }[] = [
     { id: "proactive", label: "全天候管家", icon: "sparkles" },
+    { id: "llm", label: "大模型配置", icon: "zap" },
     { id: "life", label: "作息与时间", icon: "clock" },
     { id: "account", label: t.profile.tabs?.account || "账号安全", icon: "user" },
     { id: "devices", label: t.profile.tabs?.devices || "我的设备", icon: "devices" },
@@ -86,7 +88,7 @@ function ProfileContent() {
 
   return (
     <div className="max-w-4xl mx-auto pb-16">
-      <TopBar title={t.profile.title || "个人设置"} subtitle={t.profile.subtitle || "全天候智能执事、生活作息、终端设备与系统运维"} />
+      <TopBar title={t.profile.title || "个人设置"} subtitle={t.profile.subtitle || "全天候智能执事、大模型底座、生活作息与终端运维"} />
 
       {/* Tabs navigation */}
       <div
@@ -120,6 +122,7 @@ function ProfileContent() {
 
       {/* Tab Panels */}
       {activeTab === "proactive" && <ProactiveAgentView />}
+      {activeTab === "llm" && <LLMSettingsView />}
       {activeTab === "life" && <LifeRhythmView />}
       {activeTab === "account" && <AccountTab />}
       {activeTab === "devices" && <DevicesView hideTopBar />}

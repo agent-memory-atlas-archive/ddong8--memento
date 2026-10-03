@@ -8,7 +8,7 @@ from collections.abc import AsyncGenerator
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .api import admin, ask, auth, conversations, daily, dashboard, data_io, devices, documents, events, health, hierarchy, ingest, install_bootstrap, learning, life_rhythm, memory, missions, notify, proactive, profile, projects, public, search, share, skills, todos, tools, updates
+from .api import admin, ask, auth, conversations, daily, dashboard, data_io, devices, documents, events, health, hierarchy, ingest, install_bootstrap, learning, life_rhythm, llm, memory, missions, notify, proactive, profile, projects, public, search, share, skills, todos, tools, updates
 # Aliased: `server.api.tasks` (remote device task queue) is a different module
 # from the `server.tasks` package (Celery jobs). Importing it bare here would
 # read as the latter.
@@ -84,6 +84,9 @@ def _run_migrations(conn) -> None:
     # User.proactive_settings — 24/7 Always-on agent preferences (morning brief, evening reflection, quiet hours, auto-missions)
     if "proactive_settings" not in user_cols:
         conn.execute(text("ALTER TABLE users ADD COLUMN proactive_settings JSONB NOT NULL DEFAULT '{}'"))
+    # User.llm_settings — User-customized LLM provider, base URL, keys, and model preferences
+    if "llm_settings" not in user_cols:
+        conn.execute(text("ALTER TABLE users ADD COLUMN llm_settings JSONB NOT NULL DEFAULT '{}'"))
 
     # User.github_id — GitHub OAuth login. Partial unique index: one account
     # per GitHub identity, while the many github_id IS NULL rows stay allowed.
@@ -453,6 +456,7 @@ app.include_router(devices.router)
 app.include_router(hierarchy.router)
 app.include_router(memory.router)
 app.include_router(profile.router)
+app.include_router(llm.router)
 app.include_router(notify.router)
 app.include_router(health.router)
 app.include_router(learning.router)

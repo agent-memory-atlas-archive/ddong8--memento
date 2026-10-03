@@ -522,6 +522,19 @@ export const api = {
   testEveningReflection: () =>
     apiFetch<{ status: string; message: string }>("/api/proactive/test-evening-reflection", { method: "POST" }),
 
+  // Custom User LLM API
+  getLLMSettings: () => fresh<LLMProfileResponse>("/api/profile/llm"),
+  updateLLMSettings: (body: LLMUpdateRequest) =>
+    apiFetch<{ status: string; settings: LLMSettingsData }>("/api/profile/llm", {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
+  testLLMConnection: (body: LLMTestRequest) =>
+    apiFetch<LLMTestResponse>("/api/profile/llm/test", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
   // 24/7 Autonomous Missions API
   getMissions: (status?: string) =>
     fresh<AgentMissionItem[]>(status ? `/api/missions?status=${encodeURIComponent(status)}` : "/api/missions"),
@@ -886,4 +899,66 @@ export interface DailyLifeRhythm {
     icon?: string;
   }>;
   ai_advice: string | null;
+}
+
+export interface LLMPreset {
+  id: string;
+  name: string;
+  icon: string;
+  base_url: string;
+  models: string[];
+  default_model: string;
+  default_background_model: string;
+  help_url: string;
+}
+
+export interface LLMSettingsData {
+  custom_enabled: boolean;
+  provider: string;
+  base_url: string;
+  api_key_masked: string;
+  has_api_key: boolean;
+  primary_model: string;
+  background_model: string;
+  fallback_model: string;
+  temperature: number;
+  max_tokens: number;
+}
+
+export interface LLMProfileResponse {
+  settings: LLMSettingsData;
+  system_default: {
+    base_url: string;
+    model: string;
+    provider: string;
+  };
+  presets: LLMPreset[];
+}
+
+export interface LLMUpdateRequest {
+  custom_enabled?: boolean;
+  provider?: string;
+  base_url?: string;
+  api_key?: string;
+  primary_model?: string;
+  background_model?: string;
+  fallback_model?: string;
+  temperature?: number;
+  max_tokens?: number;
+}
+
+export interface LLMTestRequest {
+  provider?: string;
+  base_url?: string;
+  api_key?: string;
+  primary_model?: string;
+}
+
+export interface LLMTestResponse {
+  success: boolean;
+  latency_ms: number;
+  reply?: string;
+  error?: string;
+  provider?: string;
+  model?: string;
 }
