@@ -1498,9 +1498,11 @@ function AskPageContent() {
           paddingBottom: "clamp(12px, 2.5vh, 20px)",
           paddingTop: 28,
           background: "linear-gradient(to top, var(--aurora-bg) 75%, transparent)",
+          maxWidth: "100vw",
+          boxSizing: "border-box",
         }}
       >
-        <div className="max-w-4xl mx-auto px-3 sm:px-4 md:px-6 pointer-events-auto">
+        <div className="max-w-4xl mx-auto px-3 sm:px-4 md:px-6 pointer-events-auto w-full min-w-0" style={{ boxSizing: "border-box" }}>
           <div
             style={{
               background: "var(--aurora-surface-solid)",
@@ -1510,7 +1512,9 @@ function AskPageContent() {
               boxShadow: "var(--aurora-card-shadow), 0 16px 40px -8px rgba(0,0,0,0.14)",
               backdropFilter: "blur(20px)",
               maxWidth: "100%",
+              width: "100%",
               minWidth: 0,
+              boxSizing: "border-box",
             }}
           >
             {isConfigCollapsed ? (
@@ -1532,6 +1536,7 @@ function AskPageContent() {
                   userSelect: "none",
                   minWidth: 0,
                   maxWidth: "100%",
+                  boxSizing: "border-box",
                 }}
                 title={isZh ? "点击展开完整配置面板" : "Click to expand configuration panel"}
               >
@@ -1543,6 +1548,8 @@ function AskPageContent() {
                     overflowX: "auto",
                     scrollbarWidth: "none",
                     minWidth: 0,
+                    flex: 1,
+                    maxWidth: "calc(100% - 75px)",
                   }}
                 >
                   {/* Current Mode Badge */}
@@ -1770,6 +1777,9 @@ function AskPageContent() {
                     justifyContent: "space-between",
                     gap: 8,
                     marginBottom: 8,
+                    minWidth: 0,
+                    maxWidth: "100%",
+                    boxSizing: "border-box",
                   }}
                 >
                   <div
@@ -1778,7 +1788,8 @@ function AskPageContent() {
                       alignItems: "center",
                       gap: 6,
                       overflowX: "auto",
-                      maxWidth: "100%",
+                      maxWidth: "calc(100% - 75px)",
+                      flex: 1,
                       paddingBottom: 2,
                       scrollbarWidth: "none",
                       minWidth: 0,
@@ -2535,7 +2546,7 @@ function AskPageContent() {
         )}
 
             {/* Input box and action button */}
-            <div style={{ display: "flex", gap: 8, alignItems: "center", width: "100%", minWidth: 0 }}>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", width: "100%", minWidth: 0, boxSizing: "border-box" }}>
               <GhostInput
                 type="text"
                 value={input}
@@ -2556,6 +2567,7 @@ function AskPageContent() {
                   minWidth: 0,
                   background: "var(--aurora-chip)",
                   border: "1px solid var(--aurora-border)",
+                  boxSizing: "border-box",
                 }}
                 disabled={streaming}
               />

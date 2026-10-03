@@ -127,6 +127,8 @@ function createWindow(show: boolean): void {
     },
   });
 
+  win.webContents.session.clearCache().catch(() => {});
+
   // Links to other sites open in the browser; GitHub sign-in stays in the window.
   win.webContents.setWindowOpenHandler(({ url }) => {
     void shell.openExternal(url);
@@ -596,6 +598,16 @@ function setupAppMenu(): void {
       label: "视图",
       submenu: [
         { role: "reload" as const, label: "重新载入" },
+        {
+          label: "强制重新载入 (清空缓存)",
+          accelerator: "CmdOrCtrl+Shift+R",
+          click: async () => {
+            if (win && !win.isDestroyed()) {
+              await win.webContents.session.clearCache();
+              win.webContents.reloadIgnoringCache();
+            }
+          },
+        },
         { role: "forceReload" as const, label: "强制重新载入" },
         { role: "toggleDevTools" as const, label: "开发者工具" },
         { type: "separator" as const },

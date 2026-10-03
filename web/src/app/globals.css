@@ -605,3 +605,26 @@ aside input,
   animation: breathingGlow 2.5s infinite ease-in-out;
 }
 
+/* =========================================================================
+   Mobile Viewport & Keyboard Containment
+   Prevents iOS WebKit keyboard focus from auto-zooming and overflowing screen
+   ========================================================================= */
+html, body {
+  overflow-x: hidden !important;
+  max-width: 100vw !important;
+  width: 100% !important;
+  -webkit-text-size-adjust: 100% !important;
+}
+
+@media screen and (max-width: 768px) {
+  .aurora-input input,
+  .aurora-input select,
+  input[type="text"],
+  input[type="search"],
+  input[type="password"],
+  input[type="email"],
+  select,
+  textarea {
+    font-size: 16px !important; /* Critical: iOS WebKit auto-zooms if < 16px */
+  }
+}

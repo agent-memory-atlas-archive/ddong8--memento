@@ -146,6 +146,14 @@ const INJECTED_CLIENT_HELPERS = `(() => {
       -moz-osx-font-smoothing: grayscale !important;
       text-rendering: optimizeLegibility !important;
       overscroll-behavior-y: none !important;
+      max-width: 100vw !important;
+      width: 100% !important;
+      overflow-x: hidden !important;
+      -webkit-text-size-adjust: 100% !important;
+    }
+    input, textarea, select {
+      font-size: 16px !important;
+      max-width: 100% !important;
     }
     body {
       -webkit-user-select: none !important;
@@ -175,7 +183,16 @@ const INJECTED_CLIENT_HELPERS = `(() => {
   \`;
   (document.head || document.documentElement).appendChild(nativeStyle);
 
-  // 6. Route tracking for native TabBar synchronization
+  // 6. Viewport scale lock: permanently prevent iOS keyboard auto-zoom
+  let vMeta = document.querySelector('meta[name="viewport"]');
+  if (!vMeta) {
+    vMeta = document.createElement('meta');
+    vMeta.name = 'viewport';
+    (document.head || document.documentElement).appendChild(vMeta);
+  }
+  vMeta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover';
+
+  // 7. Route tracking for native TabBar synchronization
   const postRoute = () => {
     if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
       window.ReactNativeWebView.postMessage(JSON.stringify({ type: "route", path: window.location.pathname }));
@@ -431,6 +448,9 @@ export default function WebShell() {
         dataDetectorTypes="none"
         decelerationRate="normal"
         textZoom={100}
+        automaticallyAdjustContentInsets={false}
+        contentInsetAdjustmentBehavior="never"
+        keyboardDisplayRequiresUserAction={false}
         webviewDebuggingEnabled={__DEV__}
         startInLoadingState={!initialLoaded}
         onLoadEnd={() => setInitialLoaded(true)}
