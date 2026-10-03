@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { api, UserInfo } from "./api-client";
+import { startNotificationFeedPoller } from "./native-notify";
 
 interface AuthState {
   user: UserInfo | null;
@@ -148,6 +149,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }, 12 * 60 * 60 * 1000);
     return () => clearInterval(id);
   }, [token]);
+
+  // Start real-time local native notification feed listener across all pages
+  useEffect(() => {
+    if (!user) return;
+    const stopPoller = startNotificationFeedPoller();
+    return () => stopPoller();
+  }, [user]);
 
   // Redirect to login if not authenticated and not on a public page.
   // /s/<token> is a share URL — recipient has no account, must stay public.

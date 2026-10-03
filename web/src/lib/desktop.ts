@@ -46,6 +46,7 @@ export interface MementoDesktop {
   info(): Promise<DesktopInfo>;
   setOpenAtLogin(on: boolean): Promise<boolean>;
   checkForUpdates(): Promise<void>;
+  notify?(options: { title: string; body: string; url?: string }): Promise<boolean>;
   daemon: {
     status(): Promise<DaemonState>;
     logs(): Promise<string[]>;

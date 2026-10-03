@@ -113,6 +113,7 @@ class LLMSettingsBody(BaseModel):
     base_url: str = ""
     api_key: str = ""
     model: str = ""
+    primary_model: str = ""
     background_model: str = ""
     temperature: float = Field(default=0.7, ge=0.0, le=2.0)
     max_tokens: int = Field(default=4096, ge=256, le=65536)
@@ -123,10 +124,12 @@ class LLMSettingsBody(BaseModel):
 
 
 class LLMTestBody(BaseModel):
-    base_url: str
-    api_key: str
-    model: str
-    temperature: float = 0.3
+    base_url: str = ""
+    api_key: str = ""
+    model: str = ""
+    primary_model: str = ""
+    provider: str = ""
+    temperature: float = 0.1
     max_tokens: int = 50
 
 
@@ -137,13 +140,17 @@ async def get_llm_settings(user: User = Depends(get_current_user)) -> dict:
     raw_key = saved.get("api_key") or ""
     raw_fallback_key = saved.get("fallback_api_key") or ""
 
-    return {
+    primary = saved.get("primary_model") or saved.get("model") or ""
+    sys_def = get_system_default_llm_info()
+
+    settings_data = {
         "custom_enabled": saved.get("custom_enabled", False),
         "provider": saved.get("provider", "custom"),
         "base_url": saved.get("base_url", ""),
         "api_key_masked": _mask_key(raw_key),
         "has_api_key": bool(raw_key),
-        "model": saved.get("model", ""),
+        "model": primary,
+        "primary_model": primary,
         "background_model": saved.get("background_model", ""),
         "temperature": saved.get("temperature", 0.7),
         "max_tokens": saved.get("max_tokens", 4096),
@@ -152,7 +159,14 @@ async def get_llm_settings(user: User = Depends(get_current_user)) -> dict:
         "fallback_api_key_masked": _mask_key(raw_fallback_key),
         "has_fallback_api_key": bool(raw_fallback_key),
         "fallback_model": saved.get("fallback_model", ""),
-        "system_defaults": get_system_default_llm_info(),
+    }
+
+    return {
+        "status": "ok",
+        "settings": settings_data,
+        **settings_data,
+        "system_default": sys_def,
+        "system_defaults": sys_def,
         "presets": PRESETS,
     }
 
@@ -166,6 +180,12 @@ async def update_llm_settings(
     """Update current user's custom LLM configuration."""
     existing = dict(user.llm_settings or {})
     data = body.model_dump()
+
+    # Synchronize model and primary_model
+    if not data.get("model") and data.get("primary_model"):
+        data["model"] = data["primary_model"]
+    elif not data.get("primary_model") and data.get("model"):
+        data["primary_model"] = data["model"]
 
     # Preserve existing real API key if client passed back masked placeholder (e.g. sk-****)
     incoming_key = data.get("api_key", "").strip()
@@ -187,16 +207,22 @@ async def update_llm_settings(
     user.llm_settings = data
     await db.commit()
 
+    key_masked = _mask_key(data.get("api_key"))
+    fallback_key_masked = _mask_key(data.get("fallback_api_key"))
+
+    settings_resp = {
+        **data,
+        "api_key_masked": key_masked,
+        "has_api_key": bool(data.get("api_key")),
+        "fallback_api_key_masked": fallback_key_masked,
+        "has_fallback_api_key": bool(data.get("fallback_api_key")),
+    }
+
     return {
         "status": "ok",
         "message": "大模型配置已更新并即时生效",
-        "settings": {
-            **data,
-            "api_key_masked": _mask_key(data.get("api_key")),
-            "has_api_key": bool(data.get("api_key")),
-            "fallback_api_key_masked": _mask_key(data.get("fallback_api_key")),
-            "has_fallback_api_key": bool(data.get("fallback_api_key")),
-        },
+        "settings": settings_resp,
+        **settings_resp,
     }
 
 
@@ -206,19 +232,47 @@ async def test_llm_connection(
     user: User = Depends(get_current_user),
 ) -> dict:
     """Test LLM API connectivity and latency."""
-    base_url = body.base_url.strip().rstrip("/")
-    api_key = body.api_key.strip()
-    model = body.model.strip()
+    import os
+    saved = dict(user.llm_settings or {})
+    sys_def = get_system_default_llm_info()
 
-    # If key contains mask ****, substitute with user's saved key
-    if "****" in api_key:
-        saved = dict(user.llm_settings or {})
-        api_key = saved.get("api_key", "")
+    base_url = (body.base_url or "").strip().rstrip("/")
+    api_key = (body.api_key or "").strip()
+    model = (body.primary_model or body.model or "").strip()
+
+    # Fallback to saved or system default if omitted
+    if not base_url:
+        base_url = (saved.get("base_url") or "").strip().rstrip("/")
+    if not base_url:
+        base_url = sys_def.get("base_url", "").strip().rstrip("/")
+
+    if not model:
+        model = (saved.get("primary_model") or saved.get("model") or "").strip()
+    if not model:
+        model = sys_def.get("model", "").strip()
+
+    # If key contains mask **** or is empty, use saved key
+    if not api_key or "****" in api_key:
+        api_key = (saved.get("api_key") or "").strip()
+
+    # If still no key, and targeting system default base_url, pick system key
+    if not api_key and base_url == sys_def.get("base_url"):
+        api_key = os.environ.get("MEMENTO_AI_API_KEY", "").strip()
 
     if not base_url:
-        raise HTTPException(status_code=400, detail="请输入 API Base URL")
+        return {
+            "ok": False,
+            "success": False,
+            "error": "未指定 API Base URL，请填写端点地址或选择上方服务商预设",
+            "latency_ms": 0,
+        }
     if not model:
-        raise HTTPException(status_code=400, detail="请输入或选择测试的模型名称")
+        return {
+            "ok": False,
+            "success": False,
+            "error": "未指定模型名称，请填写或选择测试的模型",
+            "latency_ms": 0,
+        }
 
     req_body = {
         "model": model,
@@ -251,6 +305,7 @@ async def test_llm_connection(
             logger.warning("LLM test failed: HTTP %s: %s", resp.status_code, err_text)
             return {
                 "ok": False,
+                "success": False,
                 "status_code": resp.status_code,
                 "error": f"HTTP {resp.status_code}: {err_text}",
                 "latency_ms": latency_ms,
@@ -265,21 +320,24 @@ async def test_llm_connection(
 
         return {
             "ok": True,
+            "success": True,
             "latency_ms": latency_ms,
             "model": model,
-            "reply": reply_content.strip() or "连通正常（回复内容为空）",
+            "reply": reply_content.strip() or "连通正常（模型握手成功）",
         }
     except httpx.TimeoutException:
         latency_ms = int((time.monotonic() - start) * 1000)
         return {
             "ok": False,
-            "error": f"请求超时（超过 15 秒）。请检查 Base URL 是否可访问或内网网络连接。",
+            "success": False,
+            "error": "请求超时（超过 15 秒）。请检查 Base URL 是否可访问或服务商网络状态。",
             "latency_ms": latency_ms,
         }
     except Exception as e:
         latency_ms = int((time.monotonic() - start) * 1000)
         return {
             "ok": False,
+            "success": False,
             "error": f"{type(e).__name__}: {str(e)}",
             "latency_ms": latency_ms,
         }

@@ -4,10 +4,17 @@ import { useEffect, useState } from "react";
 import { api } from "@/lib/api-client";
 import { useI18n } from "@/lib/i18n";
 import { Btn, Glass } from "@/components/aurora/primitives";
+import {
+  getLocalNotificationPermission,
+  requestLocalNotificationPermission,
+  sendLocalNotification,
+  startNotificationFeedPoller,
+  type NotificationPermissionState,
+} from "@/lib/native-notify";
 
 type Settings = Record<string, unknown>;
 
-/** Push notifications: Memento native mobile app and optional fallback (Bark / ntfy). */
+/** Push notifications: Memento local desktop/web system notification, native mobile app and optional fallback (Bark / ntfy). */
 export default function NotifySettings() {
   const { t } = useI18n();
   const n = t.notify;
@@ -17,11 +24,19 @@ export default function NotifySettings() {
   const [showFallback, setShowFallback] = useState(false);
   const [message, setMessage] = useState<{ text: string; error: boolean } | null>(null);
 
+  const [localPermission, setLocalPermission] = useState<NotificationPermissionState>("default");
+  const [requestingPerm, setRequestingPerm] = useState(false);
+
   useEffect(() => {
+    setLocalPermission(getLocalNotificationPermission());
+    const stopPoller = startNotificationFeedPoller();
+
     api
       .getNotifySettings()
       .then(setSettings)
       .catch((e: Error) => setMessage({ text: e.message, error: true }));
+
+    return () => stopPoller();
   }, []);
 
   const run = async (action: () => Promise<void>) => {
@@ -33,6 +48,30 @@ export default function NotifySettings() {
       setMessage({ text: (e as Error).message, error: true });
     } finally {
       setBusy(false);
+    }
+  };
+
+  const handleRequestPermission = async () => {
+    try {
+      setRequestingPerm(true);
+      const granted = await requestLocalNotificationPermission();
+      setLocalPermission(getLocalNotificationPermission());
+      if (granted) {
+        await sendLocalNotification(
+          "🎉 本机系统通知已就绪",
+          "已成功开启 Memento 本机通知权限，您将在此实时接收日程与关键任务更新！"
+        );
+        setMessage({ text: "本机通知权限已开启并成功弹出测试通知！", error: false });
+      } else {
+        setMessage({
+          text: "未能开启系统通知。若此前曾拒绝，请在浏览器或系统设置中允许 Memento 发送通知。",
+          error: true,
+        });
+      }
+    } catch (e) {
+      setMessage({ text: String(e), error: true });
+    } finally {
+      setRequestingPerm(false);
     }
   };
 
@@ -50,14 +89,27 @@ export default function NotifySettings() {
 
   const test = () =>
     run(async () => {
-      await api.sendTestNotification();
-      setMessage({ text: n.testSent, error: false });
+      // 1. Immediately trigger local native notification popup on this computer / device
+      await sendLocalNotification(
+        "🔔 Memento 本机通知测试",
+        "收到这条说明您当前这台设备的系统通知已完全通畅！危险操作与简报都将在此弹出。",
+        "/profile?tab=account"
+      );
+      setLocalPermission(getLocalNotificationPermission());
+
+      // 2. Trigger server test for connected mobile apps / fallback channels
+      try {
+        await api.sendTestNotification();
+      } catch (e) {
+        console.warn("Backend test notification dispatch returned:", e);
+      }
+
+      setMessage({ text: "✅ 测试通知已在本机屏幕右上角弹出并向云端同步！", error: false });
     });
 
   const barkConfigured = settings?.bark_configured === true;
   const nativeConfigured = settings?.native_configured === true;
   const deviceCount = Number(settings?.device_tokens_count ?? 0);
-  const canTest = nativeConfigured || barkConfigured;
 
   const switches: { key: string; title: string; hint: string }[] = [
     { key: "notify_risky", title: n.risky, hint: n.riskyHint },
@@ -67,11 +119,46 @@ export default function NotifySettings() {
     { key: "notify_todo", title: n.todo, hint: n.todoHint },
   ];
 
+  const isLocalGranted = localPermission === "granted";
+
   return (
     <Glass padding={22} radius={20} style={{ marginBottom: 20 }}>
-      {/* 1. Memento Native Mobile App Channel */}
+      {/* 1. Local Device / Desktop Notification Channel */}
       <div className="mb-4 p-3.5 rounded-xl bg-[var(--aurora-chip)] border border-[var(--aurora-border)] leading-relaxed">
-        <div className="flex items-center justify-between gap-2 mb-1.5">
+        <div className="flex items-center justify-between gap-2 mb-1.5 flex-wrap">
+          <span className="text-sm font-semibold text-[var(--aurora-fg1)] flex items-center gap-1.5">
+            💻 本机系统通知 (Desktop / Web Notifications)
+          </span>
+          <div className="flex items-center gap-2">
+            <span
+              className={`text-xs px-2.5 py-0.5 rounded-full font-medium ${
+                isLocalGranted
+                  ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
+                  : "bg-amber-500/15 text-amber-500 border border-amber-500/30"
+              }`}
+            >
+              {isLocalGranted ? "● 本机通知已就绪" : "待授权系统通知"}
+            </span>
+            {!isLocalGranted && (
+              <button
+                type="button"
+                onClick={handleRequestPermission}
+                disabled={requestingPerm}
+                className="text-xs px-2.5 py-0.5 rounded-lg bg-[var(--aurora-accent)] text-white hover:opacity-90 transition-all cursor-pointer border-0 font-medium"
+              >
+                {requestingPerm ? "授权中..." : "一键开启本机通知"}
+              </button>
+            )}
+          </div>
+        </div>
+        <p className="text-xs text-[var(--aurora-fg3)] m-0">
+          支持 Mac、Windows、Linux 及主流浏览器原生横幅通知。无需安装任何第三方应用，只要处于开启状态，有新简报或高危操作提醒时将直接在屏幕右上角弹窗提示。
+        </p>
+      </div>
+
+      {/* 2. Memento Native Mobile App Channel */}
+      <div className="mb-4 p-3.5 rounded-xl bg-[var(--aurora-chip)] border border-[var(--aurora-border)] leading-relaxed">
+        <div className="flex items-center justify-between gap-2 mb-1.5 flex-wrap">
           <span className="text-sm font-semibold text-[var(--aurora-fg1)] flex items-center gap-1.5">
             📱 {n.nativeTitle}
           </span>
@@ -82,20 +169,20 @@ export default function NotifySettings() {
                 : "bg-[var(--aurora-border)] text-[var(--aurora-fg3)]"
             }`}
           >
-            {nativeConfigured ? `已激活（${deviceCount} 台设备）` : "未连接"}
+            {nativeConfigured ? `已激活（${deviceCount} 台设备）` : "未连接移动端"}
           </span>
         </div>
         <p className="text-xs text-[var(--aurora-fg3)] m-0">
           {nativeConfigured
-            ? "Memento 移动端（iOS / Android）已自动注册系统原生推送，危险操作、任务完成与 AI 建议将直接以 Memento 名义弹出锁屏通知与响铃，无需安装 Bark 等任何第三方 App。"
-            : "Memento 移动端自带系统级原生通知！只需在手机端打开并登录 Memento，即可自动注册原生推送通道，无需下载任何第三方应用。"}
+            ? "Memento 移动端（iOS / Android）已自动注册系统原生推送，危险操作、任务完成与 AI 建议将直接弹出锁屏通知与响铃。"
+            : "Memento 移动端自带系统级原生通知！只需在手机端打开并登录 Memento，即可自动注册原生推送通道，无需下载 Bark 等任何第三方应用。"}
         </p>
       </div>
 
       {/* Test notification button */}
-      <div className="flex items-center gap-3 mb-4">
-        <Btn variant="glass" size="sm" disabled={busy || !canTest} onClick={test}>
-          {n.test}
+      <div className="flex items-center gap-3 mb-4 flex-wrap">
+        <Btn variant="glass" size="sm" disabled={busy} onClick={test} className="cursor-pointer font-medium">
+          ⚡ 立即测试本机与全平台通知
         </Btn>
         <button
           type="button"
@@ -106,7 +193,7 @@ export default function NotifySettings() {
         </button>
       </div>
 
-      {/* 2. Optional Fallback Channel (Bark / ntfy) */}
+      {/* 3. Optional Fallback Channel (Bark / ntfy) */}
       {(showFallback || barkConfigured) && (
         <div className="mb-4 p-3 rounded-xl border border-[var(--aurora-border-strong)] bg-[var(--aurora-surface-solid)]/40">
           <div className="text-xs font-semibold text-[var(--aurora-fg2)] mb-1.5 flex items-center gap-1">

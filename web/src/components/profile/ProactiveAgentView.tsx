@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { api, type ProactiveSettings, type AgentMissionItem } from "@/lib/api-client";
 import { Glass, Btn, SectionLabel } from "@/components/aurora/primitives";
 import { Icon } from "@/components/aurora/Icon";
+import { sendLocalNotification } from "@/lib/native-notify";
 
 export function ProactiveAgentView() {
   const [settings, setSettings] = useState<ProactiveSettings | null>(null);
@@ -69,32 +70,18 @@ export function ProactiveAgentView() {
     }
   };
 
-  const sendBridgeNotification = (title: string, body: string) => {
-    if (typeof window !== "undefined") {
-      // 1. Mobile App (iOS / Android) WebView Bridge
-      const bridge = (window as unknown as { ReactNativeWebView?: { postMessage: (msg: string) => void } }).ReactNativeWebView;
-      if (bridge && typeof bridge.postMessage === "function") {
-        bridge.postMessage(JSON.stringify({ type: "notify", title, body }));
-      }
-      // 2. Desktop App (Mac / Windows / Linux) Electron Bridge
-      const desktop = (window as unknown as { mementoDesktop?: { notify?: (opts: { title: string; body: string }) => void } }).mementoDesktop;
-      if (desktop && typeof desktop.notify === "function") {
-        desktop.notify({ title, body });
-      }
-    }
-  };
-
   const handleTestBrief = async () => {
     try {
       setTestingBrief(true);
       setTestMessage(null);
-      // Immediately trigger local native notification popup via Bridge if running inside iOS/Android app
-      sendBridgeNotification(
+      // Immediately trigger local native notification popup on this computer / device
+      await sendLocalNotification(
         "🌅 早上好！今日晨间简报",
         "今日待办与在线设备状态已同步，AI 执事全天候为您就绪！",
+        "/profile?tab=proactive"
       );
       await api.testMorningBrief();
-      setTestMessage("✅ 晨间简报已成功合成并推送到手机！");
+      setTestMessage("✅ 晨间简报已成功合成并触发推送！");
       setTimeout(() => setTestMessage(null), 4000);
     } catch (e: unknown) {
       console.error("Test brief failed:", e);
@@ -109,12 +96,13 @@ export function ProactiveAgentView() {
     try {
       setTestingReflection(true);
       setTestMessage(null);
-      sendBridgeNotification(
+      await sendLocalNotification(
         "🌌 晚间梦境自进化完成",
         "今日工作沉淀已完成！已自动吸收碎片记忆，更新画像偏好与避坑规则。",
+        "/profile?tab=proactive"
       );
       await api.testEveningReflection();
-      setTestMessage("✅ 晚间梦境复盘已执行并推送到手机！");
+      setTestMessage("✅ 晚间梦境复盘已执行并触发推送！");
       setTimeout(() => setTestMessage(null), 4000);
     } catch (e: unknown) {
       console.error("Test reflection failed:", e);

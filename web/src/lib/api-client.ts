@@ -469,6 +469,10 @@ export const api = {
   getNotifySettings: () => fresh<Json>("/api/notify/settings"),
   updateNotifySettings: (fields: Json) => put("/api/notify/settings", fields),
   sendTestNotification: () => post("/api/notify/test"),
+  getNotificationFeed: (since?: string) =>
+    fresh<Array<{ id: string; title: string; body: string; kind?: string; created_at: string; url?: string }>>(
+      since ? `/api/notify/feed?since=${encodeURIComponent(since)}` : "/api/notify/feed"
+    ),
 
   // === Memory tiers & dreaming ===
   getMemoryTiers: () => fresh<Json>("/api/memory/tiers"),

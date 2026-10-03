@@ -45,21 +45,31 @@ export function LLMSettingsView() {
   const loadData = async () => {
     try {
       setLoading(true);
-      const res: LLMProfileResponse = await api.getLLMSettings();
-      const s = res.settings;
-      setEnabled(s.custom_enabled);
+      const res = (await api.getLLMSettings()) as any;
+      const s = res?.settings || res || {};
+      setEnabled(Boolean(s.custom_enabled));
       setProvider(s.provider || "custom");
       setBaseUrl(s.base_url || "");
       setMaskedKey(s.api_key_masked || "");
       setApiKey(s.api_key_masked ? s.api_key_masked : "");
-      setPrimaryModel(s.primary_model || "");
+      setPrimaryModel(s.primary_model || s.model || "");
       setBackgroundModel(s.background_model || "");
       setFallbackModel(s.fallback_model || "");
       setTemperature(s.temperature ?? 0.7);
       setMaxTokens(s.max_tokens ?? 4096);
 
-      setPresets(res.presets || []);
-      setSystemDefault(res.system_default || null);
+      const presetList: LLMPreset[] = res.presets || [];
+      setPresets(presetList);
+      setSystemDefault(res.system_default || res.system_defaults || null);
+
+      // 如果未配置 Base URL 且有预设，自动推荐第一个预设
+      if (!s.base_url && presetList.length > 0) {
+        const first = presetList[0];
+        setProvider(first.id);
+        setBaseUrl(first.base_url);
+        setPrimaryModel(first.default_model);
+        setBackgroundModel(first.default_background_model);
+      }
     } catch (e) {
       console.error("Failed to load LLM settings:", e);
     } finally {
@@ -84,7 +94,7 @@ export function LLMSettingsView() {
   const handleSave = async () => {
     try {
       setSaving(true);
-      const res = await api.updateLLMSettings({
+      const res = (await api.updateLLMSettings({
         custom_enabled: enabled,
         provider,
         base_url: baseUrl,
@@ -94,9 +104,10 @@ export function LLMSettingsView() {
         fallback_model: fallbackModel,
         temperature,
         max_tokens: maxTokens,
-      });
-      setMaskedKey(res.settings.api_key_masked);
-      setApiKey(res.settings.api_key_masked);
+      })) as any;
+      const savedSettings = res.settings || res;
+      setMaskedKey(savedSettings.api_key_masked || "");
+      setApiKey(savedSettings.api_key_masked || "");
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 2500);
     } catch (e: unknown) {
@@ -108,19 +119,34 @@ export function LLMSettingsView() {
   };
 
   const handleTestConnection = async () => {
+    if (testing) return;
     try {
       setTesting(true);
       setTestResult(null);
       setTestError(null);
-      const res = await api.testLLMConnection({
+
+      const targetBase = baseUrl.trim();
+      const targetModel = primaryModel.trim();
+
+      if (!targetBase && !systemDefault?.base_url) {
+        setTestError("请先填写 API 接口端点 (Base URL) 或点击上方服务商预设卡片");
+        return;
+      }
+
+      const res = (await api.testLLMConnection({
         provider,
-        base_url: baseUrl,
-        api_key: apiKey,
-        primary_model: primaryModel,
+        base_url: targetBase,
+        api_key: apiKey.trim(),
+        primary_model: targetModel,
+      })) as any;
+
+      const isSuccess = Boolean(res.success ?? res.ok);
+      setTestResult({
+        ...res,
+        success: isSuccess,
       });
-      setTestResult(res);
-      if (!res.success) {
-        setTestError(res.error || "连接测试未通过");
+      if (!isSuccess) {
+        setTestError(res.error || "连接测试未通过，请检查密钥与网络端点");
       }
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -524,13 +550,13 @@ export function LLMSettingsView() {
             <button
               type="button"
               onClick={handleTestConnection}
-              disabled={testing || (!baseUrl && !primaryModel)}
-              className="px-4 py-2 rounded-xl text-xs font-medium cursor-pointer transition-all flex items-center justify-center gap-1.5"
+              disabled={testing}
+              className="px-4 py-2 rounded-xl text-xs font-medium cursor-pointer transition-all flex items-center justify-center gap-1.5 active:scale-95"
               style={{
-                background: "var(--aurora-accent-soft)",
-                color: "var(--aurora-accent)",
+                background: testing ? "var(--aurora-chip)" : "var(--aurora-accent-soft)",
+                color: testing ? "var(--aurora-fg4)" : "var(--aurora-accent)",
                 border: "1px solid color-mix(in srgb, var(--aurora-accent) 40%, transparent)",
-                opacity: testing ? 0.6 : 1,
+                cursor: testing ? "not-allowed" : "pointer",
               }}
             >
               <Icon name="activity" size={14} />
