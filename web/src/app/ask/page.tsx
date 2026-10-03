@@ -596,22 +596,46 @@ function AskPageContent() {
       return;
     }
 
+    const isIOSDevice =
+      typeof navigator !== "undefined" &&
+      (/iPad|iPhone|iPod/.test(navigator.userAgent || "") ||
+        (navigator.platform === "MacIntel" && (navigator.maxTouchPoints || 0) > 1));
+
+    const isMobileShell =
+      typeof window !== "undefined" &&
+      (!!(window as any).ReactNativeWebView ||
+        (typeof navigator !== "undefined" && navigator.userAgent.includes("MementoMobile")));
+
+    // On iOS or within Mobile App, Apple strictly restricts third-party webviews from running
+    // Web Speech API (always throwing service-not-allowed).
+    // Instead of failing with a permission warning, immediately focus the input synchronously
+    // to bring up the iOS keyboard with the Apple Neural Engine dictation microphone.
+    if (isIOSDevice || isMobileShell) {
+      inputElRef.current?.focus();
+      setTimeout(() => {
+        bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+      }, 80);
+      const msg = isZh
+        ? "已为您呼出键盘，点击键盘右下角「麦克风」🎤 即可开始语音吩咐！"
+        : "Keyboard opened. Tap the mic 🎤 on your keyboard to dictate.";
+      showInAppToast(isZh ? "🎙️ 语音吩咐已就绪" : "Voice Input Ready", msg);
+      setSpeechHint(msg);
+      if (speechHintTimer.current) clearTimeout(speechHintTimer.current);
+      speechHintTimer.current = setTimeout(() => setSpeechHint(null), 5000);
+      return;
+    }
+
     const SpeechRecognition =
       typeof window !== "undefined"
         ? (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
         : null;
 
     if (!SpeechRecognition) {
-      // In iOS App (WKWebView), Apple intentionally blocks the Web Speech API.
-      // Smoothly focus input to bring up the iOS native keyboard with Apple Neural Engine dictation mic.
       inputElRef.current?.focus();
       const msg = isZh
-        ? "已为您呼出键盘，点击键盘右下角「麦克风」🎤 即可使用苹果原生神经引擎极速听写！"
-        : "Keyboard opened. Tap the mic 🎤 on your keyboard to dictate.";
-      showInAppToast(isZh ? "🎙️ 语音听写提示" : "Voice Dictation", msg);
-      setSpeechHint(msg);
-      if (speechHintTimer.current) clearTimeout(speechHintTimer.current);
-      speechHintTimer.current = setTimeout(() => setSpeechHint(null), 6000);
+        ? "当前环境暂不支持浏览器内置语音转录，请直接键入文本"
+        : "Speech recognition not supported in this browser.";
+      showInAppToast(isZh ? "🎙️ 提示" : "Notice", msg);
       return;
     }
 
@@ -646,12 +670,12 @@ function AskPageContent() {
         if (errType === "not-allowed" || errType === "service-not-allowed") {
           inputElRef.current?.focus();
           const fallbackMsg = isZh
-            ? "语音权限受限，已为您呼出键盘，可直接点击键盘右下角「麦克风」🎤 听写"
-            : "Microphone blocked. Please use the keyboard dictation mic.";
-          showInAppToast(isZh ? "🎙️ 语音提示" : "Voice Notice", fallbackMsg);
+            ? "未开启麦克风权限：请在浏览器设置中允许麦克风访问"
+            : "Microphone blocked. Please grant microphone access in browser settings.";
+          showInAppToast(isZh ? "🎙️ 麦克风提示" : "Microphone Notice", fallbackMsg);
           setSpeechHint(fallbackMsg);
           if (speechHintTimer.current) clearTimeout(speechHintTimer.current);
-          speechHintTimer.current = setTimeout(() => setSpeechHint(null), 6000);
+          speechHintTimer.current = setTimeout(() => setSpeechHint(null), 5000);
         }
       };
 
@@ -666,12 +690,12 @@ function AskPageContent() {
       setIsRecordingVoice(false);
       inputElRef.current?.focus();
       const fallbackMsg = isZh
-        ? "已为您呼出键盘，点击键盘右下角「麦克风」🎤 即可使用原生神经引擎语音打字！"
+        ? "已为您呼出键盘，点击键盘右下角「麦克风」🎤 即可开始语音吩咐！"
         : "Keyboard opened. Tap the mic 🎤 on your keyboard to dictate.";
-      showInAppToast(isZh ? "🎙️ 语音听写提示" : "Voice Dictation", fallbackMsg);
+      showInAppToast(isZh ? "🎙️ 语音吩咐已就绪" : "Voice Input Ready", fallbackMsg);
       setSpeechHint(fallbackMsg);
       if (speechHintTimer.current) clearTimeout(speechHintTimer.current);
-      speechHintTimer.current = setTimeout(() => setSpeechHint(null), 6000);
+      speechHintTimer.current = setTimeout(() => setSpeechHint(null), 5000);
     }
   }, [isRecordingVoice, isZh]);
 
