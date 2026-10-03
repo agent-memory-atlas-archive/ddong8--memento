@@ -451,6 +451,7 @@ export default function WebShell() {
         automaticallyAdjustContentInsets={false}
         contentInsetAdjustmentBehavior="never"
         keyboardDisplayRequiresUserAction={false}
+        hideKeyboardAccessoryView={true}
         webviewDebuggingEnabled={__DEV__}
         startInLoadingState={!initialLoaded}
         onLoadEnd={() => setInitialLoaded(true)}
