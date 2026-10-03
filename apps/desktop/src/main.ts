@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, Notification, powerMonitor, shell, Tray } from "electron";
+import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, nativeTheme, Notification, powerMonitor, shell, Tray } from "electron";
 import { autoUpdater } from "electron-updater";
 import { execFile } from "node:child_process";
 import { join, sep } from "node:path";
@@ -157,13 +157,50 @@ function createWindow(show: boolean): void {
   void loadApp();
 }
 
+async function navigateApp(path = "/ask"): Promise<void> {
+  if (!win || win.isDestroyed()) {
+    createWindow(true);
+    await loadApp(path);
+    return;
+  }
+  win.show();
+  win.focus();
+  try {
+    const cur = win.webContents.getURL();
+    if (cur.startsWith(serverOrigin())) {
+      const script = `(() => {
+        if (typeof window.__memento_client_push === "function") {
+          window.__memento_client_push(${JSON.stringify(path)});
+          return true;
+        }
+        return false;
+      })()`;
+      const ok = await win.webContents.executeJavaScript(script, true);
+      if (ok) return;
+    }
+  } catch {
+    // fallback to loadApp
+  }
+  await loadApp(path);
+}
+
 function showWindow(path?: string): void {
-  if (!win || win.isDestroyed()) createWindow(true);
-  else {
+  void navigateApp(path || "/ask");
+}
+
+function toggleButlerWindow(): void {
+  if (!win || win.isDestroyed()) {
+    createWindow(true);
+    void navigateApp("/ask");
+    return;
+  }
+  if (win.isVisible() && win.isFocused()) {
+    win.hide();
+  } else {
     win.show();
     win.focus();
+    void navigateApp("/ask");
   }
-  if (path) void loadApp(path);
 }
 
 function showNotification(title: string, body: string, targetUrl?: string): void {
@@ -171,7 +208,7 @@ function showNotification(title: string, body: string, targetUrl?: string): void
   if (process.platform === "darwin") {
     try {
       const { exec } = require("node:child_process");
-      const cleanTitle = (title || "Memento").replace(/["\\]/g, "");
+      const cleanTitle = (title || "Memento · AI 执事").replace(/["\\]/g, "");
       const cleanBody = (body || "").replace(/["\\]/g, "");
       exec(`osascript -e 'display notification "${cleanBody}" with title "${cleanTitle}" sound name "default"'`);
     } catch {
@@ -180,7 +217,7 @@ function showNotification(title: string, body: string, targetUrl?: string): void
   } else if (process.platform === "linux") {
     try {
       const { exec } = require("node:child_process");
-      const cleanTitle = (title || "Memento").replace(/["\\]/g, "");
+      const cleanTitle = (title || "Memento · AI 执事").replace(/["\\]/g, "");
       const cleanBody = (body || "").replace(/["\\]/g, "");
       exec(`notify-send "${cleanTitle}" "${cleanBody}"`);
     } catch {
@@ -196,12 +233,12 @@ function showNotification(title: string, body: string, targetUrl?: string): void
       icon = nativeImage.createFromPath(join(__dirname, "static", "trayTemplate.png"));
     }
     const notification = new Notification({
-      title,
+      title: title || "Memento · AI 执事",
       body,
       icon: icon.isEmpty() ? undefined : icon,
     });
     notification.on("click", () => {
-      showWindow(targetUrl);
+      void navigateApp(targetUrl || "/ask");
     });
     notification.show();
   } catch {
@@ -463,16 +500,156 @@ function startActiveAppTracker(): void {
 }
 
 
+function setupDockMenu(): void {
+  if (process.platform === "darwin" && app.dock) {
+    const dockMenu = Menu.buildFromTemplate([
+      { label: "AI 执事", click: () => void navigateApp("/ask") },
+      { label: "认知大脑", click: () => void navigateApp("/memory") },
+      { label: "作息节律", click: () => void navigateApp("/daily") },
+      { label: "工作待办", click: () => void navigateApp("/inbox") },
+      { type: "separator" },
+      { label: "本机采集", click: () => void navigateApp("/collector") },
+    ]);
+    app.dock.setMenu(dockMenu);
+  }
+}
+
+function setupAppMenu(): void {
+  const isMac = process.platform === "darwin";
+  const template: Electron.MenuItemConstructorOptions[] = [
+    ...(isMac
+      ? [
+          {
+            label: "Memento",
+            submenu: [
+              { role: "about" as const, label: "关于 Memento" },
+              { type: "separator" as const },
+              { label: "首选项 / 个人设置", accelerator: "CmdOrCtrl+,", click: () => void navigateApp("/profile") },
+              { type: "separator" as const },
+              { role: "services" as const, label: "服务" },
+              { type: "separator" as const },
+              { role: "hide" as const, label: "隐藏 Memento" },
+              { role: "hideOthers" as const, label: "隐藏其他" },
+              { role: "unhide" as const, label: "显示全部" },
+              { type: "separator" as const },
+              {
+                label: "退出 Memento",
+                accelerator: "CmdOrCtrl+Q",
+                click: () => {
+                  quitting = true;
+                  app.quit();
+                },
+              },
+            ],
+          },
+        ]
+      : []),
+    {
+      label: "编辑",
+      submenu: [
+        { role: "undo" as const, label: "撤销" },
+        { role: "redo" as const, label: "重做" },
+        { type: "separator" as const },
+        { role: "cut" as const, label: "剪切" },
+        { role: "copy" as const, label: "复制" },
+        { role: "paste" as const, label: "粘贴" },
+        { role: "selectAll" as const, label: "全选" },
+      ],
+    },
+    {
+      label: "执事与导航",
+      submenu: [
+        {
+          label: "AI 执事",
+          accelerator: "CmdOrCtrl+1",
+          click: () => void navigateApp("/ask"),
+        },
+        {
+          label: "认知大脑",
+          accelerator: "CmdOrCtrl+2",
+          click: () => void navigateApp("/memory"),
+        },
+        {
+          label: "作息节律",
+          accelerator: "CmdOrCtrl+3",
+          click: () => void navigateApp("/daily"),
+        },
+        {
+          label: "工作待办",
+          accelerator: "CmdOrCtrl+4",
+          click: () => void navigateApp("/inbox"),
+        },
+        {
+          label: "运行看板",
+          accelerator: "CmdOrCtrl+5",
+          click: () => void navigateApp("/app"),
+        },
+        { type: "separator" as const },
+        {
+          label: "呼出 / 隐藏 AI 执事 (全局快捷键)",
+          accelerator: "CmdOrCtrl+Shift+A",
+          click: () => toggleButlerWindow(),
+        },
+      ],
+    },
+    {
+      label: "视图",
+      submenu: [
+        { role: "reload" as const, label: "重新载入" },
+        { role: "forceReload" as const, label: "强制重新载入" },
+        { role: "toggleDevTools" as const, label: "开发者工具" },
+        { type: "separator" as const },
+        { role: "resetZoom" as const, label: "实际大小" },
+        { role: "zoomIn" as const, label: "放大" },
+        { role: "zoomOut" as const, label: "缩小" },
+        { type: "separator" as const },
+        { role: "togglefullscreen" as const, label: "切换全屏" },
+      ],
+    },
+    {
+      label: "窗口",
+      submenu: [
+        { role: "minimize" as const, label: "最小化" },
+        { role: "zoom" as const, label: "缩放" },
+        ...(isMac
+          ? [
+              { type: "separator" as const },
+              { role: "front" as const, label: "前置所有窗口" },
+            ]
+          : [{ role: "close" as const, label: "关闭" }]),
+      ],
+    },
+  ];
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
 function refreshTray(): void {
   if (!tray) return;
   const openAtLogin = app.getLoginItemSettings().openAtLogin;
-  tray.setToolTip(`Memento · ${modeLabel(daemon.mode)}`);
+  tray.setToolTip(`Memento · AI 执事 · ${modeLabel(daemon.mode)}`);
   tray.setContextMenu(
     Menu.buildFromTemplate([
       { label: "打开 Memento", click: () => showWindow() },
-      { label: modeLabel(daemon.mode), enabled: false },
+      {
+        label: "AI 执事",
+        accelerator: "CmdOrCtrl+Shift+A",
+        click: () => void navigateApp("/ask"),
+      },
+      {
+        label: "认知大脑",
+        click: () => void navigateApp("/memory"),
+      },
+      {
+        label: "作息节律",
+        click: () => void navigateApp("/daily"),
+      },
+      {
+        label: "工作待办",
+        click: () => void navigateApp("/inbox"),
+      },
       { type: "separator" },
-      { label: "本机采集", click: () => showWindow("/collector") },
+      { label: modeLabel(daemon.mode), enabled: false },
+      { label: "本机采集", click: () => void navigateApp("/collector") },
       {
         label: "立即同步画像和技能",
         enabled: daemon.mode === "running" || daemon.mode === "external",
@@ -622,6 +799,9 @@ if (!app.requestSingleInstanceLock()) {
     quitting = true;
   });
   app.on("will-quit", (event) => {
+    try {
+      globalShortcut.unregisterAll();
+    } catch {}
     if (notifyPollTimer) {
       clearInterval(notifyPollTimer);
       notifyPollTimer = null;
@@ -649,6 +829,13 @@ if (!app.requestSingleInstanceLock()) {
     config = await loadConfig();
     setupIpc();
     createTray();
+    setupDockMenu();
+    setupAppMenu();
+    try {
+      globalShortcut.register("CommandOrControl+Shift+A", () => toggleButlerWindow());
+    } catch (e) {
+      console.warn("Failed to register shortcut CommandOrControl+Shift+A", e);
+    }
     const hidden = process.argv.includes(HIDDEN_ARG) || app.getLoginItemSettings().wasOpenedAtLogin;
     createWindow(!hidden);
     if (config.token) await daemon.start();

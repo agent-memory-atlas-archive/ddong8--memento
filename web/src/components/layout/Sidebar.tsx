@@ -163,7 +163,7 @@ export default function Sidebar({ open, onClose }: { open: boolean; onClose: () 
           <SectionHeader label={t.nav.sectionExecutive || "控制中枢"} />
           <NavRow
             href="/ask"
-            label={t.nav.ask || "远程控制"}
+            label={t.nav.ask || "AI 执事"}
             icon="sparkles"
             active={isAskActive}
             onClick={handleNavClick}
@@ -204,7 +204,7 @@ export default function Sidebar({ open, onClose }: { open: boolean; onClose: () 
           <SectionHeader label={t.nav.sectionWorkspace || "工作沉淀"} style={{ marginTop: 14 }} />
           <NavRow
             href="/daily"
-            label={t.nav.daily || "记忆日报"}
+            label={t.nav.daily || "作息节律"}
             icon="calendar"
             active={isDailyActive}
             onClick={handleNavClick}
@@ -218,7 +218,7 @@ export default function Sidebar({ open, onClose }: { open: boolean; onClose: () 
           />
           <NavRow
             href="/inbox"
-            label={t.nav.inbox || "待办清单"}
+            label={t.nav.inbox || "工作待办"}
             icon="inbox"
             active={isInboxActive}
             onClick={handleNavClick}

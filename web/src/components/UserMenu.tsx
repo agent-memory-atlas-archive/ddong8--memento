@@ -404,7 +404,7 @@ export function UserMenu({ variant = "sidebar", onNavClick }: UserMenuProps) {
 
           {/* Quick shortcuts */}
           <MenuLink href="/profile?tab=proactive" icon="sparkles" onClick={handleItemClick}>
-            全天候管家
+            AI 执事
           </MenuLink>
           <MenuLink href="/profile?tab=life" icon="clock" onClick={handleItemClick}>
             作息与时间

@@ -76,7 +76,7 @@ function ProfileContent() {
   }
 
   const TABS: { id: TabKey; label: string; icon: Parameters<typeof Icon>[0]["name"]; adminOnly?: boolean }[] = [
-    { id: "proactive", label: "全天候管家", icon: "sparkles" },
+    { id: "proactive", label: "AI 执事", icon: "sparkles" },
     { id: "llm", label: "大模型配置", icon: "zap" },
     { id: "life", label: "作息与时间", icon: "clock" },
     { id: "account", label: t.profile.tabs?.account || "账号安全", icon: "user" },

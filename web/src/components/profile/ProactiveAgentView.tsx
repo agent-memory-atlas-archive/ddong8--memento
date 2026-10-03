@@ -410,7 +410,7 @@ export function ProactiveAgentView() {
           <div className="py-6 text-center text-xs text-[var(--aurora-fg4)]">加载任务列表中...</div>
         ) : missions.length === 0 ? (
           <div className="py-8 text-center text-xs text-[var(--aurora-fg4)] border border-dashed border-[var(--aurora-border)] rounded-xl">
-            暂无进行中的长周期后台任务。可在远程控制（/ask）中将长任务委托给助手在后台持续守护。
+            暂无进行中的长周期后台任务。可在 AI 执事（/ask）中将长任务委托给助手在后台持续守护。
           </div>
         ) : (
           <div className="space-y-3">
