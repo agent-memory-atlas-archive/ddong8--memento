@@ -6,6 +6,7 @@ import { fmt, useI18n } from "@/lib/i18n";
 import { Btn, Chip, Glass, TopBar } from "@/components/aurora/primitives";
 import { Icon } from "@/components/aurora/Icon";
 import MarkdownViewer from "@/components/viewers/MarkdownViewer";
+import CognitiveCompass from "@/components/memory/CognitiveCompass";
 
 type Obj = Record<string, unknown>;
 const obj = (v: unknown): Obj => (v && typeof v === "object" && !Array.isArray(v) ? (v as Obj) : {});
@@ -336,14 +337,25 @@ export default function SkillsPage() {
     return `${parts.length ? parts.join(" · ") : s.deviceNoSkills} · ${time(status.reported_at)}`;
   };
 
+  const draftsList = data ? list(data.drafts) : [];
+  const publishedList = data ? list(data.published) : [];
+
   return (
-    <div className="w-full max-w-4xl mx-auto pb-16 min-w-0">
+    <div className="w-full max-w-5xl mx-auto pb-16 min-w-0">
+      {/* Global Cognitive Compass Navigation */}
+      <CognitiveCompass
+        currentTab="skills"
+        summaryStats={{
+          skillsCount: draftsList.length + publishedList.length,
+        }}
+      />
+
       <TopBar
-        title={s.title}
-        subtitle={s.subtitle}
+        title="技能进化 · 特长与工具箱"
+        subtitle="AI 会执行什么 · 从日常会话与任务中提炼 SOP、执行脚本与标准化工作流"
         right={
           <Btn variant="glass" size="sm" icon="refresh" disabled={reviewRunning || busy !== null} onClick={reviewNow}>
-            {reviewRunning ? s.reviewing : s.reviewNow}
+            {reviewRunning ? s.reviewing : "自动审查提炼技能"}
           </Btn>
         }
       />

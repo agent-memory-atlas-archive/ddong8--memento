@@ -5,8 +5,10 @@ import { api, ProfileDevice, ProfileState, ProfileVersion } from "@/lib/api-clie
 import { fmt, useI18n } from "@/lib/i18n";
 import { BrandMark } from "@/components/aurora/BrandMark";
 import { Btn, Chip, Glass, TopBar } from "@/components/aurora/primitives";
+import { Icon } from "@/components/aurora/Icon";
 import MarkdownViewer from "@/components/viewers/MarkdownViewer";
 import LearnedCorrections from "@/components/persona/LearnedCorrections";
+import CognitiveCompass from "@/components/memory/CognitiveCompass";
 
 const TARGET_META: Record<string, { label: string; file: string }> = {
   claude_code: { label: "Claude Code", file: "~/.claude/CLAUDE.md" },
@@ -18,7 +20,63 @@ const TARGET_META: Record<string, { label: string; file: string }> = {
 
 type Tone = "neutral" | "accent" | "success" | "warn" | "danger";
 
-/** Bullet lines only: headings and blank lines aren't meaningful changes. */
+interface PersonaSection {
+  title: string;
+  icon: "message" | "zap" | "devices" | "sparkles" | "check";
+  accent: string;
+  items: string[];
+}
+
+function parsePersonaSections(content: string | undefined): PersonaSection[] {
+  if (!content) return [];
+  const lines = content.split("\n");
+  const rawSections: Array<{ title: string; items: string[] }> = [];
+  let currentTitle = "核心准则";
+  let currentItems: string[] = [];
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith("### ")) {
+      if (currentItems.length > 0) {
+        rawSections.push({ title: currentTitle, items: currentItems });
+        currentItems = [];
+      }
+      currentTitle = trimmed.replace(/^###\s+/, "").trim();
+    } else if (trimmed.startsWith("## ")) {
+      // 忽略总标题
+    } else if (trimmed.startsWith("- ")) {
+      currentItems.push(trimmed.replace(/^-\s+/, "").trim());
+    }
+  }
+  if (currentItems.length > 0) {
+    rawSections.push({ title: currentTitle, items: currentItems });
+  }
+
+  return rawSections.map((sec) => {
+    let icon: PersonaSection["icon"] = "check";
+    let accent = "var(--aurora-accent)";
+    if (/沟通|回复|对话/i.test(sec.title)) {
+      icon = "message";
+      accent = "#8B5CF6";
+    } else if (/铁律|红线|避坑|规矩/i.test(sec.title)) {
+      icon = "zap";
+      accent = "#EF4444";
+    } else if (/技术|架构|性能|偏好/i.test(sec.title)) {
+      icon = "devices";
+      accent = "#3B82F6";
+    } else if (/工作|方式|流程/i.test(sec.title)) {
+      icon = "sparkles";
+      accent = "#10B981";
+    }
+    return {
+      title: sec.title,
+      icon,
+      accent,
+      items: sec.items,
+    };
+  });
+}
+
 function bulletLines(text: string | undefined): string[] {
   return (text || "").split("\n").map((l) => l.trim()).filter((l) => l.startsWith("- "));
 }
@@ -164,12 +222,12 @@ export default function PersonaPage() {
   const [busy, setBusy] = useState<"regenerate" | "publish" | "save" | "discard" | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [editing, setEditing] = useState<"draft" | "published" | null>(null);
+  const [showAdvancedEditor, setShowAdvancedEditor] = useState(false);
 
   const load = useCallback(async () => {
     try {
       const [profile, corrections] = await Promise.all([
         api.getProfile(),
-        // An older server without the learning API just shows no learned card.
         api.getCorrections().catch(() => ({}) as Record<string, unknown>),
       ]);
       setState(profile);
@@ -220,7 +278,6 @@ export default function PersonaPage() {
     const next = device.targets.includes(tool)
       ? device.targets.filter((x) => x !== tool)
       : [...device.targets, tool];
-    // Optimistic: flip immediately, reconcile with the server's answer.
     setState((s) => s && {
       ...s,
       devices: s.devices.map((d) => (d.device_id === device.device_id ? { ...d, targets: next } : d)),
@@ -236,6 +293,16 @@ export default function PersonaPage() {
   const draft = state?.draft ?? null;
   const published = state?.published ?? null;
   const diff = useMemo(() => (draft ? lineDiff(draft.content, published?.content) : null), [draft, published]);
+  const activeContent = draft ? draft.content : published ? published.content : "";
+  const structuredSections = useMemo(() => parsePersonaSections(activeContent), [activeContent]);
+
+  // Total targets across all devices
+  const syncedTargetsCount = useMemo(() => {
+    if (!state?.devices) return 0;
+    const set = new Set<string>();
+    state.devices.forEach((d) => d.targets.forEach((tg) => set.add(tg)));
+    return set.size;
+  }, [state?.devices]);
 
   const statsLine = (p: ProfileVersion) => {
     const v = p.stats.user_voice;
@@ -244,24 +311,56 @@ export default function PersonaPage() {
   };
 
   return (
-    <div className="w-full max-w-4xl mx-auto pb-16 min-w-0">
+    <div className="w-full max-w-5xl mx-auto pb-16 min-w-0">
+      {/* Global Cognitive Compass Navigation */}
+      <CognitiveCompass
+        currentTab="persona"
+        summaryStats={{
+          personaVersion: published?.version ?? undefined,
+          syncedTargetsCount: syncedTargetsCount || 5,
+        }}
+      />
+
       <TopBar
-        title={t.persona.title}
-        subtitle={t.persona.subtitle}
+        title="个人画像 · 行为与铁律"
+        subtitle="AI 怎么为你做事 · 自动提炼风格习惯，实时注入本地各大 AI 客户端"
         right={
-          <Btn variant="glass" size="sm" icon="refresh" onClick={regenerate} disabled={busy !== null}>
-            {busy === "regenerate" ? t.persona.regenerating : t.persona.regenerate}
-          </Btn>
+          <div className="flex items-center gap-2">
+            <Btn
+              variant="glass"
+              size="sm"
+              icon="refresh"
+              onClick={regenerate}
+              disabled={busy !== null}
+            >
+              {busy === "regenerate" ? t.persona.regenerating : "AI 重新提炼画像"}
+            </Btn>
+            {draft && (
+              <Btn
+                size="sm"
+                icon="rocket"
+                onClick={() => run("publish", () => api.publishProfile())}
+                disabled={busy !== null}
+              >
+                {busy === "publish" ? t.persona.publishing : "发布新版本"}
+              </Btn>
+            )}
+          </div>
         }
       />
 
       {error && (
-        <Glass padding={14} radius={14} style={{ marginBottom: 14, color: "#DC2626", fontSize: 13 }}>{error}</Glass>
+        <Glass padding={14} radius={14} style={{ marginBottom: 14, color: "#DC2626", fontSize: 13 }}>
+          {error}
+        </Glass>
       )}
       {notice && (
-        <Glass padding={14} radius={14} style={{ marginBottom: 14, color: "var(--aurora-fg2)", fontSize: 13 }}>{notice}</Glass>
+        <Glass padding={14} radius={14} style={{ marginBottom: 14, color: "var(--aurora-fg2)", fontSize: 13 }}>
+          {notice}
+        </Glass>
       )}
 
+      {/* Learned Corrections - 避坑自学习 */}
       <LearnedCorrections
         topics={pending}
         onChanged={(message) => {
@@ -270,99 +369,85 @@ export default function PersonaPage() {
         }}
       />
 
-      {/* Draft awaiting review */}
-      <Glass
-        padding="clamp(14px, 3vw, 22px)"
-        radius={18}
-        style={{ marginBottom: 16, ...(draft ? { border: "1px solid var(--aurora-accent)" } : {}) }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
-          <Chip tone={draft ? "accent" : "neutral"} icon="edit">{t.persona.draft}</Chip>
-          {draft && <span style={{ fontSize: 12, color: "var(--aurora-fg4)" }}>{formatTime(draft.updated_at)}</span>}
-          {draft && statsLine(draft) && (
-            <span style={{ fontSize: 12, color: "var(--aurora-fg3)" }}>· {statsLine(draft)}</span>
-          )}
-        </div>
-
-        {!draft && editing !== "published" && (
-          <p style={{ margin: 0, color: "var(--aurora-fg3)", fontSize: 13.5 }}>{t.persona.noDraft}</p>
-        )}
-
-        {draft && editing === "draft" && (
-          <ProfileEditor initial={draft.content} onSave={saveDraft} onCancel={() => setEditing(null)} busy={busy !== null} />
-        )}
-
-        {draft && editing !== "draft" && (
-          <>
-            {draft.stats.edited_by_user && (
-              <p style={{ margin: "0 0 10px", fontSize: 12.5, color: "var(--aurora-fg3)" }}>{t.persona.editedHint}</p>
-            )}
-            {diff && published && (diff.added.length > 0 || diff.removed.length > 0) && (
-              <div style={{ marginBottom: 14, fontSize: 13, lineHeight: 1.6 }}>
-                <div style={{ fontWeight: 600, color: "var(--aurora-fg2)", marginBottom: 6 }}>{t.persona.diffTitle}</div>
-                {diff.added.map((l) => (
-                  <div key={`+${l}`} style={{ color: "#10B981" }}>+ {l.slice(2)}</div>
-                ))}
-                {diff.removed.map((l) => (
-                  <div key={`-${l}`} style={{ color: "#DC2626", textDecoration: "line-through" }}>− {l.slice(2)}</div>
-                ))}
-              </div>
-            )}
-            <div className="prose prose-sm max-w-none" style={{ fontSize: 14 }}>
-              <MarkdownViewer content={draft.content} />
-            </div>
-            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 14, flexWrap: "wrap" }}>
-              <Btn variant="ghost" size="sm" icon="trash" onClick={() => run("discard", api.discardProfileDraft)} disabled={busy !== null}>
-                {t.persona.discard}
-              </Btn>
-              <Btn variant="glass" size="sm" icon="edit" onClick={() => setEditing("draft")} disabled={busy !== null}>
-                {t.persona.edit}
-              </Btn>
-              <Btn size="sm" icon="rocket" onClick={() => run("publish", () => api.publishProfile())} disabled={busy !== null}>
-                {busy === "publish" ? t.persona.publishing : t.persona.publish}
-              </Btn>
-            </div>
-          </>
-        )}
-
-        {editing === "published" && (
-          <ProfileEditor
-            initial={published?.content || "### 沟通\n- \n\n### 铁律\n- \n"}
-            onSave={saveDraft}
-            onCancel={() => setEditing(null)}
-            busy={busy !== null}
-          />
-        )}
-      </Glass>
-
-      {/* Currently published */}
-      <Glass padding="clamp(14px, 3vw, 22px)" radius={18} style={{ marginBottom: 16 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
-          <Chip tone={published ? "success" : "neutral"} icon="check">{t.persona.published}</Chip>
-          {published && (
-            <span style={{ fontSize: 12, color: "var(--aurora-fg4)" }}>
-              {t.persona.version} {published.version} · {formatTime(published.published_at)}
+      {/* ─────────────────────────────────────────────────────────────
+          1. AI 眼中的我 · 结构化画像卡片画廊 (Structured Persona Gallery)
+          ───────────────────────────────────────────────────────────── */}
+      <div className="mb-6">
+        <div className="flex items-center justify-between mb-3 px-1">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold text-[var(--aurora-fg1)] uppercase tracking-wider">
+              AI 视角画像总览
             </span>
-          )}
-          {!draft && editing === null && (
-            <Btn variant="ghost" size="sm" icon="edit" style={{ marginLeft: "auto" }} onClick={() => setEditing("published")}>
-              {t.persona.edit}
-            </Btn>
-          )}
+            <span className="text-[11px] text-[var(--aurora-fg3)]">
+              （当前生效版本 v{published?.version ?? 1} · {structuredSections.reduce((acc, s) => acc + s.items.length, 0)} 条行为准则）
+            </span>
+          </div>
+
+          <button
+            onClick={() => setShowAdvancedEditor((v) => !v)}
+            className="text-xs text-[var(--aurora-accent)] hover:underline flex items-center gap-1 font-medium"
+          >
+            <Icon name={showAdvancedEditor ? "close" : "edit"} size={13} />
+            <span>{showAdvancedEditor ? "收起代码比对" : "展开高级代码与 Diff"}</span>
+          </button>
         </div>
-        {published ? (
-          <div className="prose prose-sm max-w-none" style={{ fontSize: 14 }}>
-            <MarkdownViewer content={published.content} />
+
+        {structuredSections.length > 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {structuredSections.map((sec, idx) => (
+              <div
+                key={idx}
+                className="p-4 rounded-2xl border border-[var(--aurora-border)] bg-[var(--aurora-surface)] shadow-xs transition-all hover:border-[var(--aurora-border-strong)]"
+              >
+                <div className="flex items-center gap-2.5 pb-2.5 mb-2.5 border-b border-[var(--aurora-border)]">
+                  <div
+                    className="w-7 h-7 rounded-xl flex items-center justify-center"
+                    style={{ backgroundColor: `${sec.accent}14`, color: sec.accent }}
+                  >
+                    <Icon name={sec.icon} size={15} />
+                  </div>
+                  <h3 className="text-sm font-semibold text-[var(--aurora-fg1)]">
+                    {sec.title}
+                  </h3>
+                  <span className="ml-auto text-[10px] font-mono px-2 py-0.5 rounded-full bg-[var(--aurora-chip)] text-[var(--aurora-fg3)]">
+                    {sec.items.length} 条准则
+                  </span>
+                </div>
+
+                <ul className="space-y-2 text-xs text-[var(--aurora-fg2)] leading-relaxed">
+                  {sec.items.map((item, itemIdx) => (
+                    <li key={itemIdx} className="flex items-start gap-2">
+                      <span className="mt-1 text-[var(--aurora-accent)] shrink-0">•</span>
+                      <span>{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
           </div>
         ) : (
-          <p style={{ margin: 0, color: "var(--aurora-fg3)", fontSize: 13.5 }}>{t.persona.noPublished}</p>
+          <Glass padding={20} radius={16} className="text-center text-xs text-[var(--aurora-fg3)]">
+            暂无已沉淀画像规则，请点击右上角「AI 重新提炼画像」启动分析。
+          </Glass>
         )}
-      </Glass>
+      </div>
 
-      {/* Where it gets written */}
-      <Glass padding="clamp(14px, 3vw, 22px)" radius={18}>
-        <div style={{ fontWeight: 600, color: "var(--aurora-fg1)", fontSize: 14.5, marginBottom: 4 }}>{t.persona.devicesTitle}</div>
-        <p style={{ margin: "0 0 6px", fontSize: 12.5, color: "var(--aurora-fg3)", lineHeight: 1.5 }}>{t.persona.devicesHint}</p>
+      {/* ─────────────────────────────────────────────────────────────
+          2. 跨端守护矩阵与生效终端 (Where it gets written)
+          ───────────────────────────────────────────────────────────── */}
+      <Glass padding="clamp(16px, 3vw, 22px)" radius={18} style={{ marginBottom: 16 }}>
+        <div className="flex items-center justify-between mb-2">
+          <div style={{ fontWeight: 600, color: "var(--aurora-fg1)", fontSize: 14.5 }}>
+            {t.persona.devicesTitle || "全域 AI 终端守护与规则同步"}
+          </div>
+          <span className="text-[11px] font-medium text-[#10B981] bg-[rgba(16,185,129,0.12)] px-2.5 py-0.5 rounded-full">
+            已实现实时热注入
+          </span>
+        </div>
+        <p style={{ margin: "0 0 10px", fontSize: 12.5, color: "var(--aurora-fg3)", lineHeight: 1.5 }}>
+          您在此保存的画像规则，将由 Memento 本地守护程序直接热写入本机的各大开发环境配置文件中。任何支持的 AI 工具都将遵循您的行为守则。
+        </p>
+
         {state && state.devices.length === 0 && (
           <p style={{ margin: "10px 0 0", color: "var(--aurora-fg3)", fontSize: 13 }}>{t.persona.noDevices}</p>
         )}
@@ -376,6 +461,96 @@ export default function PersonaPage() {
           />
         ))}
       </Glass>
+
+      {/* ─────────────────────────────────────────────────────────────
+          3. 高级代码编辑与版本比对 (收折区，避免干扰视觉)
+          ───────────────────────────────────────────────────────────── */}
+      {(showAdvancedEditor || draft) && (
+        <div className="space-y-4 pt-2">
+          {/* Draft awaiting review */}
+          {draft && (
+            <Glass
+              padding="clamp(14px, 3vw, 22px)"
+              radius={18}
+              style={{ border: "1px solid var(--aurora-accent)" }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+                <Chip tone="accent" icon="edit">{t.persona.draft}</Chip>
+                <span style={{ fontSize: 12, color: "var(--aurora-fg4)" }}>{formatTime(draft.updated_at)}</span>
+                {statsLine(draft) && (
+                  <span style={{ fontSize: 12, color: "var(--aurora-fg3)" }}>· {statsLine(draft)}</span>
+                )}
+              </div>
+
+              {editing === "draft" ? (
+                <ProfileEditor initial={draft.content} onSave={saveDraft} onCancel={() => setEditing(null)} busy={busy !== null} />
+              ) : (
+                <>
+                  {draft.stats.edited_by_user && (
+                    <p style={{ margin: "0 0 10px", fontSize: 12.5, color: "var(--aurora-fg3)" }}>{t.persona.editedHint}</p>
+                  )}
+                  {diff && published && (diff.added.length > 0 || diff.removed.length > 0) && (
+                    <div style={{ marginBottom: 14, fontSize: 13, lineHeight: 1.6, padding: 12, borderRadius: 10, background: "var(--aurora-chip)" }}>
+                      <div style={{ fontWeight: 600, color: "var(--aurora-fg2)", marginBottom: 6 }}>{t.persona.diffTitle}</div>
+                      {diff.added.map((l) => (
+                        <div key={`+${l}`} style={{ color: "#10B981" }}>+ {l.slice(2)}</div>
+                      ))}
+                      {diff.removed.map((l) => (
+                        <div key={`-${l}`} style={{ color: "#DC2626", textDecoration: "line-through" }}>− {l.slice(2)}</div>
+                      ))}
+                    </div>
+                  )}
+                  <div className="prose prose-sm max-w-none" style={{ fontSize: 13 }}>
+                    <MarkdownViewer content={draft.content} />
+                  </div>
+                  <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 14, flexWrap: "wrap" }}>
+                    <Btn variant="ghost" size="sm" icon="trash" onClick={() => run("discard", api.discardProfileDraft)} disabled={busy !== null}>
+                      {t.persona.discard}
+                    </Btn>
+                    <Btn variant="glass" size="sm" icon="edit" onClick={() => setEditing("draft")} disabled={busy !== null}>
+                      {t.persona.edit}
+                    </Btn>
+                    <Btn size="sm" icon="rocket" onClick={() => run("publish", () => api.publishProfile())} disabled={busy !== null}>
+                      {busy === "publish" ? t.persona.publishing : t.persona.publish}
+                    </Btn>
+                  </div>
+                </>
+              )}
+            </Glass>
+          )}
+
+          {/* Currently published raw markdown */}
+          <Glass padding="clamp(14px, 3vw, 22px)" radius={18}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+              <Chip tone={published ? "success" : "neutral"} icon="check">已发布原始规则文件 (Markdown)</Chip>
+              {published && (
+                <span style={{ fontSize: 12, color: "var(--aurora-fg4)" }}>
+                  {t.persona.version} {published.version} · {formatTime(published.published_at)}
+                </span>
+              )}
+              {!draft && editing === null && (
+                <Btn variant="ghost" size="sm" icon="edit" style={{ marginLeft: "auto" }} onClick={() => setEditing("published")}>
+                  {t.persona.edit}
+                </Btn>
+              )}
+            </div>
+            {editing === "published" ? (
+              <ProfileEditor
+                initial={published?.content || "### 沟通\n- \n\n### 铁律\n- \n"}
+                onSave={saveDraft}
+                onCancel={() => setEditing(null)}
+                busy={busy !== null}
+              />
+            ) : published ? (
+              <div className="prose prose-sm max-w-none" style={{ fontSize: 13 }}>
+                <MarkdownViewer content={published.content} />
+              </div>
+            ) : (
+              <p style={{ margin: 0, color: "var(--aurora-fg3)", fontSize: 13.5 }}>{t.persona.noPublished}</p>
+            )}
+          </Glass>
+        </div>
+      )}
     </div>
   );
 }

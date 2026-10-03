@@ -8,6 +8,7 @@ import { Btn, Glass, GhostInput, StatCard, TopBar } from "@/components/aurora/pr
 import { ShareModal } from "@/components/ShareModal";
 import MarkdownViewer from "@/components/viewers/MarkdownViewer";
 import DreamingPanel from "@/components/memory/DreamingPanel";
+import CognitiveCompass from "@/components/memory/CognitiveCompass";
 
 interface GraphNode {
   id: string;
@@ -308,11 +309,19 @@ export default function MemoryPage() {
 
   return (
     <div className="max-w-6xl mx-auto space-y-4 sm:space-y-6">
+      {/* Global Cognitive Compass Navigation */}
+      <CognitiveCompass
+        currentTab="memory"
+        summaryStats={{
+          memoryCount: stats?.entities ?? effectiveTree.reduce((acc, n) => acc + countLeaves(n), 0),
+        }}
+      />
+
       {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <TopBar
-          title={t.nav.memory || "外脑认知记忆库"}
-          subtitle="三层认知架构 · 39 个核心工程 · 长期开发准则"
+          title="长期记忆 · 知识储备库"
+          subtitle="AI 记住了什么 · 业务事实、工程架构准则与经验拓扑"
         />
 
         {/* Segmented Control Capsule Tab */}
