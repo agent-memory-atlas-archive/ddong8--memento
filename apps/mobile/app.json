@@ -18,8 +18,10 @@
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.ihasy.memento.mobile"
+      "package": "com.ihasy.memento.mobile",
+      "permissions": ["android.permission.PACKAGE_USAGE_STATS"]
     },
+
     "web": {
       "favicon": "./assets/favicon.png"
     },

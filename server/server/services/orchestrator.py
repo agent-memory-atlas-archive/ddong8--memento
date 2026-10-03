@@ -939,6 +939,7 @@ async def run_agent_loop(
                 temperature=0.3,
                 max_tokens=1500,
                 timeout=120.0,
+                user=user,
             )
         except Exception as e:
             logger.exception("orchestrator LLM call failed across all providers: %s", e)
@@ -984,7 +985,7 @@ async def run_agent_loop(
 
                 # Round 0 with no calls and empty content: fallback to plain chat without tools
                 logger.info("Orchestrator round 0 returned no calls and empty content; falling back to plain chat")
-                plain_content = await call_plain_chat(convo, temperature=0.3, max_tokens=1500)
+                plain_content = await call_plain_chat(convo, temperature=0.3, max_tokens=1500, user=user)
                 if plain_content and plain_content.strip():
                     yield {"type": "delta", "text": plain_content.strip()}
                     return
@@ -1140,6 +1141,7 @@ async def run_agent_loop(
             temperature=0.3,
             max_tokens=2500,
             timeout=120.0,
+            user=user,
         ):
             if item["type"] == "thinking":
                 yield {"type": "thinking", "text": item["text"]}

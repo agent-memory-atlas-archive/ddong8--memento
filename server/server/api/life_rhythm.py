@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db.models import User
 from ..db.session import get_db
-from ..middleware.auth import get_current_user
+from ..middleware.auth import get_current_user, get_current_user_or_collector
 from ..services import life_service
 
 router = APIRouter(prefix="/api/life", tags=["life_rhythm"])
@@ -23,6 +23,10 @@ class RecordRhythmBody(BaseModel):
     bedtime: str | None = None
     sleep_hours: float | None = None
     app_usages: list[dict[str, Any]] = []
+
+
+class ParseImageBody(BaseModel):
+    image: str  # Base64 string or data:image/... data URL
 
 
 @router.get("/rhythm")
@@ -39,7 +43,7 @@ async def get_rhythms(
 async def record_rhythm(
     body: RecordRhythmBody,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_user_or_collector),
 ):
     """Record daily sleep times, wake-up times, and app usage minutes."""
     target_date = date.fromisoformat(body.log_date) if body.log_date else date.today()
@@ -60,6 +64,31 @@ async def record_rhythm(
         "productive_minutes": record.productive_minutes,
         "distraction_minutes": record.distraction_minutes,
     }
+
+
+@router.post("/rhythm/parse-image")
+@router.post("/rhythm/ocr")
+async def parse_screentime_image(
+    body: ParseImageBody,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user_or_collector),
+):
+    """Parse iOS or Android Screen Time screenshot using multimodal AI vision."""
+    return await life_service.parse_screen_time_screenshot(db, user, body.image)
+
+
+@router.post("/rhythm/clear")
+@router.delete("/rhythm")
+async def clear_rhythms(
+    log_date: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Clear all or specific date's life rhythm data (e.g. remove sample data)."""
+    target_date = date.fromisoformat(log_date) if log_date else None
+    count = await life_service.clear_user_rhythms(db, user, target_date)
+    return {"status": "ok", "deleted_count": count}
+
 
 
 @router.post("/rhythm/advice")

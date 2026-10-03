@@ -142,3 +142,17 @@ def require_role(*roles: str):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
         return user
     return checker
+
+
+async def get_current_user_or_collector(
+    authorization: str = Header(None),
+    x_collector_token: str = Header(None),
+    db: AsyncSession = Depends(get_db),
+) -> User:
+    """Accepts either Bearer JWT token or X-Collector-Token header."""
+    if authorization and authorization.startswith("Bearer "):
+        return await get_current_user(authorization, db)
+    if x_collector_token:
+        return await verify_collector_token(x_collector_token, db)
+    raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing authorization")
+

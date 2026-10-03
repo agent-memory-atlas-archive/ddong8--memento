@@ -574,6 +574,16 @@ export const api = {
     }),
   populateSampleLifeRhythm: () =>
     apiFetch<{ status: string; message: string; advice: string }>("/api/life/rhythm/sample", { method: "POST" }),
+  clearLifeRhythms: (log_date?: string) =>
+    apiFetch<{ status: string; deleted_count: number }>(log_date ? `/api/life/rhythm/clear?log_date=${log_date}` : "/api/life/rhythm/clear", {
+      method: "POST",
+    }),
+  parseScreenTimeImage: (image: string) =>
+    apiFetch<{ status: string; log_date: string; apps_count: number; total_screen_minutes: number; apps: any[] }>("/api/life/rhythm/parse-image", {
+      method: "POST",
+      body: JSON.stringify({ image }),
+    }),
+
   getTools: () => apiFetch<ToolSummary[]>("/api/tools"),
   getTool: (id: string) => apiFetch<ToolDetail>(`/api/tools/${id}`),
   getToolFiles: (id: string, category?: string, offset = 0, limit = 50) => {

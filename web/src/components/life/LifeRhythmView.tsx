@@ -1,6 +1,4 @@
-"use client";
-
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, type DailyLifeRhythm } from "@/lib/api-client";
 import { Glass, Btn, Chip, SectionLabel } from "@/components/aurora/primitives";
 import { Icon } from "@/components/aurora/Icon";
@@ -10,7 +8,11 @@ export function LifeRhythmView() {
   const [loading, setLoading] = useState(true);
   const [generatingAdvice, setGeneratingAdvice] = useState(false);
   const [populating, setPopulating] = useState(false);
+  const [clearing, setClearing] = useState(false);
+  const [parsingImage, setParsingImage] = useState(false);
+  const [feedback, setFeedback] = useState<{ text: string; error?: boolean } | null>(null);
   const [selectedDayIndex, setSelectedDayIndex] = useState(0);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const loadData = async () => {
     try {
@@ -45,12 +47,61 @@ export function LifeRhythmView() {
       setPopulating(true);
       await api.populateSampleLifeRhythm();
       await loadData();
+      setFeedback({ text: "✨ 已载入示例作息与时间分配数据！" });
+      setTimeout(() => setFeedback(null), 3000);
     } catch (e) {
       alert("生成示例数据失败");
     } finally {
       setPopulating(false);
     }
   };
+
+  const handleClearData = async () => {
+    if (!confirm("确定要清空当前的作息与 App 耗时数据吗？清空后将从真实设备全新采集。")) return;
+    try {
+      setClearing(true);
+      await api.clearLifeRhythms();
+      await loadData();
+      setFeedback({ text: "🗑️ 已清空作息数据，等待设备真实数据同步..." });
+      setTimeout(() => setFeedback(null), 3000);
+    } catch (e) {
+      alert("清空数据失败");
+    } finally {
+      setClearing(false);
+    }
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      setParsingImage(true);
+      setFeedback(null);
+      const reader = new FileReader();
+      const base64Promise = new Promise<string>((resolve, reject) => {
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+      });
+      reader.readAsDataURL(file);
+      const base64 = await base64Promise;
+
+      const res = await api.parseScreenTimeImage(base64);
+      await loadData();
+      setFeedback({
+        text: `✅ 成功解析屏幕时间截图！已识别 ${res.apps_count} 个应用，总屏幕时长 ${Math.floor(res.total_screen_minutes / 60)}h ${res.total_screen_minutes % 60}m。`,
+      });
+      setTimeout(() => setFeedback(null), 5000);
+    } catch (err: any) {
+      setFeedback({
+        text: `❌ 截图解析失败: ${err.message || "请确保截图中清晰展示了应用时长"}`,
+        error: true,
+      });
+    } finally {
+      setParsingImage(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
 
   if (loading) {
     return (
@@ -99,7 +150,35 @@ export function LifeRhythmView() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleFileChange}
+              accept="image/*"
+              style={{ display: "none" }}
+            />
+
+            <Btn
+              variant="glass"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={parsingImage}
+              className="text-xs py-1.5"
+            >
+              {parsingImage ? "AI 视觉解析中..." : "📸 手机截图智能解析"}
+            </Btn>
+
+            {rhythms.length > 0 && (
+              <Btn
+                variant="glass"
+                onClick={handleClearData}
+                disabled={clearing}
+                className="text-xs py-1.5 text-rose-500 hover:text-rose-600"
+              >
+                {clearing ? "清空中..." : "🗑️ 清空数据"}
+              </Btn>
+            )}
+
             {rhythms.length === 0 && (
               <Btn
                 variant="glass"
@@ -110,6 +189,7 @@ export function LifeRhythmView() {
                 {populating ? "生成中..." : "✨ 体验示例作息数据"}
               </Btn>
             )}
+
             {currentDay && (
               <Btn
                 variant="primary"
@@ -122,7 +202,21 @@ export function LifeRhythmView() {
             )}
           </div>
         </div>
+
+        {feedback && (
+          <div
+            className="mt-4 p-3 rounded-xl text-xs font-medium transition-all"
+            style={{
+              background: feedback.error ? "rgba(239, 68, 68, 0.1)" : "rgba(16, 185, 129, 0.1)",
+              color: feedback.error ? "#EF4444" : "#10B981",
+              border: `1px solid ${feedback.error ? "rgba(239, 68, 68, 0.25)" : "rgba(16, 185, 129, 0.25)"}`,
+            }}
+          >
+            {feedback.text}
+          </div>
+        )}
       </Glass>
+
 
       {/* Days Selector Tabs */}
       {rhythms.length > 0 && (
@@ -309,23 +403,48 @@ export function LifeRhythmView() {
               </div>
 
               {/* Data Sync Channels Info */}
-              <div className="mt-6 pt-4 border-t border-[var(--aurora-border)] text-[11px] text-[var(--aurora-fg4)] space-y-1.5">
-                <div className="font-semibold text-[var(--aurora-fg3)]">📱 手机与电脑如何自动感知？</div>
-                <div>• <b>Android 手机</b>：开启 Memento 移动端「应用使用统计」权限即可自动采集。</div>
-                <div>• <b>iPhone 手机</b>：支持 iOS 快捷指令每天定时 POST，或截图屏幕时间由 AI OCR 解析。</div>
-                <div>• <b>电脑桌面端</b>：Memento 桌面端已自动秒级统计前台活跃窗口与工作时长。</div>
+              <div className="mt-6 pt-4 border-t border-[var(--aurora-border)] text-[11px] text-[var(--aurora-fg4)] space-y-2">
+                <div className="font-semibold text-[var(--aurora-fg2)]">📱 手机与电脑如何自动感知？</div>
+                <div className="leading-relaxed">
+                  • <b className="text-[var(--aurora-fg2)]">Mac 桌面端</b>：已内置原生秒级前台窗口探针，自动无感统计 Cursor、VS Code、Chrome、微信等活跃应用耗时。
+                </div>
+                <div className="leading-relaxed">
+                  • <b className="text-[var(--aurora-fg2)]">iPhone 手机</b>：由于 iOS 沙盒限制，支持点击顶部「📸 手机截图智能解析」上传“设置 - 屏幕使用时间”截图（AI 视觉秒级提取真实数据），或配置 iOS 快捷指令定时同步。
+                </div>
+                <div className="leading-relaxed">
+                  • <b className="text-[var(--aurora-fg2)]">Android 手机</b>：开启 Memento 移动端「应用使用情况」权限即可全自动后台读取各 App 时长。
+                </div>
               </div>
             </Glass>
           </div>
         </div>
       ) : (
-        <div className="py-16 text-center text-sm text-[var(--aurora-fg4)] border border-dashed border-[var(--aurora-border)] rounded-2xl">
-          <p className="mb-4">暂无作息与屏幕使用时间数据。</p>
-          <Btn variant="primary" onClick={handlePopulateSample} disabled={populating} className="text-xs">
-            {populating ? "生成中..." : "✨ 一键载入真实示例数据体验"}
-          </Btn>
+        <div className="py-16 text-center text-sm text-[var(--aurora-fg4)] border border-dashed border-[var(--aurora-border)] rounded-2xl space-y-4">
+          <div className="text-3xl">📱 💻</div>
+          <p className="max-w-md mx-auto text-xs text-[var(--aurora-fg3)] leading-relaxed">
+            暂无作息与屏幕使用时间数据。桌面端已启动实时前台应用监测；手机端可直接上传屏幕使用时间截图，或载入示例数据体验。
+          </p>
+          <div className="flex items-center justify-center gap-3 flex-wrap">
+            <Btn
+              variant="primary"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={parsingImage}
+              className="text-xs"
+            >
+              {parsingImage ? "AI 视觉解析中..." : "📸 上传手机截图解析"}
+            </Btn>
+            <Btn
+              variant="glass"
+              onClick={handlePopulateSample}
+              disabled={populating}
+              className="text-xs"
+            >
+              {populating ? "生成中..." : "✨ 一键载入真实示例数据体验"}
+            </Btn>
+          </div>
         </div>
       )}
+
     </div>
   );
 }

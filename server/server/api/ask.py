@@ -1537,7 +1537,7 @@ async def ask(
 
         return _run_response(conv_id, _user, question, body.request_id, agent_stream)
 
-    async def stream():
+    async def stream(run_user: User = _user):
         yield f"data: {json.dumps({'type': 'conversation_id', 'id': str(conv_id), 'title': conv_title}, ensure_ascii=False)}\n\n"
         yield f"data: {json.dumps({'type': 'sources', 'sources': sources}, ensure_ascii=False)}\n\n"
         accumulated_text: list[str] = []
@@ -1577,6 +1577,7 @@ async def ask(
                 temperature=0.3,
                 max_tokens=1500,
                 timeout=120.0,
+                user=run_user,
             ):
                 if chunk.get("type") == "thinking":
                     accumulated_thinking.append(chunk.get("text") or "")
@@ -1595,7 +1596,7 @@ async def ask(
         await asyncio.sleep(0.05)
 
     # Plain answers need no database session of their own.
-    return _run_response(conv_id, _user, question, body.request_id, lambda run_db, run_user: stream())
+    return _run_response(conv_id, _user, question, body.request_id, lambda run_db, run_user: stream(run_user))
 
 
 # ---------------------------------------------------------------------------

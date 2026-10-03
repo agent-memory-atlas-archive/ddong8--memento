@@ -1,6 +1,11 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, Notification, shell, Tray } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, Notification, powerMonitor, shell, Tray } from "electron";
 import { autoUpdater } from "electron-updater";
+import { execFile } from "node:child_process";
 import { join, sep } from "node:path";
+import { promisify } from "node:util";
+
+const execFileAsync = promisify(execFile);
+
 
 import { loadConfig, saveConfig, type CollectorConfig } from "@memento/daemon";
 
@@ -238,6 +243,147 @@ async function startNotificationFeedPoller(): Promise<void> {
   notifyPollTimer = setInterval(() => void poll(), 5000);
 }
 
+let appTrackerTimer: NodeJS.Timeout | null = null;
+let appSyncTimer: NodeJS.Timeout | null = null;
+// Store app seconds: { [dateStr: string]: { [appName: string]: number } }
+const appUsageSecondsByDay: Record<string, Record<string, number>> = {};
+
+function getTodayKey(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+async function getFrontmostAppName(): Promise<string | null> {
+  if (process.platform === "darwin") {
+    try {
+      const script = `tell application "System Events"
+        set f to first application process whose frontmost is true
+        return (name of f) & ":::" & (bundle identifier of f)
+      end tell`;
+      const { stdout } = await execFileAsync("osascript", ["-e", script], { timeout: 3000 });
+      const trimmed = (stdout || "").trim();
+      if (!trimmed) return null;
+      const [rawName, bundleId] = trimmed.split(":::");
+      let name = (rawName || "").trim();
+      if (bundleId === "com.google.antigravity" || name === "Antigravity") name = "Antigravity";
+      else if (bundleId === "com.microsoft.VSCode" || name === "Code") name = "VS Code";
+      else if (bundleId === "com.google.Chrome") name = "Google Chrome";
+      else if (bundleId === "com.tencent.xinWeChat") name = "微信";
+      else if (bundleId === "com.apple.Terminal") name = "Terminal";
+      else if (bundleId === "com.googlecode.iterm2") name = "iTerm2";
+      else if (bundleId === "com.electron.memento" || bundleId === "com.ihasy.memento.desktop") name = "Memento";
+      else if (bundleId === "com.apple.Safari") name = "Safari";
+      else if (bundleId === "com.todesktop.230313mzl4w4u92" || name.toLowerCase().includes("cursor")) name = "Cursor";
+      else if (bundleId === "com.electron.lark" || bundleId === "com.bytedance.feishu") name = "飞书";
+
+      if (!name || name === "loginwindow" || name === "ScreenSaverEngine" || name === "Notification Center") {
+        return null;
+      }
+      return name;
+    } catch {
+      return null;
+    }
+  } else if (process.platform === "win32") {
+    try {
+      const ps = `Add-Type @"
+        using System;
+        using System.Runtime.InteropServices;
+        public class Win32 {
+          [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+          [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+        }
+"@
+      $hwnd = [Win32]::GetForegroundWindow()
+      $pid = 0
+      [Win32]::GetWindowThreadProcessId($hwnd, [ref]$pid)
+      (Get-Process -Id $pid).ProcessName`;
+      const { stdout } = await execFileAsync("powershell", ["-NoProfile", "-Command", ps], { timeout: 3000 });
+      return (stdout || "").trim() || null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+async function syncAppUsageToServer(): Promise<void> {
+  const today = getTodayKey();
+  const dayStats = appUsageSecondsByDay[today];
+  if (!dayStats || Object.keys(dayStats).length === 0) return;
+
+  const appUsages = Object.entries(dayStats)
+    .filter(([_, sec]) => sec >= 10)
+    .map(([name, sec]) => ({
+      name,
+      minutes: Math.max(1, Math.round(sec / 60)),
+    }))
+    .sort((a, b) => b.minutes - a.minutes);
+
+  if (appUsages.length === 0) return;
+
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+
+  const jwt = await webToken();
+  if (jwt) {
+    headers["Authorization"] = `Bearer ${jwt}`;
+  } else if (config?.token) {
+    headers["X-Collector-Token"] = config.token;
+  } else {
+    return;
+  }
+
+  const base = config?.serverUrl || serverOrigin();
+  try {
+    await fetch(`${base}/api/life/rhythm`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        log_date: today,
+        app_usages: appUsages,
+      }),
+      signal: AbortSignal.timeout(8000),
+    });
+  } catch {
+    // ignore network errors
+  }
+}
+
+function startActiveAppTracker(): void {
+  if (appTrackerTimer) return;
+
+  const tick = async () => {
+    try {
+      if (powerMonitor && typeof powerMonitor.getSystemIdleTime === "function") {
+        const idleSec = powerMonitor.getSystemIdleTime();
+        if (idleSec >= 120) return;
+      }
+      const appName = await getFrontmostAppName();
+      if (!appName) return;
+
+      const today = getTodayKey();
+      if (!appUsageSecondsByDay[today]) {
+        appUsageSecondsByDay[today] = {};
+      }
+      appUsageSecondsByDay[today][appName] = (appUsageSecondsByDay[today][appName] || 0) + 5;
+    } catch {
+      // ignore
+    }
+  };
+
+  appTrackerTimer = setInterval(() => void tick(), 5000);
+  appSyncTimer = setInterval(() => void syncAppUsageToServer(), 60000);
+
+  try {
+    powerMonitor.on("suspend", () => void syncAppUsageToServer());
+  } catch {}
+}
+
+
 function refreshTray(): void {
   if (!tray) return;
   const openAtLogin = app.getLoginItemSettings().openAtLogin;
@@ -401,6 +547,15 @@ if (!app.requestSingleInstanceLock()) {
       clearInterval(notifyPollTimer);
       notifyPollTimer = null;
     }
+    if (appTrackerTimer) {
+      clearInterval(appTrackerTimer);
+      appTrackerTimer = null;
+    }
+    if (appSyncTimer) {
+      clearInterval(appSyncTimer);
+      appSyncTimer = null;
+    }
+    void syncAppUsageToServer();
     if (daemon.mode === "running" || daemon.mode === "starting") {
       event.preventDefault();
       void daemon.stop().finally(() => app.exit(0));
@@ -422,5 +577,7 @@ if (!app.requestSingleInstanceLock()) {
     refreshTray();
     setupUpdater();
     void startNotificationFeedPoller();
+    void startActiveAppTracker();
   });
+
 }

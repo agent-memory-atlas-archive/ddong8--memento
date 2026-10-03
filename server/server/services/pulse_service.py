@@ -217,7 +217,7 @@ async def _send_morning_brief(db: AsyncSession, user: User, user_now: datetime) 
 请直接输出晨报正文，适合手机推送阅读："""
 
     try:
-        body = await call_plain_chat([{"role": "user", "content": prompt}], background=True)
+        body = await call_plain_chat([{"role": "user", "content": prompt}], background=True, user=user)
         title = f"🌅 早上好！今日晨间简报 · {user_now.strftime('%m/%d')}"
         await notify_user(
             user.id,

@@ -28,6 +28,7 @@ APP_CATEGORIES: dict[str, str] = {
     "xcode": "work",
     "pycharm": "work",
     "intellij idea": "work",
+    "antigravity": "work",
     "terminal": "work",
     "iterm2": "work",
     "notion": "work",
@@ -41,6 +42,17 @@ APP_CATEGORIES: dict[str, str] = {
     "wps": "work",
     "word": "work",
     "excel": "work",
+    "chrome": "work",
+    "google chrome": "work",
+    "arc": "work",
+    "edge": "work",
+    "microsoft edge": "work",
+    "postman": "work",
+    "figma": "work",
+    "datagrip": "work",
+    "docker": "work",
+    "chatgpt": "work",
+    "claude": "work",
 
     # Communication & Social
     "wechat": "social",
@@ -99,31 +111,17 @@ async def record_daily_rhythm(
     sleep_hours: float | None = None,
 ) -> UserLifeRhythm:
     """Record or update a user's daily sleep rhythm and app usage allocation."""
-    # Classify apps and calculate productive vs distraction minutes
     processed_apps = []
-    prod_min = 0
-    dist_min = 0
-    total_screen_min = 0
-
     for item in app_usages:
         name = item.get("name", "Unknown").strip()
         minutes = int(item.get("minutes", 0))
         cat = item.get("category") or classify_app(name)
-        total_screen_min += minutes
-        if cat in ("work", "reading"):
-            prod_min += minutes
-        elif cat in ("entertainment", "social"):
-            dist_min += minutes
-
         processed_apps.append({
             "name": name,
             "category": cat,
             "minutes": minutes,
             "icon": item.get("icon"),
         })
-
-    # Sort apps descending by minutes
-    processed_apps.sort(key=lambda x: x["minutes"], reverse=True)
 
     # Compute sleep hours if wakeup and bedtime are provided
     if wakeup_time and bedtime and sleep_hours is None:
@@ -150,6 +148,28 @@ async def record_daily_rhythm(
     )).scalar_one_or_none()
 
     if existing:
+        # Smart merge of existing apps and incoming apps (so Mac and mobile don't overwrite each other)
+        app_map: dict[str, dict[str, Any]] = {}
+        for old in (existing.app_usages or []):
+            if isinstance(old, dict) and old.get("name"):
+                app_map[old["name"]] = dict(old)
+        for new in processed_apps:
+            name = new["name"]
+            if name in app_map:
+                old_min = int(app_map[name].get("minutes", 0))
+                app_map[name]["minutes"] = max(old_min, new["minutes"])
+                if new.get("category"):
+                    app_map[name]["category"] = new["category"]
+            else:
+                app_map[name] = new
+
+        merged_apps = list(app_map.values())
+        merged_apps.sort(key=lambda x: int(x.get("minutes", 0)), reverse=True)
+
+        total_screen_min = sum(int(a.get("minutes", 0)) for a in merged_apps)
+        prod_min = sum(int(a.get("minutes", 0)) for a in merged_apps if a.get("category") in ("work", "reading"))
+        dist_min = sum(int(a.get("minutes", 0)) for a in merged_apps if a.get("category") in ("entertainment", "social"))
+
         if wakeup_time:
             existing.wakeup_time = wakeup_time
         if bedtime:
@@ -159,10 +179,15 @@ async def record_daily_rhythm(
         existing.total_screen_minutes = total_screen_min
         existing.productive_minutes = prod_min
         existing.distraction_minutes = dist_min
-        existing.app_usages = processed_apps
+        existing.app_usages = merged_apps
         existing.updated_at = datetime.now(timezone.utc)
         record = existing
     else:
+        processed_apps.sort(key=lambda x: x["minutes"], reverse=True)
+        total_screen_min = sum(a["minutes"] for a in processed_apps)
+        prod_min = sum(a["minutes"] for a in processed_apps if a["category"] in ("work", "reading"))
+        dist_min = sum(a["minutes"] for a in processed_apps if a["category"] in ("entertainment", "social"))
+
         record = UserLifeRhythm(
             user_id=user.id,
             log_date=log_date,
@@ -258,10 +283,95 @@ async def generate_life_decision_advice(db: AsyncSession, user: User, target_dat
 控制在 350 字以内，排版清晰美观："""
 
     try:
-        advice = await call_plain_chat([{"role": "user", "content": prompt}], background=True)
-        target_record.ai_advice = advice.strip()
+        advice = await call_plain_chat([{"role": "user", "content": prompt}], background=True, user=user)
+        target_record.ai_advice = (advice or "").strip()
         await db.commit()
-        return advice.strip()
+        return (advice or "").strip()
     except Exception as e:
         logger.warning("Failed to generate life decision advice: %s", e)
         return "AI 决策建议生成暂不可用，已记录今日基础作息数据。"
+
+
+async def clear_user_rhythms(db: AsyncSession, user: User, log_date: date | None = None) -> int:
+    """Clear rhythm records for the user (all or a specific date)."""
+    stmt = select(UserLifeRhythm).where(UserLifeRhythm.user_id == user.id)
+    if log_date:
+        stmt = stmt.where(UserLifeRhythm.log_date == log_date)
+    records = (await db.execute(stmt)).scalars().all()
+    count = len(records)
+    for r in records:
+        await db.delete(r)
+    await db.commit()
+    return count
+
+
+async def parse_screen_time_screenshot(
+    db: AsyncSession,
+    user: User,
+    image_base64: str,
+) -> dict[str, Any]:
+    """Use AI Vision model to parse an iOS/Android Screen Time screenshot into structured usage records."""
+    from .ai_provider import call_chat_completion
+
+    if not image_base64.startswith("data:image"):
+        image_url = f"data:image/jpeg;base64,{image_base64}"
+    else:
+        image_url = image_base64
+
+    prompt = (
+        "这是一张手机系统的「屏幕使用时间」或应用时长统计截图。\n"
+        "请仔细识别并提取出：\n"
+        "1. 截图对应的日期（如果截图显示今天或未显示年份，请使用当天的 YYYY-MM-DD）；\n"
+        "2. 出现的每个具体的应用名称（App Name）及其实际使用时长（请务必统一换算为整数总分钟数，如 1小时15分 -> 75）；\n"
+        "3. 屏幕总使用时间（换算为分钟数）；\n"
+        "4. 将每个 App 归入类别：work (生产力/工作/研发), social (社交/通讯), entertainment (娱乐/游戏/视频), reading (阅读/图书), general (其他系统工具)。\n\n"
+        "请严格只返回 JSON 格式，不要返回任何额外 Markdown 或说明：\n"
+        '{"log_date": "YYYY-MM-DD", "total_screen_minutes": 180, "app_usages": [{"name": "微信", "minutes": 65, "category": "social"}, {"name": "抖音", "minutes": 40, "category": "entertainment"}]}'
+    )
+
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": prompt},
+                {"type": "image_url", "image_url": {"url": image_url}},
+            ],
+        }
+    ]
+
+    try:
+        data, provider = await call_chat_completion(
+            messages=messages,
+            temperature=0.1,
+            max_tokens=1500,
+            user=user,
+        )
+        msg = ((data.get("choices") or [{}])[0].get("message") or {}).get("content") or ""
+        clean_json = msg.strip()
+        if "```json" in clean_json:
+            clean_json = clean_json.split("```json", 1)[1].split("```", 1)[0].strip()
+        elif "```" in clean_json:
+            clean_json = clean_json.split("```", 1)[1].split("```", 1)[0].strip()
+
+        parsed = json.loads(clean_json)
+        target_date_str = parsed.get("log_date")
+        target_date = date.fromisoformat(target_date_str) if target_date_str else date.today()
+        raw_apps = parsed.get("app_usages") or []
+
+        record = await record_daily_rhythm(
+            db,
+            user,
+            log_date=target_date,
+            app_usages=raw_apps,
+        )
+        return {
+            "status": "ok",
+            "log_date": record.log_date.isoformat(),
+            "apps_count": len(record.app_usages or []),
+            "total_screen_minutes": record.total_screen_minutes,
+            "apps": record.app_usages,
+        }
+    except Exception as e:
+        logger.warning("Failed to parse screen time screenshot: %s", e)
+        raise RuntimeError(f"屏幕截图解析失败: {e}")
+
