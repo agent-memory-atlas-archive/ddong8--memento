@@ -2,16 +2,38 @@ import Constants from "expo-constants";
 import { Redirect } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, AppState, type AppStateStatus, BackHandler, Linking, Platform, StyleSheet, Text, View } from "react-native";
+import {
+  ActivityIndicator,
+  AppState,
+  type AppStateStatus,
+  BackHandler,
+  Keyboard,
+  Linking,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import * as Haptics from "expo-haptics";
 import * as Notifications from "expo-notifications";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { WebView, type WebViewMessageEvent, type WebViewNavigation, type WebViewProps } from "react-native-webview";
 
+import { Icon, type IconName } from "../components/Icon";
 import { Button } from "../components/ui";
 import { triggerLocalNotification } from "../lib/notifications";
 import { useSession } from "../lib/session";
 import { useTheme } from "../lib/theme";
+
+type TabId = "ask" | "daily" | "devices" | "profile";
+
+const TABS: Array<{ id: TabId; label: string; icon: IconName; path: string }> = [
+  { id: "ask", label: "AI 执事", icon: "message", path: "/ask" },
+  { id: "daily", label: "作息节律", icon: "clock", path: "/daily" },
+  { id: "devices", label: "多端设备", icon: "devices", path: "/devices" },
+  { id: "profile", label: "个人中心", icon: "user", path: "/profile" },
+];
 
 // The web app is the interface, elevated with iOS/Android native haptic feedback,
 // fluid momentum scrolling, and custom micro-interactions to deliver a true native feel.
@@ -151,6 +173,26 @@ const INJECTED_CLIENT_HELPERS = `(() => {
     }
   \`;
   (document.head || document.documentElement).appendChild(nativeStyle);
+
+  // 6. Route tracking for native TabBar synchronization
+  const postRoute = () => {
+    if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
+      window.ReactNativeWebView.postMessage(JSON.stringify({ type: "route", path: window.location.pathname }));
+    }
+  };
+  postRoute();
+
+  const wrapHistory = (method) => {
+    const orig = history[method];
+    return function(...args) {
+      const ret = orig.apply(this, args);
+      postRoute();
+      return ret;
+    };
+  };
+  history.pushState = wrapHistory("pushState");
+  history.replaceState = wrapHistory("replaceState");
+  window.addEventListener("popstate", postRoute);
 })();
 true;`;
 
@@ -173,6 +215,19 @@ export default function WebShell() {
   const web = useRef<WebView>(null);
   const canGoBack = useRef(false);
   const [page, setPage] = useState<{ bg: string; dark: boolean } | null>(null);
+  const [activeTab, setActiveTab] = useState<TabId | null>("ask");
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+
+  useEffect(() => {
+    const showEvt = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const hideEvt = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+    const showSub = Keyboard.addListener(showEvt, () => setKeyboardVisible(true));
+    const hideSub = Keyboard.addListener(hideEvt, () => setKeyboardVisible(false));
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   const origin = useMemo(() => server.match(/^https?:\/\/[^/]+/i)?.[0] ?? server, [server]);
   // Sign the page in with the app's token, then land directly on the Command Center (/ask).
@@ -313,6 +368,10 @@ export default function WebShell() {
       };
       if (msg.type === "theme" && msg.bg && !/rgba\(0, 0, 0, 0\)|transparent/.test(msg.bg)) {
         setPage({ bg: msg.bg, dark: !!msg.dark });
+      } else if (msg.type === "route") {
+        const path = (msg as { path?: string }).path || "";
+        const matched = TABS.find((tab) => path === tab.path || path.startsWith(tab.path + "/"));
+        setActiveTab(matched ? matched.id : null);
       } else if (msg.type === "haptic") {
         const style = (msg as { style?: string }).style || "light";
         if (style === "selection") {
@@ -336,7 +395,7 @@ export default function WebShell() {
     } catch {
       // not ours
     }
-  }, []);
+  }, [origin]);
 
   if (!ready) return <View style={{ flex: 1, backgroundColor: t.bg }} />;
   if (!token || !start) return <Redirect href="/login" />;
@@ -385,7 +444,65 @@ export default function WebShell() {
           </View>
         )}
       />
-      <View style={{ height: insets.bottom, backgroundColor: bg }} />
+      {!keyboardVisible ? (
+        <View
+          style={{
+            backgroundColor: dark ? t.surface : "#FFFFFF",
+            borderTopWidth: StyleSheet.hairlineWidth,
+            borderTopColor: t.border,
+            paddingBottom: insets.bottom,
+          }}
+        >
+          <View
+            style={{
+              height: 52,
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "space-around",
+              paddingHorizontal: 8,
+            }}
+          >
+            {TABS.map((tab) => {
+              const isActive = activeTab === tab.id;
+              const color = isActive ? t.accent : t.fg3;
+              return (
+                <Pressable
+                  key={tab.id}
+                  onPress={() => {
+                    void Haptics.selectionAsync();
+                    setActiveTab(tab.id);
+                    web.current?.injectJavaScript(`window.location.assign(${JSON.stringify(origin + tab.path)}); true;`);
+                  }}
+                  style={({ pressed }) => [
+                    styles.tabItem,
+                    { opacity: pressed ? 0.6 : 1, transform: [{ scale: pressed ? 0.92 : 1 }] },
+                  ]}
+                  hitSlop={{ top: 8, bottom: 8, left: 12, right: 12 }}
+                >
+                  <Icon name={tab.icon} size={22} color={color} strokeWidth={isActive ? 2.2 : 1.8} />
+                  <Text style={[styles.tabLabel, { color, fontWeight: isActive ? "600" : "500" }]}>
+                    {tab.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+      ) : null}
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  tabItem: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 3,
+    paddingVertical: 4,
+  },
+  tabLabel: {
+    fontSize: 10,
+    letterSpacing: -0.2,
+  },
+});

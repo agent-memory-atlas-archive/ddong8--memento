@@ -38,7 +38,7 @@ export default function Header({ onMenuToggle }: { onMenuToggle: () => void }) {
         <button
           onClick={onMenuToggle}
           aria-label="Menu"
-          className="lg:hidden p-1"
+          className="lg:hidden p-1 memento-shell-hide"
           style={{ color: "var(--aurora-fg2)" }}
         >
           <Icon name="menu" size={22} />
