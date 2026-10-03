@@ -9,6 +9,7 @@ import { Btn, Chip, Glass } from "@/components/aurora/primitives";
 import { Icon } from "@/components/aurora/Icon";
 import MarkdownViewer from "@/components/viewers/MarkdownViewer";
 import LearnedCorrections from "@/components/persona/LearnedCorrections";
+import CognitiveCompass from "@/components/memory/CognitiveCompass";
 
 const TARGET_META: Record<string, { label: string; file: string; desc: string }> = {
   claude_code: { label: "Claude Code", file: "~/.claude/CLAUDE.md", desc: "Anthropic 官方终端 Agent" },
@@ -261,6 +262,17 @@ export default function PersonaPage() {
           )}
         </div>
       </div>
+
+      {/* ─────────────────────────────────────────────────────────────
+          Cognitive Brain 3-Pillars Executive Compass Navigation
+          ───────────────────────────────────────────────────────────── */}
+      <CognitiveCompass
+        currentTab="persona"
+        summaryStats={{
+          personaVersion: state?.published?.version || 9,
+          syncedTargetsCount: 5,
+        }}
+      />
 
       {error && (
         <Glass padding={14} radius={14} style={{ color: "#DC2626", fontSize: 13 }}>

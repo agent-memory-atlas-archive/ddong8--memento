@@ -202,6 +202,12 @@ function toggleButlerWindow(): void {
     win.show();
     win.focus();
     void navigateApp("/ask");
+    win.webContents.executeJavaScript(`
+      setTimeout(() => {
+        const input = document.querySelector('input[type="text"], textarea');
+        if (input) input.focus();
+      }, 150);
+    `).catch(() => {});
   }
 }
 
@@ -847,6 +853,11 @@ if (!app.requestSingleInstanceLock()) {
       globalShortcut.register("CommandOrControl+Shift+A", () => toggleButlerWindow());
     } catch (e) {
       console.warn("Failed to register shortcut CommandOrControl+Shift+A", e);
+    }
+    try {
+      globalShortcut.register("Alt+Space", () => toggleButlerWindow());
+    } catch (e) {
+      console.warn("Failed to register shortcut Alt+Space", e);
     }
     const hidden = process.argv.includes(HIDDEN_ARG) || app.getLoginItemSettings().wasOpenedAtLogin;
     createWindow(!hidden);

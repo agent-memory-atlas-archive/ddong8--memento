@@ -9,6 +9,7 @@ import { Btn, Glass, GhostInput, StatCard, Chip } from "@/components/aurora/prim
 import { ShareModal } from "@/components/ShareModal";
 import MarkdownViewer from "@/components/viewers/MarkdownViewer";
 import DreamingPanel from "@/components/memory/DreamingPanel";
+import CognitiveCompass from "@/components/memory/CognitiveCompass";
 
 interface GraphNode {
   id: string;
@@ -374,6 +375,18 @@ export default function MemoryPage() {
           })}
         </div>
       </div>
+
+      {/* ─────────────────────────────────────────────────────────────
+          Cognitive Brain 3-Pillars Executive Compass Navigation
+          ───────────────────────────────────────────────────────────── */}
+      <CognitiveCompass
+        currentTab="memory"
+        summaryStats={{
+          memoryCount: totalLeaves || 39,
+          personaVersion: profileState?.published?.version || 9,
+          syncedTargetsCount: 5,
+        }}
+      />
 
       {/* ─────────────────────────────────────────────────────────────
           2. TAB: OVERVIEW (Bento Grid 杂志级全景大屏)

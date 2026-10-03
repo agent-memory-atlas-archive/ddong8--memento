@@ -26,6 +26,16 @@ router = APIRouter(prefix="/api/profile/llm", tags=["llm-profile"])
 
 PRESETS = [
     {
+        "id": "anthropic",
+        "name": "Anthropic 官方 (Claude 3.7 Sonnet)",
+        "icon": "sparkles",
+        "base_url": "https://api.anthropic.com/v1",
+        "models": ["claude-3-7-sonnet-20250219", "claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022"],
+        "default_model": "claude-3-7-sonnet-20250219",
+        "default_background_model": "claude-3-5-haiku-20241022",
+        "help_url": "https://console.anthropic.com",
+    },
+    {
         "id": "volcengine",
         "name": "火山方舟 (Volcengine Ark)",
         "icon": "sparkles",

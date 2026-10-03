@@ -6,6 +6,7 @@ import { fmt, useI18n } from "@/lib/i18n";
 import { Btn, Chip, Glass } from "@/components/aurora/primitives";
 import { Icon } from "@/components/aurora/Icon";
 import MarkdownViewer from "@/components/viewers/MarkdownViewer";
+import CognitiveCompass from "@/components/memory/CognitiveCompass";
 
 type Obj = Record<string, unknown>;
 const obj = (v: unknown): Obj => (v && typeof v === "object" && !Array.isArray(v) ? (v as Obj) : {});
@@ -395,6 +396,17 @@ export default function SkillsPage() {
           </Btn>
         </div>
       </div>
+
+      {/* ─────────────────────────────────────────────────────────────
+          Cognitive Brain 3-Pillars Executive Compass Navigation
+          ───────────────────────────────────────────────────────────── */}
+      <CognitiveCompass
+        currentTab="skills"
+        summaryStats={{
+          skillsCount: count(data?.published) + count(data?.drafts),
+          syncedTargetsCount: 5,
+        }}
+      />
 
       {error && (
         <Glass padding={14} radius={14} style={{ color: "#DC2626", fontSize: 13 }}>

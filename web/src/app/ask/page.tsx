@@ -552,6 +552,89 @@ function AskPageContent() {
   // Abort any in-flight stream if the user navigates away mid-answer.
   useEffect(() => () => abortRef.current?.abort(), []);
 
+  // Mobile swipe down on chat area to dismiss keyboard smoothly
+  const touchStartY = useRef<number | null>(null);
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    touchStartY.current = e.touches[0].clientY;
+  }, []);
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+    if (touchStartY.current === null) return;
+    const currentY = e.touches[0].clientY;
+    const deltaY = currentY - touchStartY.current;
+    if (deltaY > 35) {
+      const active = document.activeElement;
+      if (active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA")) {
+        (active as HTMLElement).blur();
+      }
+      touchStartY.current = null;
+    }
+  }, []);
+
+  // Voice Input (Speech-to-Text) with real-time recognition
+  const [isRecordingVoice, setIsRecordingVoice] = useState(false);
+  const recognitionRef = useRef<any>(null);
+
+  const toggleVoiceInput = useCallback(() => {
+    if (isRecordingVoice) {
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch {
+          // ignore
+        }
+      }
+      setIsRecordingVoice(false);
+      return;
+    }
+
+    const SpeechRecognition =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+
+    if (!SpeechRecognition) {
+      alert(isZh ? "当前环境暂不支持浏览器内置语音识别，请直接键入文本" : "Speech recognition not supported in this browser");
+      return;
+    }
+
+    try {
+      const recognition = new SpeechRecognition();
+      recognition.lang = isZh ? "zh-CN" : "en-US";
+      recognition.continuous = false;
+      recognition.interimResults = true;
+
+      recognition.onstart = () => {
+        setIsRecordingVoice(true);
+      };
+
+      recognition.onresult = (event: any) => {
+        let transcript = "";
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          transcript += event.results[i][0].transcript;
+        }
+        if (transcript) {
+          setInput((prev) => {
+            const trimmed = prev.trim();
+            return trimmed ? `${trimmed} ${transcript}` : transcript;
+          });
+        }
+      };
+
+      recognition.onerror = (e: any) => {
+        console.warn("Speech recognition error:", e);
+        setIsRecordingVoice(false);
+      };
+
+      recognition.onend = () => {
+        setIsRecordingVoice(false);
+      };
+
+      recognitionRef.current = recognition;
+      recognition.start();
+    } catch (err) {
+      console.warn("Failed to start speech recognition:", err);
+      setIsRecordingVoice(false);
+    }
+  }, [isRecordingVoice, isZh]);
+
   useEffect(() => {
     if (deviceParam) {
       setSelectedDevice(deviceParam);
@@ -1468,7 +1551,11 @@ function AskPageContent() {
       )}
 
       {/* Conversation turns list */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 16, marginBottom: 20, maxWidth: "100%", minWidth: 0 }}>
+      <div
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        style={{ display: "flex", flexDirection: "column", gap: 16, marginBottom: 20, maxWidth: "100%", minWidth: 0 }}
+      >
         {turns.map((turn, i) =>
           turn.role === "user" ? (
             <UserBubble key={i} content={turn.content} />
@@ -2545,6 +2632,43 @@ function AskPageContent() {
           </div>
         )}
 
+            {/* Voice Recording Active Banner */}
+            {isRecordingVoice && (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  padding: "4px 12px",
+                  marginBottom: 6,
+                  borderRadius: 10,
+                  background: "rgba(239, 68, 68, 0.1)",
+                  border: "1px solid rgba(239, 68, 68, 0.3)",
+                  fontSize: 11.5,
+                  color: "#ef4444",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span className="w-2 h-2 rounded-full bg-[#ef4444] animate-ping" />
+                  <span style={{ fontWeight: 600 }}>{isZh ? "🎙️ 正在倾听吩咐... 实时转写中" : "Listening & transcribing..."}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={toggleVoiceInput}
+                  style={{
+                    background: "none",
+                    border: "none",
+                    color: "#ef4444",
+                    cursor: "pointer",
+                    fontSize: 11,
+                    fontWeight: 600,
+                  }}
+                >
+                  {isZh ? "完成倾听" : "Done"}
+                </button>
+              </div>
+            )}
+
             {/* Input box and action button */}
             <div style={{ display: "flex", gap: 8, alignItems: "center", width: "100%", minWidth: 0, boxSizing: "border-box" }}>
               <GhostInput
@@ -2576,6 +2700,30 @@ function AskPageContent() {
                 }}
                 disabled={streaming}
               />
+              {/* Voice Input Button */}
+              <button
+                type="button"
+                onClick={toggleVoiceInput}
+                title={isRecordingVoice ? (isZh ? "停止倾听" : "Stop listening") : (isZh ? "语音吩咐 (按键说话)" : "Voice input")}
+                style={{
+                  width: 38,
+                  height: 38,
+                  borderRadius: 12,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  background: isRecordingVoice ? "rgba(239, 68, 68, 0.16)" : "var(--aurora-chip)",
+                  border: isRecordingVoice ? "1px solid #ef4444" : "1px solid var(--aurora-border)",
+                  color: isRecordingVoice ? "#ef4444" : "var(--aurora-fg3)",
+                  cursor: "pointer",
+                  transition: "all 0.2s ease",
+                  flexShrink: 0,
+                  boxSizing: "border-box",
+                }}
+                className={isRecordingVoice ? "animate-pulse shadow-sm" : "hover:text-[var(--aurora-fg1)]"}
+              >
+                <Icon name="microphone" size={15} />
+              </button>
               {streaming ? (
                 <Btn onClick={stopRun} style={{ flexShrink: 0 }}>{t.ask.stop}</Btn>
               ) : (
