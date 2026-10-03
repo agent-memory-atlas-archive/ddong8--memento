@@ -406,7 +406,7 @@ export function LifeRhythmView() {
               <div className="mt-6 pt-4 border-t border-[var(--aurora-border)] text-[11px] text-[var(--aurora-fg4)] space-y-2">
                 <div className="font-semibold text-[var(--aurora-fg2)]">📱 手机与电脑如何自动感知？</div>
                 <div className="leading-relaxed">
-                  • <b className="text-[var(--aurora-fg2)]">Mac 桌面端</b>：已内置原生秒级前台窗口探针，自动无感统计 Cursor、VS Code、Chrome、微信等活跃应用耗时。
+                  • <b className="text-[var(--aurora-fg2)]">电脑桌面端（Mac / Windows / Linux）</b>：已内置原生秒级前台窗口探针，自动无感统计 Cursor、VS Code、Chrome、微信等活跃应用耗时。
                 </div>
                 <div className="leading-relaxed">
                   • <b className="text-[var(--aurora-fg2)]">iPhone 手机</b>：已支持 Apple HealthKit（健康）全自动静默同步就寝、起床及精准睡眠时长；各 App 屏幕时长支持点击顶部「📸 手机截图智能解析」上传系统屏幕时间截图（AI 视觉秒级提取真实数据）。

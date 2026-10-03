@@ -177,6 +177,15 @@ function showNotification(title: string, body: string, targetUrl?: string): void
     } catch {
       // ignore
     }
+  } else if (process.platform === "linux") {
+    try {
+      const { exec } = require("node:child_process");
+      const cleanTitle = (title || "Memento").replace(/["\\]/g, "");
+      const cleanBody = (body || "").replace(/["\\]/g, "");
+      exec(`notify-send "${cleanTitle}" "${cleanBody}"`);
+    } catch {
+      // ignore
+    }
   }
 
   if (!Notification.isSupported()) return;
@@ -256,6 +265,56 @@ function getTodayKey(): string {
   return `${y}-${m}-${day}`;
 }
 
+function normalizeDesktopAppName(raw: string): string {
+  const norm = raw.trim();
+  const lower = norm.toLowerCase();
+
+  if (
+    !norm ||
+    [
+      "lockapp",
+      "searchhost",
+      "startmenuexperiencehost",
+      "shellexperiencehost",
+      "textinputhost",
+      "loginwindow",
+      "screensaverengine",
+      "notification center",
+    ].includes(lower)
+  ) {
+    return "";
+  }
+
+  if (lower.includes("cursor")) return "Cursor";
+  if (lower.includes("antigravity")) return "Antigravity";
+  if (lower === "code" || lower === "vscode" || lower.includes("visual studio code")) return "VS Code";
+  if (lower.includes("chrome")) return "Google Chrome";
+  if (lower.includes("edge")) return "Microsoft Edge";
+  if (lower.includes("firefox")) return "Firefox";
+  if (lower.includes("safari")) return "Safari";
+  if (lower.includes("wechat") || norm === "微信") return "微信";
+  if (lower.includes("feishu") || lower.includes("lark") || norm === "飞书") return "飞书";
+  if (lower.includes("dingtalk") || norm === "钉钉") return "钉钉";
+  if (lower.includes("memento")) return "Memento";
+  if (lower.includes("devenv")) return "Visual Studio";
+  if (lower.includes("idea")) return "IntelliJ IDEA";
+  if (lower.includes("pycharm")) return "PyCharm";
+  if (lower.includes("webstorm")) return "WebStorm";
+  if (lower.includes("goland")) return "GoLand";
+  if (lower.includes("clion")) return "CLion";
+  if (
+    lower === "windowsterminal" ||
+    lower.includes("terminal") ||
+    lower === "iterm2" ||
+    lower === "alacritty" ||
+    lower === "kitty" ||
+    lower === "konsole"
+  ) {
+    return norm;
+  }
+  return norm;
+}
+
 async function getFrontmostAppName(): Promise<string | null> {
   if (process.platform === "darwin") {
     try {
@@ -279,10 +338,8 @@ async function getFrontmostAppName(): Promise<string | null> {
       else if (bundleId === "com.todesktop.230313mzl4w4u92" || name.toLowerCase().includes("cursor")) name = "Cursor";
       else if (bundleId === "com.electron.lark" || bundleId === "com.bytedance.feishu") name = "飞书";
 
-      if (!name || name === "loginwindow" || name === "ScreenSaverEngine" || name === "Notification Center") {
-        return null;
-      }
-      return name;
+      const res = normalizeDesktopAppName(name);
+      return res || null;
     } catch {
       return null;
     }
@@ -301,7 +358,29 @@ async function getFrontmostAppName(): Promise<string | null> {
       [Win32]::GetWindowThreadProcessId($hwnd, [ref]$pid)
       (Get-Process -Id $pid).ProcessName`;
       const { stdout } = await execFileAsync("powershell", ["-NoProfile", "-Command", ps], { timeout: 3000 });
-      return (stdout || "").trim() || null;
+      const raw = (stdout || "").trim();
+      return raw ? normalizeDesktopAppName(raw) || null : null;
+    } catch {
+      return null;
+    }
+  } else if (process.platform === "linux") {
+    try {
+      // 1. Try X11 / XWayland active window via xprop
+      const script = `
+        win_id=$(xprop -root _NET_ACTIVE_WINDOW 2>/dev/null | awk -F'# ' '{print $2}')
+        if [ -n "$win_id" ] && [ "$win_id" != "0x0" ]; then
+          xprop -id "$win_id" WM_CLASS 2>/dev/null | awk -F'"' '{print $(NF-1)}'
+        fi
+      `;
+      const { stdout } = await execFileAsync("sh", ["-c", script], { timeout: 2000 });
+      const raw = (stdout || "").trim();
+      if (raw) {
+        return normalizeDesktopAppName(raw) || null;
+      }
+      // 2. Fallback to xdotool
+      const { stdout: xdoOut } = await execFileAsync("xdotool", ["getwindowfocus", "getwindowname"], { timeout: 1500 });
+      const xdoRaw = (xdoOut || "").trim();
+      return xdoRaw ? normalizeDesktopAppName(xdoRaw) || null : null;
     } catch {
       return null;
     }
