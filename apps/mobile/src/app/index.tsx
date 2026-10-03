@@ -3,6 +3,7 @@ import { Redirect } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, AppState, type AppStateStatus, BackHandler, Linking, Platform, StyleSheet, Text, View } from "react-native";
+import * as Haptics from "expo-haptics";
 import * as Notifications from "expo-notifications";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { WebView, type WebViewMessageEvent, type WebViewNavigation, type WebViewProps } from "react-native-webview";
@@ -12,9 +13,11 @@ import { triggerLocalNotification } from "../lib/notifications";
 import { useSession } from "../lib/session";
 import { useTheme } from "../lib/theme";
 
-// The web app is the interface, as in the desktop app. The page reports its
-// background so the status bar and home-indicator strips match its skin and theme.
+// The web app is the interface, elevated with iOS/Android native haptic feedback,
+// fluid momentum scrolling, and custom micro-interactions to deliver a true native feel.
 const INJECTED_CLIENT_HELPERS = `(() => {
+  document.documentElement.classList.add("memento-native-shell");
+
   // 1. Theme tracking
   const postTheme = () => {
     const root = document.documentElement;
@@ -69,6 +72,85 @@ const INJECTED_CLIENT_HELPERS = `(() => {
       return origFetch.apply(this, args);
     };
   }
+
+  // 3. Apple Taptic Engine Native Haptics Bridge
+  window.__memento_haptic = function(style) {
+    try {
+      if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
+        window.ReactNativeWebView.postMessage(JSON.stringify({ type: "haptic", style: style || "light" }));
+      }
+    } catch (e) {}
+  };
+
+  // 4. Global touch event delegation: automatically fire native haptic vibration on button / tab taps
+  let touchStartX = 0;
+  let touchStartY = 0;
+  let touchStartTime = 0;
+  window.addEventListener("touchstart", function(e) {
+    if (e.touches && e.touches[0]) {
+      touchStartX = e.touches[0].clientX;
+      touchStartY = e.touches[0].clientY;
+      touchStartTime = Date.now();
+    }
+  }, { passive: true });
+
+  window.addEventListener("touchend", function(e) {
+    const dt = Date.now() - touchStartTime;
+    if (dt < 450 && e.changedTouches && e.changedTouches[0]) {
+      const dx = Math.abs(e.changedTouches[0].clientX - touchStartX);
+      const dy = Math.abs(e.changedTouches[0].clientY - touchStartY);
+      if (dx < 12 && dy < 12) {
+        const t = e.target;
+        const el = t && t.closest ? t.closest("button, a, [role='button'], [role='tab'], input[type='checkbox'], input[type='radio'], input[type='submit'], select") : null;
+        if (el) {
+          const role = el.getAttribute("role");
+          const isTab = role === "tab" || (el.className && typeof el.className === "string" && el.className.indexOf("tab") !== -1);
+          window.__memento_haptic(isTab ? "selection" : "light");
+        }
+      }
+    }
+  }, { passive: true });
+
+  // 5. Inject Ultra-Native iOS Styles to completely eliminate browser artifacts
+  const nativeStyle = document.createElement("style");
+  nativeStyle.innerHTML = \`
+    *, *::before, *::after {
+      -webkit-tap-highlight-color: transparent !important;
+      -webkit-touch-callout: none !important;
+    }
+    html, body {
+      -webkit-font-smoothing: antialiased !important;
+      -moz-osx-font-smoothing: grayscale !important;
+      text-rendering: optimizeLegibility !important;
+      overscroll-behavior-y: none !important;
+    }
+    body {
+      -webkit-user-select: none !important;
+      user-select: none !important;
+    }
+    p, pre, code, [data-selectable], .selectable, .prose, input, textarea {
+      -webkit-user-select: text !important;
+      user-select: text !important;
+      -webkit-touch-callout: default !important;
+    }
+    button:active:not(:disabled),
+    [role="button"]:active,
+    .btn:active,
+    nav a:active {
+      transform: scale(0.975) !important;
+      transition: transform 0.08s cubic-bezier(0.25, 1, 0.5, 1) !important;
+      opacity: 0.9 !important;
+    }
+    ::-webkit-scrollbar {
+      display: none !important;
+      width: 0 !important;
+      height: 0 !important;
+    }
+    * {
+      -webkit-overflow-scrolling: touch !important;
+    }
+  \`;
+  (document.head || document.documentElement).appendChild(nativeStyle);
 })();
 true;`;
 
@@ -231,6 +313,23 @@ export default function WebShell() {
       };
       if (msg.type === "theme" && msg.bg && !/rgba\(0, 0, 0, 0\)|transparent/.test(msg.bg)) {
         setPage({ bg: msg.bg, dark: !!msg.dark });
+      } else if (msg.type === "haptic") {
+        const style = (msg as { style?: string }).style || "light";
+        if (style === "selection") {
+          void Haptics.selectionAsync();
+        } else if (style === "medium") {
+          void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        } else if (style === "heavy") {
+          void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+        } else if (style === "success") {
+          void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        } else if (style === "warning") {
+          void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+        } else if (style === "error") {
+          void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        } else {
+          void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        }
       } else if (msg.type === "notify" && msg.title) {
         void triggerLocalNotification(msg.title, msg.body || "", msg.data);
       }
@@ -246,8 +345,9 @@ export default function WebShell() {
   const dark = page ? page.dark : t.scheme === "dark";
 
   return (
-    <View style={{ flex: 1, backgroundColor: bg, paddingTop: insets.top, paddingBottom: insets.bottom }}>
+    <View style={{ flex: 1, backgroundColor: bg }}>
       <StatusBar style={dark ? "light" : "dark"} />
+      <View style={{ height: insets.top, backgroundColor: bg }} />
       <WebView
         ref={web}
         source={{ uri: start }}
@@ -263,6 +363,11 @@ export default function WebShell() {
         onRenderProcessGone={() => web.current?.reload()}
         allowsBackForwardNavigationGestures
         pullToRefreshEnabled={true}
+        bounces={true}
+        overScrollMode="never"
+        showsHorizontalScrollIndicator={false}
+        showsVerticalScrollIndicator={false}
+        dataDetectorTypes="none"
         decelerationRate="normal"
         textZoom={100}
         webviewDebuggingEnabled={__DEV__}
@@ -280,6 +385,7 @@ export default function WebShell() {
           </View>
         )}
       />
+      <View style={{ height: insets.bottom, backgroundColor: bg }} />
     </View>
   );
 }

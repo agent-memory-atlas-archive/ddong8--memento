@@ -92,8 +92,10 @@ interface BtnProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, "childr
   iconRight?: Parameters<typeof Icon>[0]["name"];
 }
 
+import { triggerHaptic } from "@/lib/haptics";
+
 export function Btn({
-  children, variant = "primary", size = "md", icon, iconRight, className = "", style, ...rest
+  children, variant = "primary", size = "md", icon, iconRight, className = "", style, onClick, ...rest
 }: BtnProps) {
   const sizeClass = size === "sm" ? "aurora-btn-sm" : size === "lg" ? "aurora-btn-lg" : "";
   const variantClass =
@@ -105,6 +107,10 @@ export function Btn({
   return (
     <button
       {...rest}
+      onClick={(e) => {
+        triggerHaptic(variant === "danger" ? "medium" : "light");
+        onClick?.(e);
+      }}
       className={["aurora-btn", sizeClass, variantClass, className].filter(Boolean).join(" ")}
       style={style}
     >
