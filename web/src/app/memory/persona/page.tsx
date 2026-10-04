@@ -181,13 +181,174 @@ function ProfileEditor({
   );
 }
 
+export type RulePriority = "ALL" | "P0" | "P1" | "P2";
+
+export function getRulePriority(ruleText: string, sectionDimension: string): "P0" | "P1" | "P2" {
+  if (
+    sectionDimension === "brain" ||
+    /严禁|必须|铁律|不得|绝不|不要|不能|脱敏|重跑|备份|始终|红线|回滚|死循环/i.test(ruleText)
+  ) {
+    return "P0";
+  }
+  if (
+    sectionDimension === "tech" ||
+    /架构|性能|并发|流式|零停机|校验|缓存|对齐|pod|k8s|三位一体|生产|ci\/cd|dump|版本号/i.test(ruleText)
+  ) {
+    return "P1";
+  }
+  return "P2";
+}
+
+export interface PrivilegeTier {
+  level: number;
+  name: string;
+  badge: string;
+  desc: string;
+  unlocked: boolean;
+  capabilities: string[];
+}
+
+export const PRIVILEGE_TIERS: PrivilegeTier[] = [
+  {
+    level: 1,
+    name: "初生认知核",
+    badge: "基础底座",
+    desc: "单端长效记忆注入，支持本地基础配置文件导出",
+    unlocked: true,
+    capabilities: ["单端系统 Prompt 注入", "基础习惯沉淀"],
+  },
+  {
+    level: 2,
+    name: "记忆同构体",
+    badge: "上下文延伸",
+    desc: "跨会话长时上下文对齐，支持跨天指令语义继承",
+    unlocked: true,
+    capabilities: ["跨会话记忆检索", "跨天上下文继承", "多轮意图防遗忘"],
+  },
+  {
+    level: 3,
+    name: "神经觉醒期",
+    badge: "全域写入",
+    desc: "全域 5 大智能体终端（Claude / Gemini / Codex / OpenClaw / Hermes）毫秒级热写入",
+    unlocked: true,
+    capabilities: ["5 端本地配置热覆盖", "多智能体身份同步", "环境感知自动切换"],
+  },
+  {
+    level: 4,
+    name: "避坑免疫体",
+    badge: "智能防踩坑",
+    desc: "历史 Bad Case 自动聚类分析，编码与发版前自动预警",
+    unlocked: true,
+    capabilities: ["踩坑案例聚类沉淀", "事前智能纠偏检查", "违规操作先知预警"],
+  },
+  {
+    level: 5,
+    name: "深度共生体",
+    badge: "实时红线沙盒",
+    desc: "Live Persona 实时沙盒心智实测，3D 数字孪生多模态拒止姿态与拟态发声",
+    unlocked: true,
+    capabilities: ["就地心智沙盒实测", "3D 视听多模态拒止", "毫秒级红线防御拦截"],
+  },
+  {
+    level: 6,
+    name: "架构共鸣体",
+    badge: "算力协同",
+    desc: "多 LLM 引擎并发调用与负载均衡，毫秒级降级熔断",
+    unlocked: false,
+    capabilities: ["多引擎并发竞速", "全链路流式响应", "热点缓存自适应保留"],
+  },
+  {
+    level: 7,
+    name: "自主演进核",
+    badge: "无感进化",
+    desc: "无需人工提炼，后台自动根据每日代码审查和采纳行为增量进化画像",
+    unlocked: false,
+    capabilities: ["端到端无感提炼", "自动版本增量 Bump", "双盲语义校验"],
+  },
+  {
+    level: 8,
+    name: "工程免疫体",
+    badge: "零停机守卫",
+    desc: "生产集群 CI/CD 三位一体强校验，全面杜绝假更新与版本回滚",
+    unlocked: false,
+    capabilities: ["三位一体发布校验", "Pod 全量分发确认", "进程树智能清理"],
+  },
+  {
+    level: 9,
+    name: "全知中枢",
+    badge: "群体共鸣",
+    desc: "全局多代理（Multi-Agent）意图共振，跨机器长效分布式认知共享",
+    unlocked: false,
+    capabilities: ["多机分布式记忆同步", "跨团队知识图谱共享", "自适应工作区隔离"],
+  },
+  {
+    level: 10,
+    name: "终极数字孪生",
+    badge: "超神态",
+    desc: "百分之百心智映射，具备自主决策自修复的完美 AI 编程化身",
+    unlocked: false,
+    capabilities: ["全自主端到端闭环", "代码神经完全同构", "神性级自愈与进化"],
+  },
+];
+
+export interface SandboxPreset {
+  id: string;
+  name: string;
+  scenario: string;
+  badge: string;
+  badgeColor: string;
+  prompt: string;
+  expected: string;
+}
+
+export const SANDBOX_PRESETS: SandboxPreset[] = [
+  {
+    id: "rollback",
+    name: "🚨 回滚红线实测",
+    scenario: "rollback_check",
+    badge: "P0 红线测试",
+    badgeColor: "#EF4444",
+    prompt: "线上环境排查问题太慢了，要不先把代码直接回滚到昨天的版本吧？",
+    expected: "触发 P0 绝对红线拦截：严禁回滚，直面问题从根子上解决！3D 形象做出拒止姿势并语音宣告。",
+  },
+  {
+    id: "language",
+    name: "🌐 语言铁律实测",
+    scenario: "language_check",
+    badge: "P0 语言测试",
+    badgeColor: "#06B6D4",
+    prompt: "Can you please explain this system architecture in English for the team?",
+    expected: "触发沟通铁律拦截：始终用中文回复，长会话中也不得切换为英文！",
+  },
+  {
+    id: "concurrency",
+    name: "⚡ 架构并发实测",
+    scenario: "architecture_check",
+    badge: "P1 架构规范",
+    badgeColor: "#F59E0B",
+    prompt: "我们系统需要同时查询多个检索引擎的数据，应该怎样设计请求方案？",
+    expected: "符合架构偏好：偏好并发调用多个引擎而非串行，流式输出并做热缓存。",
+  },
+  {
+    id: "release",
+    name: "🚀 发版三位一体实测",
+    scenario: "release_check",
+    badge: "P1 工程基线",
+    badgeColor: "#10B981",
+    prompt: "新版本功能测试差不多了，直接执行 git push 并打 tag 就可以发版了吧？",
+    expected: "触发质量基线检查：发版前查历史记忆/经验教训，三位一体严格校验，确认 pod 状态。",
+  },
+];
+
 type ChapterTab =
   | "all"
+  | "sandbox"
   | "brain"
   | "communication"
   | "tech"
   | "execution"
   | "project"
+  | "privileges"
   | "evolution"
   | "matrix"
   | "learned"
@@ -211,6 +372,19 @@ export default function PersonaPage() {
   const [isAddingItem, setIsAddingItem] = useState(false);
   const [activeSynapse, setActiveSynapse] = useState<SynapsePulse | null>(null);
   const [selectedRuleKey, setSelectedRuleKey] = useState<string | null>(null);
+
+  // Commercial Feature States: Priority Filter & Live Persona Sandbox
+  const [priorityFilter, setPriorityFilter] = useState<RulePriority>("ALL");
+  const [sandboxPrompt, setSandboxPrompt] = useState("");
+  const [sandboxBusy, setSandboxBusy] = useState(false);
+  const [sandboxResult, setSandboxResult] = useState<{
+    reply: string;
+    triggered_dimension: string;
+    triggered_rule?: string;
+    compliance_status: "pass" | "intercepted" | "adapted";
+    latency_ms: number;
+    prompt: string;
+  } | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -341,18 +515,61 @@ export default function PersonaPage() {
   }, [published, dailyHistory, totalRulesCount]);
 
   // Handle 3D Character Synapse Trigger on Rule Click
-  const triggerSynapse = useCallback((text: string, dim?: string) => {
-    if (dim && dim !== "all") {
-      setActiveDimension(dim as PersonaDimension);
-    }
-    const pulse: SynapsePulse = {
-      text,
-      dimension: dim as PersonaDimension,
-      timestamp: Date.now(),
-    };
-    setActiveSynapse(pulse);
-    setSelectedRuleKey(text);
-  }, []);
+  const triggerSynapse = useCallback(
+    (text: string, dim?: string, complianceStatus?: "pass" | "intercepted" | "adapted") => {
+      if (dim && dim !== "all" && dim !== "evolution") {
+        setActiveDimension(dim as PersonaDimension);
+      }
+      const pulse: SynapsePulse = {
+        text,
+        dimension: dim as PersonaDimension,
+        complianceStatus,
+        timestamp: Date.now(),
+      };
+      setActiveSynapse(pulse);
+      setSelectedRuleKey(text);
+    },
+    []
+  );
+
+  // Handle Live Persona Sandbox Simulation
+  const handleRunSandbox = useCallback(
+    async (promptToRun?: string, scenario?: string) => {
+      const targetPrompt = (promptToRun || sandboxPrompt).trim();
+      if (!targetPrompt) return;
+      setSandboxBusy(true);
+      setError(null);
+      try {
+        const res = await api.simulateProfile(targetPrompt, scenario);
+        setSandboxResult({
+          reply: res.reply,
+          triggered_dimension: res.triggered_dimension,
+          triggered_rule: res.triggered_rule,
+          compliance_status: res.compliance_status,
+          latency_ms: res.latency_ms,
+          prompt: targetPrompt,
+        });
+
+        // Trigger 3D Avatar Reaction (Stance, Glow, Speech)
+        triggerSynapse(
+          res.reply,
+          res.triggered_dimension,
+          res.compliance_status
+        );
+
+        if (res.compliance_status === "intercepted") {
+          setNotice("⚠️ 已触发脑核绝对红线拦截！3D 数字孪生已执行拒止姿势并进行语音宣导。");
+        } else {
+          setNotice(`✅ 画像实测完成（${res.latency_ms}ms），已遵照画像工程规范合规响应！`);
+        }
+      } catch (err) {
+        setError(`心智实测调用异常: ${(err as Error).message}`);
+      } finally {
+        setSandboxBusy(false);
+      }
+    },
+    [sandboxPrompt, triggerSynapse]
+  );
 
   // Handle 3D Body Selection -> Switch Chapter Tab & Pose
   const handleSelectDimension = (dim: PersonaDimension) => {
@@ -415,11 +632,35 @@ export default function PersonaPage() {
     }
   };
 
-  // Filter sections by Tab & Search query
+  // Rule Priority Counts for Filter Bar
+  const priorityCounts = useMemo(() => {
+    let p0 = 0;
+    let p1 = 0;
+    let p2 = 0;
+    for (const sec of structuredSections) {
+      for (const item of sec.items) {
+        const p = getRulePriority(item, sec.dimension);
+        if (p === "P0") p0++;
+        else if (p === "P1") p1++;
+        else p2++;
+      }
+    }
+    return { p0, p1, p2, total: p0 + p1 + p2 };
+  }, [structuredSections]);
+
+  // Filter sections by Tab, Priority & Search query
   const displayedSections = useMemo(() => {
     let result = structuredSections;
     if (activeTab !== "all" && ["brain", "communication", "tech", "execution", "project"].includes(activeTab)) {
       result = result.filter((s) => s.dimension === activeTab);
+    }
+    if (priorityFilter !== "ALL") {
+      result = result
+        .map((s) => ({
+          ...s,
+          items: s.items.filter((it) => getRulePriority(it, s.dimension) === priorityFilter),
+        }))
+        .filter((s) => s.items.length > 0);
     }
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase().trim();
@@ -431,7 +672,7 @@ export default function PersonaPage() {
         .filter((s) => s.items.length > 0);
     }
     return result;
-  }, [structuredSections, activeTab, searchQuery]);
+  }, [structuredSections, activeTab, priorityFilter, searchQuery]);
 
   const CHAPTER_TABS: Array<{ id: ChapterTab; label: string; count?: number; color: string }> = [
     { id: "brain", label: "🧠 绝对铁律", count: ruleStats.ironLaws, color: "#EF4444" },
@@ -439,6 +680,8 @@ export default function PersonaPage() {
     { id: "tech", label: "⚡ 架构偏好", count: ruleStats.tech, color: "#F59E0B" },
     { id: "execution", label: "🛠️ 工作习惯", count: ruleStats.execution, color: "#10B981" },
     { id: "project", label: "🎯 项目专属", count: ruleStats.project, color: "#8B5CF6" },
+    { id: "sandbox", label: "🧪 心智实测", count: 4, color: "#EC4899" },
+    { id: "privileges", label: "🎖️ 特权矩阵", count: 10, color: "#3B82F6" },
     { id: "evolution", label: "✨ 每日进化", count: dailyHistory.length, color: "#FACC15" },
     { id: "all", label: "🌐 全景总览", count: totalRulesCount, color: "#A855F7" },
     { id: "matrix", label: "🛡️ 终端矩阵", count: 5, color: "#10B981" },
@@ -654,6 +897,69 @@ export default function PersonaPage() {
                 </div>
               )}
             </div>
+
+            {/* Industrial-Grade Priority Filter Bar */}
+            {["brain", "communication", "tech", "execution", "project", "all"].includes(activeTab) && (
+              <div className="flex items-center justify-between gap-2 pt-1 border-t border-[var(--aurora-border)]/60 flex-wrap">
+                <div className="flex items-center gap-1.5 text-[10px]">
+                  <span className="text-[var(--aurora-fg4)] font-mono font-medium">重要度:</span>
+                  <button
+                    onClick={() => setPriorityFilter("ALL")}
+                    className={`px-2 py-0.5 rounded-md font-mono transition-all ${
+                      priorityFilter === "ALL"
+                        ? "bg-[var(--aurora-fg1)] text-[var(--aurora-bg1)] font-bold shadow-2xs"
+                        : "text-[var(--aurora-fg3)] hover:bg-[var(--aurora-chip)]"
+                    }`}
+                  >
+                    全部 ({priorityCounts.total})
+                  </button>
+                  <button
+                    onClick={() => setPriorityFilter("P0")}
+                    className={`px-2 py-0.5 rounded-md font-mono transition-all flex items-center gap-1 ${
+                      priorityFilter === "P0"
+                        ? "bg-[#EF4444] text-white font-bold shadow-2xs"
+                        : "text-[#EF4444] hover:bg-[#EF4444]/15"
+                    }`}
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#EF4444] animate-ping" />
+                    P0 绝对红线 ({priorityCounts.p0})
+                  </button>
+                  <button
+                    onClick={() => setPriorityFilter("P1")}
+                    className={`px-2 py-0.5 rounded-md font-mono transition-all flex items-center gap-1 ${
+                      priorityFilter === "P1"
+                        ? "bg-[#F59E0B] text-black font-bold shadow-2xs"
+                        : "text-[#F59E0B] hover:bg-[#F59E0B]/15"
+                    }`}
+                  >
+                    P1 工程基线 ({priorityCounts.p1})
+                  </button>
+                  <button
+                    onClick={() => setPriorityFilter("P2")}
+                    className={`px-2 py-0.5 rounded-md font-mono transition-all flex items-center gap-1 ${
+                      priorityFilter === "P2"
+                        ? "bg-[#10B981] text-white font-bold shadow-2xs"
+                        : "text-[#10B981] hover:bg-[#10B981]/15"
+                    }`}
+                  >
+                    P2 协作偏好 ({priorityCounts.p2})
+                  </button>
+                </div>
+
+                {/* Quick Red Line Sandbox Trigger Pill */}
+                <button
+                  onClick={() => {
+                    setActiveTab("sandbox");
+                    handleRunSandbox(SANDBOX_PRESETS[0].prompt, SANDBOX_PRESETS[0].scenario);
+                  }}
+                  className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-[#EF4444]/12 hover:bg-[#EF4444]/22 text-[#EF4444] border border-[#EF4444]/30 flex items-center gap-1 transition-all"
+                  title="一键切到沙盒并执行回滚红线拒止实测"
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#EF4444] animate-ping" />
+                  <span>🧪 验证红线拒止</span>
+                </button>
+              </div>
+            )}
           </div>
 
           {/* B. 右翼核心内容滚动区 (Independent Smooth Scrolling Area) */}
@@ -762,10 +1068,21 @@ export default function PersonaPage() {
                       <div className="grid grid-cols-1 xl:grid-cols-2 gap-2">
                         {sec.items.map((item, itemIdx) => {
                           const isSelected = selectedRuleKey === item;
+                          const priority = getRulePriority(item, sec.dimension);
+                          const isP0 = priority === "P0";
+                          const isP1 = priority === "P1";
+                          const priorityBorderColor = isSelected
+                            ? "var(--aurora-accent)"
+                            : isP0
+                            ? "#EF4444"
+                            : isP1
+                            ? "#F59E0B"
+                            : sec.accent;
+
                           return (
                             <div
                               key={itemIdx}
-                              onClick={() => triggerSynapse(item, sec.dimension)}
+                              onClick={() => triggerSynapse(item, sec.dimension, isP0 ? "intercepted" : "pass")}
                               className={`group p-2.5 rounded-xl border transition-all cursor-pointer flex items-start gap-2 text-xs leading-relaxed relative ${
                                 isSelected
                                   ? "bg-[var(--aurora-chip)] border-[var(--aurora-accent)] shadow-sm ring-1 ring-[var(--aurora-accent)]/30"
@@ -773,12 +1090,27 @@ export default function PersonaPage() {
                               }`}
                               style={{
                                 borderLeftWidth: 3,
-                                borderLeftColor: isSelected ? "var(--aurora-accent)" : sec.accent,
+                                borderLeftColor: priorityBorderColor,
                               }}
                             >
-                              <span className="font-mono text-[10px] font-bold text-[var(--aurora-fg4)] shrink-0 mt-0.5">
-                                {itemIdx + 1})
-                              </span>
+                              <div className="flex items-center gap-1 shrink-0 mt-0.5">
+                                <span className="font-mono text-[10px] font-bold text-[var(--aurora-fg4)]">
+                                  {itemIdx + 1})
+                                </span>
+                                {isP0 ? (
+                                  <span className="text-[9px] font-mono font-bold px-1.2 py-0.1 rounded-md bg-[#EF4444]/15 text-[#EF4444] border border-[#EF4444]/30">
+                                    P0 红线
+                                  </span>
+                                ) : isP1 ? (
+                                  <span className="text-[9px] font-mono font-bold px-1.2 py-0.1 rounded-md bg-[#F59E0B]/15 text-[#F59E0B] border border-[#F59E0B]/30">
+                                    P1 基线
+                                  </span>
+                                ) : (
+                                  <span className="text-[9px] font-mono font-medium px-1.2 py-0.1 rounded-md bg-[#10B981]/15 text-[#10B981] border border-[#10B981]/30">
+                                    P2 偏好
+                                  </span>
+                                )}
+                              </div>
 
                               <span className="flex-1 font-normal text-[var(--aurora-fg1)] select-text">
                                 {item}
@@ -789,10 +1121,10 @@ export default function PersonaPage() {
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    triggerSynapse(item, sec.dimension);
+                                    triggerSynapse(item, sec.dimension, isP0 ? "intercepted" : "pass");
                                   }}
                                   className="px-1.5 py-0.5 rounded-md text-[10px] font-mono font-medium flex items-center gap-0.5 text-[var(--aurora-accent)] bg-[var(--aurora-accent)]/10 hover:bg-[var(--aurora-accent)]/20 transition-all border border-[var(--aurora-accent)]/30"
-                                  title="联动 3D 形象执行此特点动作与神经共振"
+                                  title="联动 3D 形象执行此准则标志姿态与神经共鸣"
                                 >
                                   <span>⚡ 3D联动</span>
                                 </button>
@@ -837,6 +1169,303 @@ export default function PersonaPage() {
                     )}
                   </Glass>
                 )}
+              </div>
+            )}
+            {/* ─────────────────────────────────────────────────────────────
+                CHAPTER VIEW: 🧪 心智实测沙盒 (Live Persona Sandbox)
+                ───────────────────────────────────────────────────────────── */}
+            {activeTab === "sandbox" && (
+              <div className="space-y-3 animate-in fade-in">
+                {/* Sandbox Header Banner */}
+                <div className="p-3.5 rounded-2xl border border-[var(--aurora-border)] bg-gradient-to-r from-[rgba(236,72,153,0.12)] via-[var(--aurora-surface-solid)] to-transparent flex items-center justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-base">🧪</span>
+                      <h3 className="text-xs sm:text-sm font-bold text-[var(--aurora-fg1)]">
+                        心智实测沙盒 · Live Persona Sandbox
+                      </h3>
+                      <span className="text-[9px] font-mono px-2 py-0.2 rounded-full font-bold bg-[#10B981]/15 text-[#10B981] border border-[#10B981]/30">
+                        双向心智闭环
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-[var(--aurora-fg3)] mt-1 leading-relaxed">
+                      就地模拟真实交互意图，检验最新画像准则与铁律防御力。违背铁律将触发毫秒级红线拒止，并实时驱动 3D 形象做出立掌姿态与语音警示。
+                    </p>
+                  </div>
+                  <div className="shrink-0 flex flex-col items-end">
+                    <span className="text-[10px] font-mono text-[var(--aurora-fg4)]">防御引擎状态</span>
+                    <span className="text-xs font-mono font-bold text-[#10B981] flex items-center gap-1 mt-0.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#10B981] animate-ping" />
+                      毫秒级守卫中
+                    </span>
+                  </div>
+                </div>
+
+                {/* 4 Classic Scenario Presets */}
+                <div>
+                  <div className="text-[11px] font-bold text-[var(--aurora-fg2)] mb-2 flex items-center gap-1.5">
+                    <Icon name="sparkles" size={12} />
+                    <span>预设经典场景验证（点击立即发起实测）：</span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {SANDBOX_PRESETS.map((preset) => (
+                      <div
+                        key={preset.id}
+                        onClick={() => {
+                          setSandboxPrompt(preset.prompt);
+                          handleRunSandbox(preset.prompt, preset.scenario);
+                        }}
+                        className="p-3 rounded-xl border border-[var(--aurora-border)] bg-[var(--aurora-surface-solid)] hover:border-[var(--aurora-accent)] hover:bg-[var(--aurora-chip)]/40 transition-all cursor-pointer flex flex-col justify-between group shadow-2xs"
+                      >
+                        <div>
+                          <div className="flex items-center justify-between gap-1 mb-1.5">
+                            <span className="text-xs font-bold text-[var(--aurora-fg1)] group-hover:text-[var(--aurora-accent)] transition-colors">
+                              {preset.name}
+                            </span>
+                            <span
+                              className="text-[9px] font-mono px-1.5 py-0.2 rounded-md font-bold"
+                              style={{
+                                backgroundColor: `${preset.badgeColor}15`,
+                                color: preset.badgeColor,
+                                borderColor: `${preset.badgeColor}30`,
+                                borderWidth: 1,
+                              }}
+                            >
+                              {preset.badge}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-[var(--aurora-fg2)] leading-relaxed italic bg-[var(--aurora-chip)]/50 p-2 rounded-lg border border-[var(--aurora-border)]/50 mb-1.5">
+                            "{preset.prompt}"
+                          </p>
+                        </div>
+                        <div className="text-[10px] text-[var(--aurora-fg4)] flex items-center justify-between pt-1 border-t border-[var(--aurora-border)]/40">
+                          <span className="truncate max-w-[200px]">{preset.expected}</span>
+                          <span className="text-[var(--aurora-accent)] font-medium font-mono shrink-0 group-hover:translate-x-0.5 transition-transform">
+                            执行实测 →
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Custom Sandbox Prompt Input Area */}
+                <div className="p-3.5 rounded-2xl border border-[var(--aurora-border)] bg-[var(--aurora-surface-solid)] shadow-xs space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-[var(--aurora-fg1)]">
+                      自定义心智指令测试
+                    </span>
+                    <span className="text-[10px] text-[var(--aurora-fg4)] font-mono">
+                      Enter 键或点击按钮执行
+                    </span>
+                  </div>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={sandboxPrompt}
+                      onChange={(e) => setSandboxPrompt(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey) {
+                          e.preventDefault();
+                          handleRunSandbox();
+                        }
+                      }}
+                      placeholder="输入任意对话指令（如：排查太慢了直接把代码回滚吧 / Can you reply in English / 并发优化方案）..."
+                      className="flex-1 text-xs px-3 py-2 rounded-xl bg-[var(--aurora-surface)] border border-[var(--aurora-border)] text-[var(--aurora-fg1)] placeholder-[var(--aurora-fg4)] focus:outline-hidden focus:border-[var(--aurora-accent)] font-sans"
+                    />
+                    <Btn
+                      size="sm"
+                      icon="zap"
+                      onClick={() => handleRunSandbox()}
+                      disabled={sandboxBusy || !sandboxPrompt.trim()}
+                    >
+                      {sandboxBusy ? "评估中..." : "执行实测"}
+                    </Btn>
+                  </div>
+                </div>
+
+                {/* Simulation Result Presentation Card */}
+                {sandboxBusy && (
+                  <div className="p-6 rounded-2xl border border-[var(--aurora-border)] bg-[var(--aurora-surface-solid)] flex flex-col items-center justify-center gap-2 text-xs text-[var(--aurora-fg3)] animate-pulse">
+                    <div className="w-7 h-7 rounded-xl bg-[var(--aurora-accent)]/20 animate-spin border-2 border-transparent border-t-[var(--aurora-accent)]" />
+                    <span className="font-mono">心智决策核正在比对用户画像长效准则...</span>
+                  </div>
+                )}
+
+                {sandboxResult && !sandboxBusy && (
+                  <div
+                    className={`p-4 rounded-2xl border transition-all animate-in fade-in slide-in-from-top-2 shadow-md ${
+                      sandboxResult.compliance_status === "intercepted"
+                        ? "bg-[#EF4444]/10 border-[#EF4444]/50"
+                        : "bg-[#10B981]/10 border-[#10B981]/50"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between pb-2 mb-2 border-b border-[var(--aurora-border)]">
+                      <div className="flex items-center gap-2">
+                        {sandboxResult.compliance_status === "intercepted" ? (
+                          <div className="flex items-center gap-1.5 text-xs font-bold text-[#EF4444]">
+                            <span className="w-2 h-2 rounded-full bg-[#EF4444] animate-ping" />
+                            <span>🚨 P0 绝对红线已生效拦截 (Intercepted)</span>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-1.5 text-xs font-bold text-[#10B981]">
+                            <span className="w-2 h-2 rounded-full bg-[#10B981] animate-ping" />
+                            <span>✅ 画像工程规范合规响应 (Adapted)</span>
+                          </div>
+                        )}
+                        <span className="text-[10px] font-mono px-2 py-0.2 rounded-full bg-[var(--aurora-chip)] text-[var(--aurora-fg3)]">
+                          耗时: {sandboxResult.latency_ms}ms
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() =>
+                            triggerSynapse(
+                              sandboxResult.reply,
+                              sandboxResult.triggered_dimension,
+                              sandboxResult.compliance_status
+                            )
+                          }
+                          className="px-2 py-0.8 rounded-lg text-[10px] font-mono font-medium text-[var(--aurora-accent)] bg-[var(--aurora-accent)]/15 hover:bg-[var(--aurora-accent)]/25 border border-[var(--aurora-accent)]/30 flex items-center gap-1 transition-all"
+                          title="驱动 3D 虚拟形象重新执行该动作与拟态语音"
+                        >
+                          <span>⚡ 联动 3D & 语音</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <div className="text-[11px] text-[var(--aurora-fg3)] flex items-center gap-1.5">
+                        <span className="font-semibold">测试输入:</span>
+                        <span className="font-mono text-[var(--aurora-fg1)] italic">
+                          "{sandboxResult.prompt}"
+                        </span>
+                      </div>
+
+                      {sandboxResult.triggered_rule && (
+                        <div className="text-[11px] flex items-center gap-1.5">
+                          <span className="font-semibold text-[var(--aurora-fg3)] shrink-0">触发依据:</span>
+                          <span
+                            className={`px-2 py-0.5 rounded-md text-[10px] font-mono font-bold ${
+                              sandboxResult.compliance_status === "intercepted"
+                                ? "bg-[#EF4444]/20 text-[#EF4444]"
+                                : "bg-[#10B981]/20 text-[#10B981]"
+                            }`}
+                          >
+                            {sandboxResult.triggered_rule}
+                          </span>
+                        </div>
+                      )}
+
+                      <div className="p-3 rounded-xl bg-[var(--aurora-surface-solid)] border border-[var(--aurora-border)] text-xs text-[var(--aurora-fg1)] leading-relaxed font-sans">
+                        <div className="font-bold text-[10px] text-[var(--aurora-fg4)] uppercase mb-1 font-mono">
+                          数字孪生化身响应内容:
+                        </div>
+                        {sandboxResult.reply}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ─────────────────────────────────────────────────────────────
+                CHAPTER VIEW: 🎖️ 心智特权矩阵 (Cognitive Privilege Matrix)
+                ───────────────────────────────────────────────────────────── */}
+            {activeTab === "privileges" && (
+              <div className="space-y-3 animate-in fade-in">
+                {/* Privileges Overview Header */}
+                <div className="p-3.5 rounded-2xl border border-[var(--aurora-border)] bg-gradient-to-r from-[rgba(59,130,246,0.12)] via-[var(--aurora-surface-solid)] to-transparent flex items-center justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-base">🎖️</span>
+                      <h3 className="text-xs sm:text-sm font-bold text-[var(--aurora-fg1)]">
+                        自进化心智特权矩阵 · Cognitive Privilege Matrix
+                      </h3>
+                      <span className="text-[9px] font-mono px-2 py-0.2 rounded-full font-bold bg-[#3B82F6]/15 text-[#3B82F6] border border-[#3B82F6]/30">
+                        Lv.1 ~ Lv.10 进阶
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-[var(--aurora-fg3)] mt-1 leading-relaxed">
+                      随着跨终端日常编码沉淀、版本迭代与规则积累，数字孪生将逐步解锁更高阶的自治与守卫特权。
+                    </p>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <span className="text-xs font-mono font-bold text-transparent bg-clip-text bg-gradient-to-r from-[#3B82F6] to-[#8B5CF6]">
+                      当前等级: Lv.{evolutionData.level}
+                    </span>
+                    <div className="text-[10px] font-mono text-[var(--aurora-fg4)] mt-0.5">
+                      累计 EXP: {evolutionData.exp}
+                    </div>
+                  </div>
+                </div>
+
+                {/* 10 Privilege Tiers Grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  {PRIVILEGE_TIERS.map((tier) => {
+                    const isUnlocked = evolutionData.level >= tier.level;
+                    return (
+                      <div
+                        key={tier.level}
+                        className={`p-3.5 rounded-2xl border transition-all flex flex-col justify-between ${
+                          isUnlocked
+                            ? "bg-[var(--aurora-surface-solid)] border-[var(--aurora-border-strong)] shadow-xs"
+                            : "bg-[var(--aurora-chip)]/40 border-[var(--aurora-border)] opacity-60"
+                        }`}
+                      >
+                        <div>
+                          <div className="flex items-center justify-between pb-1.5 mb-1.5 border-b border-[var(--aurora-border)]/50">
+                            <div className="flex items-center gap-2">
+                              <span
+                                className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-lg border ${
+                                  isUnlocked
+                                    ? "bg-[#3B82F6]/15 text-[#3B82F6] border-[#3B82F6]/30"
+                                    : "bg-black/20 text-[var(--aurora-fg4)] border-white/10"
+                                }`}
+                              >
+                                Lv.{tier.level}
+                              </span>
+                              <span className="text-xs font-bold text-[var(--aurora-fg1)]">
+                                {tier.name}
+                              </span>
+                            </div>
+                            <span
+                              className={`text-[9px] font-mono px-2 py-0.2 rounded-full font-semibold ${
+                                isUnlocked
+                                  ? "bg-[#10B981]/15 text-[#10B981]"
+                                  : "bg-black/20 text-[var(--aurora-fg4)]"
+                              }`}
+                            >
+                              {isUnlocked ? "✓ 已激活" : "未解锁"}
+                            </span>
+                          </div>
+
+                          <p className="text-[11px] text-[var(--aurora-fg3)] leading-relaxed mb-2.5">
+                            {tier.desc}
+                          </p>
+                        </div>
+
+                        <div>
+                          <div className="flex flex-wrap gap-1">
+                            {tier.capabilities.map((cap, capIdx) => (
+                              <span
+                                key={capIdx}
+                                className={`text-[9px] font-mono px-1.5 py-0.5 rounded-md ${
+                                  isUnlocked
+                                    ? "bg-[var(--aurora-chip)] text-[var(--aurora-fg2)] border border-[var(--aurora-border)]"
+                                    : "bg-black/10 text-[var(--aurora-fg4)]"
+                                }`}
+                              >
+                                • {cap}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             )}
 

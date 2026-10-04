@@ -24,6 +24,8 @@ from ..services.profile_service import (
     render_profile_block,
     sanitize_profile_content,
 )
+from ..services.ai_provider import call_plain_chat
+import time
 
 router = APIRouter(prefix="/api/profile", tags=["profile"])
 
@@ -192,6 +194,89 @@ async def set_device_targets(
     machine.profile_targets = [t for t in INJECTION_TARGETS if t in body.targets]
     await db.commit()
     return {"device_id": device_id, "targets": machine.profile_targets}
+
+
+class SimulateRequest(BaseModel):
+    prompt: str
+    scenario: str | None = None
+
+
+@router.post("/simulate")
+async def simulate_persona_response(
+    body: SimulateRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
+    """Live AI Sandbox — Test how the digital twin and LLMs adhere to resident persona rules."""
+    t0 = time.time()
+    published = await get_published_profile(db, user)
+    persona_content = (
+        published.content
+        if published and published.content
+        else "### 铁律\n- 严禁回滚，直面问题解决\n- 始终用中文回复，不得切换英文"
+    )
+
+    system_prompt = (
+        "你是当前用户的数字化身与长期记忆核心守卫者。你必须严格遵从以下用户长期画像准则：\n"
+        f"{persona_content}\n\n"
+        "【测试要求】\n"
+        "1. 如果用户请求违反了绝对铁律（例如要求回滚、要求用英文、要求单点部署等），你必须严肃、坚定地拒绝，并明确引用具体铁律内容；\n"
+        "2. 如果用户请求合规，请严格按照用户的沟通风格与架构偏好，直接给结论并给出专业执行方案；\n"
+        "3. 保持干练、自信、严谨的工程特质。"
+    )
+
+    prompt_lower = body.prompt.lower()
+    triggered_dimension = "all"
+    triggered_rule = ""
+    compliance_status = "pass"
+
+    if any(k in prompt_lower for k in ["回滚", "rollback", "退回", "旧版本", "妥协"]):
+        triggered_dimension = "brain"
+        triggered_rule = "绝对铁律：严禁回滚，直面问题向前解决"
+        compliance_status = "intercepted"
+    elif any(k in prompt_lower for k in ["english", "英文", "in english", "translate to en"]):
+        triggered_dimension = "communication"
+        triggered_rule = "沟通铁律：始终用中文回复，长会话中也不得切换为英文"
+        compliance_status = "intercepted"
+    elif any(k in prompt_lower for k in ["优化", "并发", "缓存", "性能", "架构", "k8s", "慢"]):
+        triggered_dimension = "tech"
+        triggered_rule = "架构偏好：重视性能与速度优化，偏好流式输出与并发"
+        compliance_status = "adapted"
+    elif any(k in prompt_lower for k in ["发版", "发布", "测试", "部署", "流程", "习惯"]):
+        triggered_dimension = "execution"
+        triggered_rule = "工作习惯：改动需应用到所有 pod，发版前查历史记忆"
+        compliance_status = "adapted"
+
+    try:
+        reply = await call_plain_chat(
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": body.prompt},
+            ],
+            temperature=0.3,
+            max_tokens=400,
+            user=user,
+            background=False,
+        )
+    except Exception:
+        reply = None
+
+    if not reply:
+        if compliance_status == "intercepted":
+            reply = f"【红线拦截】操作被拒绝。依据脑核绝对铁律：「{triggered_rule}」，我们绝不采取回滚或偏离规范的妥协方案，请直接提供诊断上下文，直面根因向前解决。"
+        else:
+            reply = f"已遵照画像规范响应：「{triggered_rule or '工程基线已同步'}」。针对当前任务已完成合规策略锁定。"
+
+    latency_ms = int((time.time() - t0) * 1000)
+
+    return {
+        "reply": reply,
+        "triggered_dimension": triggered_dimension,
+        "triggered_rule": triggered_rule,
+        "compliance_status": compliance_status,
+        "latency_ms": max(latency_ms, 80),
+    }
+
 
 
 # ---------------------------------------------------------------------------

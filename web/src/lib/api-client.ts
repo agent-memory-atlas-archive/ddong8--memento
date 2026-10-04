@@ -512,6 +512,17 @@ export const api = {
       `/api/profile/devices/${encodeURIComponent(deviceId)}/targets`,
       { method: "PUT", body: JSON.stringify({ targets }) },
     ).finally(_invalidateProfile),
+  simulateProfile: (prompt: string, scenario?: string) =>
+    apiFetch<{
+      reply: string;
+      triggered_dimension: "brain" | "communication" | "tech" | "execution" | "project" | "all";
+      triggered_rule?: string;
+      compliance_status: "pass" | "intercepted" | "adapted";
+      latency_ms: number;
+    }>("/api/profile/simulate", {
+      method: "POST",
+      body: JSON.stringify({ prompt, scenario }),
+    }),
   getPublicStats: () => apiFetch<PublicStats>("/api/public/stats"),
 
   // 24/7 Always-On Proactive Agent API

@@ -16,6 +16,7 @@ export type PersonaDimension =
 export interface SynapsePulse {
   text: string;
   dimension?: PersonaDimension;
+  complianceStatus?: "pass" | "intercepted" | "adapted";
   timestamp: number;
 }
 
@@ -58,7 +59,7 @@ interface BonePose {
 }
 
 // ── 5 大特点维度专属标志性姿态与肢体语言矩阵 ──
-const TRAIT_POSES: Record<PersonaDimension, BonePose> = {
+const TRAIT_POSES: Record<string, BonePose> = {
   // 1. 全景/默认：优雅端庄站姿，双臂自然垂于身侧
   all: {
     head: { x: 0, y: 0, z: 0 },
@@ -81,7 +82,18 @@ const TRAIT_POSES: Record<PersonaDimension, BonePose> = {
     rightForeArm: { x: 1.28, y: -0.52, z: 0.32 },
   },
 
-  // 3. 💬 沟通风格：身体微前倾，右手向前从容平探（掌心微扬做述职与清晰汇报交流状）
+  // 3. 🛡️ 脑核红线拦截手势（当沙盒拦截触犯铁律时触发）：右手立掌向前做警示拒止姿态
+  intercept: {
+    head: { x: -0.04, y: 0, z: 0 },
+    spine: { x: -0.05, y: 0, z: 0 },
+    spine2: { x: -0.04, y: 0, z: 0 },
+    leftArm: { x: 0.2, y: 0.35, z: -0.65 },
+    leftForeArm: { x: 0.95, y: 0.45, z: 0.2 },
+    rightArm: { x: 0.82, y: -0.15, z: 0.45 },
+    rightForeArm: { x: 0.95, y: -0.85, z: -0.3 },
+  },
+
+  // 4. 💬 沟通风格：身体微前倾，右手向前从容平探（掌心微扬做述职与清晰汇报交流状）
   communication: {
     head: { x: 0.05, y: 0.14, z: -0.05 },
     spine: { x: 0.04, y: 0.04, z: 0 },
@@ -92,7 +104,7 @@ const TRAIT_POSES: Record<PersonaDimension, BonePose> = {
     rightForeArm: { x: 0.48, y: -0.62, z: -0.12 },
   },
 
-  // 4. ⚡ 架构偏好：双臂在胸前平展微屈，呈操控空中多维全息控制台、算力矩阵姿态
+  // 5. ⚡ 架构偏好：双臂在胸前平展微屈，呈操控空中多维全息控制台、算力矩阵姿态
   tech: {
     head: { x: -0.03, y: 0, z: 0 },
     spine: { x: -0.02, y: 0, z: 0 },
@@ -103,7 +115,7 @@ const TRAIT_POSES: Record<PersonaDimension, BonePose> = {
     rightForeArm: { x: 0.78, y: -0.32, z: -0.2 },
   },
 
-  // 5. 🛠️ 工作习惯：双手在胸前沉稳抱胸，显露出“一次做到位、严谨自查”的执行官魄力
+  // 6. 🛠️ 工作习惯：双手在胸前沉稳抱胸，显露出“一次做到位、严谨自查”的执行官魄力
   execution: {
     head: { x: 0.03, y: 0, z: 0 },
     spine: { x: -0.02, y: 0, z: 0 },
@@ -114,7 +126,7 @@ const TRAIT_POSES: Record<PersonaDimension, BonePose> = {
     rightForeArm: { x: 1.15, y: -0.65, z: -0.4 },
   },
 
-  // 6. 🎯 项目专属：双手在腰腹间微拢托举记忆水晶核，与 5 颗工具伴星交相辉映
+  // 7. 🎯 项目专属：双手在腰腹间微拢托举记忆水晶核，与 5 颗工具伴星交相辉映
   project: {
     head: { x: 0.03, y: -0.04, z: 0 },
     spine: { x: 0.01, y: 0, z: 0 },
@@ -125,7 +137,7 @@ const TRAIT_POSES: Record<PersonaDimension, BonePose> = {
     rightForeArm: { x: 0.88, y: -0.45, z: -0.15 },
   },
 
-  // 7. ✨ 每日进化：双臂舒展向后仰首向天，拥抱算力星光，心智全面觉醒
+  // 8. ✨ 每日进化：双臂舒展向后仰首向天，拥抱算力星光，心智全面觉醒
   evolution: {
     head: { x: -0.22, y: 0, z: 0 },
     spine: { x: -0.08, y: 0, z: 0 },
@@ -150,6 +162,7 @@ export default function DigitalTwinAvatar3D({
 }: DigitalTwinAvatar3DProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isRotating, setIsRotating] = useState(false);
+  const [isVoiceEnabled, setIsVoiceEnabled] = useState(true);
   const [hudSynapse, setHudSynapse] = useState<SynapsePulse | null>(null);
 
   // References for live 3D mutations without React re-renders
@@ -165,13 +178,31 @@ export default function DigitalTwinAvatar3D({
 
   // Dynamic animation states in frame loop
   const activeDimRef = useRef<PersonaDimension>(activeDimension);
+  const isInterceptRef = useRef<boolean>(false);
   const pulseIntensityRef = useRef<number>(1.0);
   const nodProgressRef = useRef<number>(0);
   const lastSynapseTimeRef = useRef<number>(0);
 
+  // Web Speech API Synthesis for Lifelike Persona Voice
+  const speakPhrase = (phrase: string) => {
+    if (!isVoiceEnabled || typeof window === "undefined" || !("speechSynthesis" in window)) return;
+    try {
+      window.speechSynthesis.cancel();
+      const clean = phrase.replace(/[^\u4e00-\u9fa5a-zA-Z0-9，。！]/g, "").slice(0, 32);
+      if (!clean) return;
+      const utterance = new SpeechSynthesisUtterance(clean);
+      utterance.lang = "zh-CN";
+      utterance.rate = 1.08;
+      utterance.pitch = 1.02;
+      window.speechSynthesis.speak(utterance);
+    } catch {
+      // Audio autoplay gracefully handled
+    }
+  };
+
   useEffect(() => {
     activeDimRef.current = activeDimension;
-    // 维度切换时赋予明显的能量跃迁脉冲
+    isInterceptRef.current = false;
     pulseIntensityRef.current = 1.8;
   }, [activeDimension]);
 
@@ -179,12 +210,22 @@ export default function DigitalTwinAvatar3D({
   useEffect(() => {
     if (activeSynapse && activeSynapse.timestamp !== lastSynapseTimeRef.current) {
       lastSynapseTimeRef.current = activeSynapse.timestamp;
-      pulseIntensityRef.current = 2.4;
+      pulseIntensityRef.current = activeSynapse.complianceStatus === "intercepted" ? 3.0 : 2.4;
       nodProgressRef.current = 1.0;
+      isInterceptRef.current = activeSynapse.complianceStatus === "intercepted";
       setHudSynapse(activeSynapse);
+
+      // Voice read out
+      if (activeSynapse.complianceStatus === "intercepted") {
+        speakPhrase("绝对红线已生效拦截：严禁违背画像铁律");
+      } else {
+        speakPhrase(activeSynapse.text);
+      }
+
       const timer = setTimeout(() => {
         setHudSynapse((curr) => (curr?.timestamp === activeSynapse.timestamp ? null : curr));
-      }, 3500);
+        isInterceptRef.current = false;
+      }, 4000);
       return () => clearTimeout(timer);
     }
   }, [activeSynapse]);
@@ -329,8 +370,7 @@ export default function DigitalTwinAvatar3D({
     legR.position.set(0.12, 0.38, 0);
     solidMannequin.add(legL, legR);
 
-    // ── 专属特点光学特效系统 (Characteristic VFX) ──
-    // 1. 头顶智慧与铁律光环 (Wisdom & Iron Law Halo)
+    // ── 专属特点光学特效系统 ──
     const haloMat = new THREE.MeshBasicMaterial({ color: 0xef4444, transparent: true, opacity: 0.9 });
     const haloMesh = new THREE.Mesh(new THREE.TorusGeometry(0.14, 0.005, 16, 48), haloMat);
     haloMesh.rotation.x = Math.PI / 2.2;
@@ -338,21 +378,18 @@ export default function DigitalTwinAvatar3D({
     avatarGroup.add(haloMesh);
     haloRef.current = haloMesh;
 
-    // 2. 胸口八面体架构算力核心 (Tech Fusion Core)
     const chestMat = new THREE.MeshBasicMaterial({ color: 0xf59e0b, transparent: true, opacity: 0.95 });
     const chestCore = new THREE.Mesh(new THREE.OctahedronGeometry(0.038, 1), chestMat);
     chestCore.position.set(0, 1.25, 0.14);
     avatarGroup.add(chestCore);
     chestCoreRef.current = chestCore;
 
-    // 3. 沟通声波脉冲环 (Communication Soundwave Ring)
     const soundWaveMat = new THREE.MeshBasicMaterial({ color: 0x06b6d4, transparent: true, opacity: 0.0 });
     const soundWave = new THREE.Mesh(new THREE.RingGeometry(0.06, 0.08, 32), soundWaveMat);
     soundWave.position.set(0, 1.48, 0.15);
     avatarGroup.add(soundWave);
     soundWaveRef.current = soundWave;
 
-    // 4. 工作习惯执行扫描光波 (Execution Scan Wave)
     const scanRingMat = new THREE.MeshBasicMaterial({ color: 0x10b981, transparent: true, opacity: 0.0, side: THREE.DoubleSide });
     const scanRing = new THREE.Mesh(new THREE.RingGeometry(0.45, 0.52, 48), scanRingMat);
     scanRing.rotation.x = -Math.PI / 2;
@@ -360,7 +397,6 @@ export default function DigitalTwinAvatar3D({
     avatarGroup.add(scanRing);
     scanRingRef.current = scanRing;
 
-    // 5. 环绕 AI 终端星轨与伴星 (Aura Rings & Satellites)
     const auraGroup = new THREE.Group();
     auraGroup.position.set(0, 1.15, 0);
     avatarGroup.add(auraGroup);
@@ -465,7 +501,6 @@ export default function DigitalTwinAvatar3D({
     const currentColor = new THREE.Color(0xef4444);
     const targetColor = new THREE.Color(0xef4444);
 
-    // Live interpolated bone rotations
     const currentPose = {
       head: { x: 0, y: 0, z: 0 },
       spine: { x: 0, y: 0, z: 0 },
@@ -480,7 +515,8 @@ export default function DigitalTwinAvatar3D({
       animId = requestAnimationFrame(animate);
       const elapsed = clock.getElapsedTime();
 
-      // Natural breathing expansion
+      // Lifelike Micro-Gaze Saccades (每 3 秒极微小的视线生理颤动，告别木讷)
+      const saccade = Math.sin(elapsed * 4.5) * 0.008 * Math.cos(elapsed * 2.1);
       const breath = Math.sin(elapsed * 2.2);
 
       // Synapse Pulse Decay
@@ -488,14 +524,14 @@ export default function DigitalTwinAvatar3D({
         pulseIntensityRef.current = THREE.MathUtils.lerp(pulseIntensityRef.current, 1.0, 0.05);
       }
 
-      // Nod gesture decay (affirmative response on click)
+      // Nod gesture decay
       let nodAngle = 0;
       if (nodProgressRef.current > 0) {
         nodAngle = Math.sin(nodProgressRef.current * Math.PI) * 0.14;
         nodProgressRef.current = Math.max(0, nodProgressRef.current - 0.04);
       }
 
-      // Dynamic Color Interpolation based on Active Dimension
+      // Active Dimension Color
       const activeDim = activeDimRef.current;
       targetColor.setHex(DIM_COLORS[activeDim] ?? 0xa855f7);
       currentColor.lerp(targetColor, 0.08);
@@ -504,9 +540,11 @@ export default function DigitalTwinAvatar3D({
       if (chestMat) chestMat.color.copy(currentColor);
       if (spotlightRef.current) spotlightRef.current.color.copy(currentColor);
 
-      // ── Trait-Specific Pose Interpolation (平滑切换到专属特征姿态) ──
-      const targetPose = TRAIT_POSES[activeDim] || TRAIT_POSES.all;
-      const lerpSpeed = 0.06;
+      // Select Target Pose (Support Intercept Stance if flagged)
+      const targetPose = isInterceptRef.current
+        ? TRAIT_POSES.intercept
+        : TRAIT_POSES[activeDim] || TRAIT_POSES.all;
+      const lerpSpeed = 0.07;
 
       currentPose.head.x = THREE.MathUtils.lerp(currentPose.head.x, targetPose.head.x, lerpSpeed);
       currentPose.head.y = THREE.MathUtils.lerp(currentPose.head.y, targetPose.head.y, lerpSpeed);
@@ -531,11 +569,11 @@ export default function DigitalTwinAvatar3D({
       currentPose.leftForeArm.y = THREE.MathUtils.lerp(currentPose.leftForeArm.y, targetPose.leftForeArm.y, lerpSpeed);
       currentPose.leftForeArm.z = THREE.MathUtils.lerp(currentPose.leftForeArm.z, targetPose.leftForeArm.z, lerpSpeed);
 
-      // ── Apply Pose to GLB Bones ──
+      // Apply to GLB Bones
       const bones = bonesRef.current;
       if (bones.Head && !isDragging) {
-        bones.Head.rotation.x = currentPose.head.x - mouse.y * 0.18 + nodAngle;
-        bones.Head.rotation.y = currentPose.head.y + mouse.x * 0.28;
+        bones.Head.rotation.x = currentPose.head.x - mouse.y * 0.18 + nodAngle + saccade;
+        bones.Head.rotation.y = currentPose.head.y + mouse.x * 0.28 + saccade;
         bones.Head.rotation.z = currentPose.head.z;
       }
       if (bones.Spine) bones.Spine.rotation.x = currentPose.spine.x + breath * 0.02;
@@ -563,7 +601,7 @@ export default function DigitalTwinAvatar3D({
         bones.LeftForeArm.rotation.z = currentPose.leftForeArm.z;
       }
 
-      // ── Apply Pose to Solid Mannequin (备用模型同样支持姿态联动) ──
+      // Apply to Solid Mannequin
       if (solidMannequin.visible) {
         solidChest.scale.set(1 + breath * 0.025, 1 + breath * 0.015, 1 + breath * 0.03);
         solidHead.rotation.y = currentPose.head.y + mouse.x * 0.25;
@@ -580,8 +618,7 @@ export default function DigitalTwinAvatar3D({
         foreArmL.rotation.x = currentPose.leftForeArm.x;
       }
 
-      // ── 特征专属光学特效动画 (Trait VFX Animations) ──
-      // 1. 沟通声波脉冲动画 (当处于 communication 维度时声波向外扩散)
+      // 特征专属特效
       if (soundWave) {
         if (activeDim === "communication") {
           const wavePhase = (elapsed * 2.5) % 1;
@@ -592,7 +629,6 @@ export default function DigitalTwinAvatar3D({
         }
       }
 
-      // 2. 工作习惯执行扫描波 (当处于 execution 维度时扫描环由下至上掠过)
       if (scanRing) {
         if (activeDim === "execution") {
           const scanPhase = (elapsed * 0.8) % 1;
@@ -603,7 +639,6 @@ export default function DigitalTwinAvatar3D({
         }
       }
 
-      // 3. 架构算力伴星加速公转 (当处于 tech 维度时卫星 2.5 倍速并发狂飙)
       const speedMultiplier = activeDim === "tech" ? 2.5 : activeDim === "evolution" ? 3.0 : 1.0;
       const orbitSpeed = (0.65 * speedMultiplier + (pulseIntensityRef.current - 1.0) * 0.8) * elapsed;
       satellites.forEach((sat, idx) => {
@@ -611,7 +646,6 @@ export default function DigitalTwinAvatar3D({
         sat.position.set(Math.cos(angle) * 1.35, Math.sin(angle * 2) * 0.08, Math.sin(angle) * 1.35);
       });
 
-      // 4. 光环与胸核呼吸旋转
       haloMesh.rotation.z = elapsed * (activeDim === "brain" ? 1.5 : 0.4);
       const haloBaseScale = 1 + Math.sin(elapsed * 2.5) * 0.05;
       haloMesh.scale.setScalar(haloBaseScale * pulseIntensityRef.current * (activeDim === "brain" ? 1.15 : 1.0));
@@ -620,7 +654,6 @@ export default function DigitalTwinAvatar3D({
       chestCore.rotation.y = elapsed * (activeDim === "tech" ? 4.0 : 1.6);
       chestCore.scale.setScalar(pulseIntensityRef.current * (activeDim === "tech" ? 1.3 : 1.0));
 
-      // 自转控制
       if (isRotating) {
         avatarGroup.rotation.y += 0.005;
       }
@@ -631,7 +664,6 @@ export default function DigitalTwinAvatar3D({
 
     animate();
 
-    // 8. Resize Observer
     const handleResize = () => {
       if (!container || !renderer || !camera) return;
       const newW = container.clientWidth;
@@ -708,9 +740,8 @@ export default function DigitalTwinAvatar3D({
       {/* 3D WebGL Canvas */}
       <div ref={containerRef} className="absolute inset-0 cursor-grab active:cursor-grabbing z-0" />
 
-      {/* ── 身体各部位「特点神经突触热点」 (Interactive Neural Hotspots on Body) ── */}
+      {/* 身体各部位「特点神经突触热点」 */}
       <div className="absolute inset-0 pointer-events-none z-15 overflow-hidden">
-        {/* 1. 脑核热点 (Head / Brain) */}
         <button
           onClick={() => onSelectDimension("brain")}
           className={`absolute top-[16%] left-[16%] pointer-events-auto px-2 py-0.8 rounded-full border text-[10px] font-mono transition-all flex items-center gap-1 backdrop-blur-md shadow-md hover:scale-105 ${
@@ -724,7 +755,6 @@ export default function DigitalTwinAvatar3D({
           <span className="opacity-60">({ruleStats.ironLaws})</span>
         </button>
 
-        {/* 2. 喉核热点 (Throat / Communication) */}
         <button
           onClick={() => onSelectDimension("communication")}
           className={`absolute top-[28%] right-[16%] pointer-events-auto px-2 py-0.8 rounded-full border text-[10px] font-mono transition-all flex items-center gap-1 backdrop-blur-md shadow-md hover:scale-105 ${
@@ -738,7 +768,6 @@ export default function DigitalTwinAvatar3D({
           <span className="opacity-60">({ruleStats.communication})</span>
         </button>
 
-        {/* 3. 心核热点 (Chest / Tech Architecture) */}
         <button
           onClick={() => onSelectDimension("tech")}
           className={`absolute top-[44%] left-[12%] pointer-events-auto px-2 py-0.8 rounded-full border text-[10px] font-mono transition-all flex items-center gap-1 backdrop-blur-md shadow-md hover:scale-105 ${
@@ -752,7 +781,6 @@ export default function DigitalTwinAvatar3D({
           <span className="opacity-60">({ruleStats.tech})</span>
         </button>
 
-        {/* 4. 手臂肢端热点 (Arms / Execution Habits) */}
         <button
           onClick={() => onSelectDimension("execution")}
           className={`absolute top-[58%] right-[14%] pointer-events-auto px-2 py-0.8 rounded-full border text-[10px] font-mono transition-all flex items-center gap-1 backdrop-blur-md shadow-md hover:scale-105 ${
@@ -766,7 +794,6 @@ export default function DigitalTwinAvatar3D({
           <span className="opacity-60">({ruleStats.execution})</span>
         </button>
 
-        {/* 5. 环轨项目热点 (Orbit / Project Specifics) */}
         <button
           onClick={() => onSelectDimension("project")}
           className={`absolute top-[72%] left-[14%] pointer-events-auto px-2 py-0.8 rounded-full border text-[10px] font-mono transition-all flex items-center gap-1 backdrop-blur-md shadow-md hover:scale-105 ${
@@ -796,8 +823,25 @@ export default function DigitalTwinAvatar3D({
           </div>
         </div>
 
-        {/* Action Controls: Spark Evolution & Rotation */}
+        {/* Action Controls: Voice, Spark Evolution & Rotation */}
         <div className="flex items-center gap-1.5 pointer-events-auto">
+          {/* Voice Toggle */}
+          <button
+            onClick={() => {
+              const next = !isVoiceEnabled;
+              setIsVoiceEnabled(next);
+              if (next) speakPhrase("数字孪生拟态语音已激活");
+            }}
+            className={`px-2.5 py-1 rounded-xl text-[11px] font-mono font-medium transition-all backdrop-blur-md border ${
+              isVoiceEnabled
+                ? "bg-[#10B981]/25 text-[#10B981] border-[#10B981]/40 shadow-xs"
+                : "bg-black/50 text-white/50 border-white/10 hover:text-white"
+            }`}
+            title="切换 3D 数字人语音播报"
+          >
+            {isVoiceEnabled ? "🔊 拟态语音" : "🔇 静音"}
+          </button>
+
           {onSparkEvolution && (
             <button
               onClick={() => {
@@ -829,11 +873,29 @@ export default function DigitalTwinAvatar3D({
       {/* Center Dynamic Holographic Synapse Activation Banner */}
       {hudSynapse && (
         <div className="relative z-30 self-center pointer-events-none px-4 animate-in fade-in zoom-in-95 duration-200">
-          <div className="bg-black/85 backdrop-blur-xl px-4 py-2.5 rounded-2xl border border-[var(--aurora-accent)] shadow-[0_0_30px_rgba(139,92,246,0.5)] flex items-center gap-2.5 max-w-[420px]">
-            <span className="w-2.5 h-2.5 rounded-full bg-[var(--aurora-accent)] animate-ping shrink-0" />
+          <div
+            className={`backdrop-blur-xl px-4 py-2.5 rounded-2xl border shadow-[0_0_35px_rgba(239,68,68,0.5)] flex items-center gap-2.5 max-w-[420px] ${
+              hudSynapse.complianceStatus === "intercepted"
+                ? "bg-[#EF4444]/20 border-[#EF4444] text-white"
+                : "bg-black/85 border-[var(--aurora-accent)] text-white"
+            }`}
+          >
+            <span
+              className={`w-2.5 h-2.5 rounded-full animate-ping shrink-0 ${
+                hudSynapse.complianceStatus === "intercepted" ? "bg-[#EF4444]" : "bg-[var(--aurora-accent)]"
+              }`}
+            />
             <div className="flex flex-col min-w-0">
-              <span className="text-[10px] font-mono text-[var(--aurora-accent)] font-bold tracking-wider flex items-center gap-1.5">
-                <span>⚡ 神经突触实时共鸣</span>
+              <span
+                className={`text-[10px] font-mono font-bold tracking-wider flex items-center gap-1.5 ${
+                  hudSynapse.complianceStatus === "intercepted" ? "text-[#EF4444]" : "text-[var(--aurora-accent)]"
+                }`}
+              >
+                <span>
+                  {hudSynapse.complianceStatus === "intercepted"
+                    ? "🛡️ P0 绝对红线已生效拦截"
+                    : "⚡ 神经突触实时共鸣"}
+                </span>
                 <span className="text-white/40 font-normal">· 已沉淀至长时记忆</span>
               </span>
               <span className="text-xs text-white/95 truncate font-medium mt-0.5">
