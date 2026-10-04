@@ -279,7 +279,7 @@ export default function PersonaPage() {
   ];
 
   return (
-    <div className="h-[calc(100vh-68px)] max-h-[calc(100vh-68px)] flex flex-col overflow-hidden pb-1">
+    <div className="min-h-[calc(100vh-68px)] lg:h-[calc(100vh-68px)] lg:max-h-[calc(100vh-68px)] flex flex-col overflow-y-auto lg:overflow-hidden pb-1">
       {/* ─────────────────────────────────────────────────────────────
           1. 纤薄顶栏 (Ultra-Slim Unified TopBar)
           ───────────────────────────────────────────────────────────── */}
@@ -341,9 +341,9 @@ export default function PersonaPage() {
       {/* ─────────────────────────────────────────────────────────────
           2. 一屏主工作台 (One-Screen Split Viewport: 3D Twin & Content)
           ───────────────────────────────────────────────────────────── */}
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-3 min-h-0 pt-2 overflow-hidden">
+      <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-3 min-h-0 pt-2 lg:overflow-hidden">
         {/* ── Left Wing: 3D Real-Human Avatar Stage (占满左侧半屏) ── */}
-        <div className="lg:col-span-5 xl:col-span-5 h-full min-h-[380px] flex flex-col relative overflow-hidden rounded-3xl border border-[var(--aurora-border)] bg-[#07080f] shadow-sm">
+        <div className="lg:col-span-5 xl:col-span-5 h-[480px] lg:h-full flex flex-col relative overflow-hidden rounded-3xl border border-[var(--aurora-border)] bg-[#07080f] shadow-sm shrink-0">
           <DigitalTwinAvatar3D
             activeDimension={activeDimension}
             onSelectDimension={handleSelectDimension}
@@ -353,7 +353,7 @@ export default function PersonaPage() {
         </div>
 
         {/* ── Right Wing: Interactive Rules & Ops Cockpit (右侧多功能工作台) ── */}
-        <div className="lg:col-span-7 xl:col-span-7 h-full flex flex-col rounded-3xl border border-[var(--aurora-border)] bg-[var(--aurora-surface)] overflow-hidden shadow-xs">
+        <div className="lg:col-span-7 xl:col-span-7 min-h-[460px] lg:h-full flex flex-col rounded-3xl border border-[var(--aurora-border)] bg-[var(--aurora-surface)] overflow-hidden shadow-xs">
           {/* Top Tabs & Filters Bar */}
           <div className="p-3 border-b border-[var(--aurora-border)] bg-[var(--aurora-surface-solid)] flex flex-wrap items-center justify-between gap-2 shrink-0">
             {/* 4 Feature Tabs */}
