@@ -21,7 +21,9 @@ ENV HOSTNAME="0.0.0.0"
 ENV PORT=3000
 
 COPY --from=builder /repo/web/.next/standalone ./
+COPY --from=builder /repo/web/.next/static ./.next/static
 COPY --from=builder /repo/web/.next/static ./web/.next/static
+COPY --from=builder /repo/web/public ./public
 COPY --from=builder /repo/web/public ./web/public
 
 EXPOSE 3000

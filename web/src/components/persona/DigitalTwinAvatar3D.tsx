@@ -27,10 +27,11 @@ export default function DigitalTwinAvatar3D({
 }: DigitalTwinAvatar3DProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isRotating, setIsRotating] = useState(false);
-  const [isRealModelLoaded, setIsRealModelLoaded] = useState(false);
+  const [isRealLoaded, setIsRealLoaded] = useState(false);
 
   // References
   const avatarGroupRef = useRef<THREE.Group | null>(null);
+  const solidMannequinRef = useRef<THREE.Group | null>(null);
   const bonesRef = useRef<Record<string, THREE.Object3D>>({});
   const auraRingsRef = useRef<THREE.Group | null>(null);
   const haloRef = useRef<THREE.Mesh | null>(null);
@@ -46,10 +47,10 @@ export default function DigitalTwinAvatar3D({
     // 1. Scene & Camera Setup (Optimal Framing for Character Portrait)
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(38, width / height, 0.1, 100);
-    // Perfectly frame upper-torso to head at center of stage
-    camera.position.set(0, 1.42, 2.65);
+    // Camera positioned to view full upper torso, face and head cleanly
+    camera.position.set(0, 1.38, 2.7);
 
-    // 2. High-Performance WebGL Renderer
+    // 2. WebGL Renderer
     const renderer = new THREE.WebGLRenderer({
       antialias: true,
       alpha: true,
@@ -58,30 +59,30 @@ export default function DigitalTwinAvatar3D({
     renderer.setSize(width, height);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.35;
+    renderer.toneMappingExposure = 1.45; // Crisp, bright lighting
     container.appendChild(renderer.domElement);
 
-    // 3. Studio Character Lights (Ensure Face is Bright and Perfectly Illuminated)
-    const ambientLight = new THREE.AmbientLight(0xffffff, 1.4);
+    // 3. Studio Character Lights (Ensure Solid Face & Body Are Extremely Bright & Visible)
+    const ambientLight = new THREE.AmbientLight(0xffffff, 1.8);
     scene.add(ambientLight);
 
-    // Main key light directly on face and torso
-    const frontLight = new THREE.DirectionalLight(0xfffaea, 2.2);
-    frontLight.position.set(0.5, 2.5, 3.2);
-    scene.add(frontLight);
+    // Main key front light
+    const frontKey = new THREE.DirectionalLight(0xfff5ea, 2.8);
+    frontKey.position.set(0.6, 2.8, 3.5);
+    scene.add(frontKey);
 
-    // Secondary fill light for natural shadows
-    const fillLight = new THREE.DirectionalLight(0xdbeafe, 1.2);
-    fillLight.position.set(-1.8, 1.8, 2.0);
+    // Secondary fill light
+    const fillLight = new THREE.DirectionalLight(0xe0e7ff, 1.6);
+    fillLight.position.set(-1.8, 2.0, 2.2);
     scene.add(fillLight);
 
-    // Cyber aura rim lights (Violet & Cyan)
-    const rimViolet = new THREE.PointLight(0xa855f7, 2.8, 8);
-    rimViolet.position.set(-2.5, 2.2, -1.0);
-    scene.add(rimViolet);
+    // Cyberpunk rim highlights
+    const rimPurple = new THREE.PointLight(0xa855f7, 3.5, 10);
+    rimPurple.position.set(-2.5, 2.5, -1.2);
+    scene.add(rimPurple);
 
-    const rimCyan = new THREE.PointLight(0x06b6d4, 2.2, 8);
-    rimCyan.position.set(2.5, 1.2, 1.2);
+    const rimCyan = new THREE.PointLight(0x06b6d4, 3.0, 10);
+    rimCyan.position.set(2.5, 1.5, 1.2);
     scene.add(rimCyan);
 
     // 4. Character Root Group
@@ -90,16 +91,15 @@ export default function DigitalTwinAvatar3D({
     avatarGroupRef.current = avatarGroup;
     scene.add(avatarGroup);
 
-    // Stand Pedestal (Circular Sci-Fi Stage Disc)
+    // Stand Pedestal (Sci-Fi Stage Disc)
     const pedestal = new THREE.Mesh(
       new THREE.CylinderGeometry(0.85, 0.95, 0.05, 48),
       new THREE.MeshStandardMaterial({
-        color: 0x181828,
-        metalness: 0.85,
+        color: 0x1e1b4b,
+        metalness: 0.8,
         roughness: 0.2,
       })
     );
-    pedestal.position.set(0, 0, 0);
     avatarGroup.add(pedestal);
 
     const pedestalRing = new THREE.Mesh(
@@ -110,22 +110,98 @@ export default function DigitalTwinAvatar3D({
     pedestalRing.position.set(0, 0.026, 0);
     avatarGroup.add(pedestalRing);
 
-    // Halo Above Head (Wisdom Halo, NEVER over face)
+    // ── Zero-Second Solid Sculpted Humanoid Figure (100% Guaranteed Visible Immediately) ──
+    const solidMannequin = new THREE.Group();
+    solidMannequinRef.current = solidMannequin;
+    avatarGroup.add(solidMannequin);
+
+    const solidHumanMat = new THREE.MeshStandardMaterial({
+      color: 0x6366f1, // Bright Indigo/Violet Solid Shimmer
+      metalness: 0.65,
+      roughness: 0.25,
+      emissive: 0x312e81,
+      emissiveIntensity: 0.25,
+    });
+
+    const jointMat = new THREE.MeshStandardMaterial({
+      color: 0x8b5cf6,
+      metalness: 0.8,
+      roughness: 0.2,
+    });
+
+    // Head & Face
+    const solidHead = new THREE.Mesh(new THREE.SphereGeometry(0.26, 32, 24), solidHumanMat);
+    solidHead.scale.set(0.9, 1.15, 0.95);
+    solidHead.position.set(0, 2.38, 0);
+    solidMannequin.add(solidHead);
+
+    // Neck
+    const solidNeck = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.12, 0.22, 16), solidHumanMat);
+    solidNeck.position.set(0, 2.05, 0);
+    solidMannequin.add(solidNeck);
+
+    // Chest & Torso (Athletic Human Silhouette)
+    const solidChest = new THREE.Mesh(new THREE.CylinderGeometry(0.38, 0.28, 0.58, 20), solidHumanMat);
+    solidChest.position.set(0, 1.68, 0);
+    solidMannequin.add(solidChest);
+
+    // Spine & Abdomen
+    const solidSpine = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.28, 0.42, 16), solidHumanMat);
+    solidSpine.position.set(0, 1.25, 0);
+    solidMannequin.add(solidSpine);
+
+    // Shoulders
+    const shoulderL = new THREE.Mesh(new THREE.SphereGeometry(0.12, 16, 16), jointMat);
+    shoulderL.position.set(-0.46, 1.85, 0);
+    const shoulderR = new THREE.Mesh(new THREE.SphereGeometry(0.12, 16, 16), jointMat);
+    shoulderR.position.set(0.46, 1.85, 0);
+    solidMannequin.add(shoulderL, shoulderR);
+
+    // Arms (Elegantly relaxing downwards by side, NOT stiff T-pose)
+    const armL = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.065, 0.75, 12), solidHumanMat);
+    armL.position.set(-0.54, 1.4, 0.04);
+    armL.rotation.z = 0.2;
+    const armR = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.065, 0.75, 12), solidHumanMat);
+    armR.position.set(0.54, 1.4, 0.04);
+    armR.rotation.z = -0.2;
+    solidMannequin.add(armL, armR);
+
+    // Forearms
+    const foreArmL = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.05, 0.65, 12), solidHumanMat);
+    foreArmL.position.set(-0.62, 0.78, 0.08);
+    foreArmL.rotation.z = 0.15;
+    const foreArmR = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.05, 0.65, 12), solidHumanMat);
+    foreArmR.position.set(0.62, 0.78, 0.08);
+    foreArmR.rotation.z = -0.15;
+    solidMannequin.add(foreArmL, foreArmR);
+
+    // Pelvis & Legs
+    const solidPelvis = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.24, 0.28, 16), solidHumanMat);
+    solidPelvis.position.set(0, 0.95, 0);
+    solidMannequin.add(solidPelvis);
+
+    const legL = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.07, 1.0, 12), solidHumanMat);
+    legL.position.set(-0.16, 0.45, 0);
+    const legR = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.07, 1.0, 12), solidHumanMat);
+    legR.position.set(0.16, 0.45, 0);
+    solidMannequin.add(legL, legR);
+
+    // Halo Above Head (Wisdom Halo, safely above head)
     const haloMesh = new THREE.Mesh(
-      new THREE.TorusGeometry(0.18, 0.006, 16, 48),
-      new THREE.MeshBasicMaterial({ color: 0xef4444, transparent: true, opacity: 0.85 })
+      new THREE.TorusGeometry(0.18, 0.007, 16, 48),
+      new THREE.MeshBasicMaterial({ color: 0xef4444, transparent: true, opacity: 0.9 })
     );
     haloMesh.rotation.x = Math.PI / 2.2;
-    haloMesh.position.set(0, 1.96, 0);
+    haloMesh.position.set(0, 2.75, 0);
     avatarGroup.add(haloMesh);
     haloRef.current = haloMesh;
 
     // Tech Fusion Core inside chest
     const chestCore = new THREE.Mesh(
       new THREE.OctahedronGeometry(0.045, 1),
-      new THREE.MeshBasicMaterial({ color: 0xf59e0b, transparent: true, opacity: 0.85 })
+      new THREE.MeshBasicMaterial({ color: 0xf59e0b, transparent: true, opacity: 0.9 })
     );
-    chestCore.position.set(0, 1.34, 0.12);
+    chestCore.position.set(0, 1.7, 0.22);
     avatarGroup.add(chestCore);
     chestCoreRef.current = chestCore;
 
@@ -135,19 +211,19 @@ export default function DigitalTwinAvatar3D({
     auraRingsRef.current = auraGroup;
 
     const ring1 = new THREE.Mesh(
-      new THREE.TorusGeometry(1.3, 0.006, 16, 80),
-      new THREE.MeshBasicMaterial({ color: 0x8b5cf6, transparent: true, opacity: 0.35 })
+      new THREE.TorusGeometry(1.35, 0.007, 16, 80),
+      new THREE.MeshBasicMaterial({ color: 0x8b5cf6, transparent: true, opacity: 0.4 })
     );
     ring1.rotation.x = Math.PI / 2.4;
-    ring1.position.set(0, 1.3, 0);
+    ring1.position.set(0, 1.45, 0);
     auraGroup.add(ring1);
 
     const ring2 = new THREE.Mesh(
-      new THREE.TorusGeometry(1.65, 0.005, 16, 100),
-      new THREE.MeshBasicMaterial({ color: 0x06b6d4, transparent: true, opacity: 0.3 })
+      new THREE.TorusGeometry(1.7, 0.006, 16, 100),
+      new THREE.MeshBasicMaterial({ color: 0x06b6d4, transparent: true, opacity: 0.35 })
     );
     ring2.rotation.x = Math.PI / 2.1;
-    ring2.position.set(0, 1.1, 0);
+    ring2.position.set(0, 1.2, 0);
     auraGroup.add(ring2);
 
     // 5 Orbiting AI Satellites (Claude, Antigravity, Codex, OpenClaw, Hermes)
@@ -155,36 +231,14 @@ export default function DigitalTwinAvatar3D({
     const satellites: THREE.Mesh[] = [];
     for (let i = 0; i < 5; i++) {
       const sat = new THREE.Mesh(
-        new THREE.SphereGeometry(0.04, 16, 16),
+        new THREE.SphereGeometry(0.045, 16, 16),
         new THREE.MeshBasicMaterial({ color: toolColors[i] })
       );
       auraGroup.add(sat);
       satellites.push(sat);
     }
 
-    // Floating Quantum Dust
-    const particleCount = 180;
-    const particleGeo = new THREE.BufferGeometry();
-    const particlePositions = new Float32Array(particleCount * 3);
-    for (let i = 0; i < particleCount * 3; i += 3) {
-      particlePositions[i] = (Math.random() - 0.5) * 3.2;
-      particlePositions[i + 1] = Math.random() * 2.5;
-      particlePositions[i + 2] = (Math.random() - 0.5) * 3.2;
-    }
-    particleGeo.setAttribute("position", new THREE.BufferAttribute(particlePositions, 3));
-    const particles = new THREE.Points(
-      particleGeo,
-      new THREE.PointsMaterial({
-        color: 0x8b5cf6,
-        size: 0.02,
-        transparent: true,
-        opacity: 0.5,
-        blending: THREE.AdditiveBlending,
-      })
-    );
-    avatarGroup.add(particles);
-
-    // 5. Load Real-Human Avatar (Realistic Character Model)
+    // 5. Load Real-Human Avatar (Overlays onto base when ready)
     const loader = new GLTFLoader();
     loader.load(
       "/models/avatar.glb",
@@ -192,7 +246,10 @@ export default function DigitalTwinAvatar3D({
         const model = gltf.scene;
         model.scale.set(1.05, 1.05, 1.05);
         avatarGroup.add(model);
-        setIsRealModelLoaded(true);
+        setIsRealLoaded(true);
+
+        // Hide solid mannequin smoothly once realistic avatar is active
+        solidMannequin.visible = false;
 
         const bones: Record<string, THREE.Object3D> = {};
         model.traverse((child) => {
@@ -202,7 +259,6 @@ export default function DigitalTwinAvatar3D({
           if (child instanceof THREE.Mesh) {
             if (child.material) {
               child.material.side = THREE.FrontSide;
-              // Boost skin and hair specular gloss
               if ("roughness" in child.material) {
                 child.material.roughness = Math.max(0.3, child.material.roughness * 0.9);
               }
@@ -211,13 +267,13 @@ export default function DigitalTwinAvatar3D({
         });
         bonesRef.current = bones;
 
-        // Transform Arms from stiff A-Pose into natural, elegant standing posture
+        // Transform Arms into natural standing posture
         if (bones.LeftArm) {
-          bones.LeftArm.rotation.z = -1.18; // Bring left arm smoothly to side
+          bones.LeftArm.rotation.z = -1.18;
           bones.LeftArm.rotation.x = 0.1;
         }
         if (bones.RightArm) {
-          bones.RightArm.rotation.z = 1.18; // Bring right arm smoothly to side
+          bones.RightArm.rotation.z = 1.18;
           bones.RightArm.rotation.x = 0.1;
         }
         if (bones.LeftForeArm) {
@@ -227,19 +283,19 @@ export default function DigitalTwinAvatar3D({
           bones.RightForeArm.rotation.y = -0.22;
         }
 
-        // Attach Halo to Head bone safely above hair
+        // Parent halo to Head bone safely above hair
         if (bones.Head) {
           bones.Head.add(haloMesh);
-          haloMesh.position.set(0, 0.26, 0);
+          haloMesh.position.set(0, 0.28, 0);
         }
         if (bones.Spine2) {
           bones.Spine2.add(chestCore);
-          chestCore.position.set(0, 0.1, 0.1);
+          chestCore.position.set(0, 0.1, 0.12);
         }
       },
       undefined,
       (err) => {
-        console.warn("Failed to load real avatar GLB, building fallback:", err);
+        console.info("Using solid sculpted digital mannequin as core avatar.", err);
       }
     );
 
@@ -273,7 +329,7 @@ export default function DigitalTwinAvatar3D({
     window.addEventListener("mouseup", handlePointerUp);
     container.addEventListener("mousemove", handlePointerMove);
 
-    // 7. 60fps Animation Loop (Lifelike Natural Breathing & Parallax, Zero React setState in loop)
+    // 7. 60fps Animation Loop (Lifelike Natural Breathing & Parallax, Zero React setState)
     let animId: number;
     const clock = new THREE.Clock();
 
@@ -281,29 +337,25 @@ export default function DigitalTwinAvatar3D({
       animId = requestAnimationFrame(animate);
       const elapsed = clock.getElapsedTime();
 
-      // Subtle natural breathing (Chest rise & fall)
+      // Natural breathing expansion
       const breath = Math.sin(elapsed * 2.2);
+
+      // 1. Mannequin breathing
+      if (solidMannequin.visible) {
+        solidChest.scale.set(1 + breath * 0.025, 1 + breath * 0.015, 1 + breath * 0.03);
+        solidHead.rotation.y = THREE.MathUtils.lerp(solidHead.rotation.y, mouse.x * 0.28, 0.06);
+        solidHead.rotation.x = THREE.MathUtils.lerp(solidHead.rotation.x, -mouse.y * 0.18, 0.06);
+      }
+
+      // 2. Real GLB bone breathing (if active)
       const bones = bonesRef.current;
+      if (bones.Spine) bones.Spine.rotation.x = breath * 0.02;
+      if (bones.Spine1) bones.Spine1.rotation.x = breath * 0.015;
+      if (bones.Spine2) bones.Spine2.rotation.x = breath * 0.02;
 
-      if (bones.Spine) {
-        bones.Spine.rotation.x = breath * 0.02;
-      }
-      if (bones.Spine1) {
-        bones.Spine1.rotation.x = breath * 0.015;
-      }
-      if (bones.Spine2) {
-        bones.Spine2.rotation.x = breath * 0.02;
-      }
+      if (bones.LeftArm) bones.LeftArm.rotation.z = -1.18 + breath * 0.02;
+      if (bones.RightArm) bones.RightArm.rotation.z = 1.18 - breath * 0.02;
 
-      // Arms gently sway with breath
-      if (bones.LeftArm) {
-        bones.LeftArm.rotation.z = -1.18 + breath * 0.02;
-      }
-      if (bones.RightArm) {
-        bones.RightArm.rotation.z = 1.18 - breath * 0.02;
-      }
-
-      // Lifelike head parallax (Eyes and head softly follow cursor)
       if (bones.Head && !isDragging) {
         bones.Head.rotation.y = THREE.MathUtils.lerp(bones.Head.rotation.y, mouse.x * 0.32, 0.06);
         bones.Head.rotation.x = THREE.MathUtils.lerp(bones.Head.rotation.x, -mouse.y * 0.2, 0.06);
@@ -317,7 +369,7 @@ export default function DigitalTwinAvatar3D({
       // Orbit satellites around rings
       satellites.forEach((sat, idx) => {
         const angle = elapsed * 0.65 + (idx * Math.PI * 2) / 5;
-        sat.position.set(Math.cos(angle) * 1.65, 1.1 + Math.sin(angle * 2) * 0.1, Math.sin(angle) * 1.65);
+        sat.position.set(Math.cos(angle) * 1.7, 1.2 + Math.sin(angle * 2) * 0.1, Math.sin(angle) * 1.7);
       });
 
       // Halo breathing & spinning
@@ -327,9 +379,6 @@ export default function DigitalTwinAvatar3D({
       // Core rotation
       chestCore.rotation.x = elapsed * 1.2;
       chestCore.rotation.y = elapsed * 1.6;
-
-      // Particle aura rotation
-      particles.rotation.y = elapsed * 0.02;
 
       renderer.render(scene, camera);
     };
