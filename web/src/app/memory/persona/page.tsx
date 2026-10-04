@@ -365,8 +365,8 @@ export default function PersonaPage() {
   const [editing, setEditing] = useState<"draft" | "published" | null>(null);
 
   // Tab & Interactive Resonance state
-  const [activeTab, setActiveTab] = useState<ChapterTab>("brain");
-  const [activeDimension, setActiveDimension] = useState<PersonaDimension>("brain");
+  const [activeTab, setActiveTab] = useState<ChapterTab>("all");
+  const [activeDimension, setActiveDimension] = useState<PersonaDimension>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [newItemText, setNewItemText] = useState("");
   const [isAddingItem, setIsAddingItem] = useState(false);

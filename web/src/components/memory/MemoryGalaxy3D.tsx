@@ -106,6 +106,7 @@ export default function MemoryGalaxy3D({
   const containerRef = useRef<HTMLDivElement>(null);
   const [hoveredNode, setHoveredNode] = useState<GalaxyNode | null>(null);
   const [isRotating, setIsRotating] = useState(true);
+  const resetCameraRef = useRef<() => void>(() => {});
 
   const isPausedRef = useRef(isPaused);
   isPausedRef.current = isPaused;
@@ -338,13 +339,27 @@ export default function MemoryGalaxy3D({
     const linesMesh = new THREE.LineSegments(linesGeo, linesMat);
     galaxyRoot.add(linesMesh);
 
-    // 7. Interactive Controls & Raycasting
+    // 7. Interactive Controls & Responsive Spherical Camera
+    const getOptimalRadius = (w: number, h: number) => {
+      const aspect = w / h;
+      const baseRadius = 11;
+      if (aspect >= 1.25) {
+        return baseRadius;
+      }
+      // 竖屏与窄屏自适应：确保星云外围节点与文字标签 100% 完整容纳在视口内
+      // 最外层节点半径 4.2 + 标签与光晕缓冲，半视野取 5.2
+      const fovRad = (50 * Math.PI) / 360;
+      const requiredRadius = (5.2 * 1.15) / (Math.tan(fovRad) * Math.max(aspect, 0.32));
+      return Math.max(baseRadius, Math.min(28, requiredRadius));
+    };
+
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
     let isDragging = false;
     let isMouseActive = false;
     let prevMousePos = { x: 0, y: 0 };
-    let spherical = { radius: 11, theta: 0, phi: Math.PI / 2.8 };
+    let userHasManuallyZoomed = false;
+    let spherical = { radius: getOptimalRadius(width, height), theta: 0, phi: Math.PI / 2.8 };
     let targetCameraTarget = new THREE.Vector3(0, 0, 0);
     const currentCameraTarget = new THREE.Vector3(0, 0, 0);
 
@@ -361,6 +376,14 @@ export default function MemoryGalaxy3D({
     };
 
     updateCameraFromSpherical();
+
+    // 绑定重置视角回调，供顶部按钮触发
+    resetCameraRef.current = () => {
+      userHasManuallyZoomed = false;
+      targetCameraTarget.set(0, 0, 0);
+      spherical.radius = getOptimalRadius(container.clientWidth || width, container.clientHeight || height);
+      updateCameraFromSpherical();
+    };
 
     container.style.touchAction = "none";
 
@@ -397,7 +420,8 @@ export default function MemoryGalaxy3D({
 
     const handleWheel = (e: WheelEvent) => {
       e.preventDefault();
-      spherical.radius = Math.max(4.5, Math.min(22, spherical.radius + e.deltaY * 0.015));
+      userHasManuallyZoomed = true;
+      spherical.radius = Math.max(4.5, Math.min(32, spherical.radius + e.deltaY * 0.015));
       updateCameraFromSpherical();
     };
 
@@ -460,7 +484,8 @@ export default function MemoryGalaxy3D({
           e.touches[0].clientY - e.touches[1].clientY
         );
         const factor = initialPinchDist / (currentDist || 1);
-        spherical.radius = Math.max(4.5, Math.min(22, initialPinchRadius * factor));
+        userHasManuallyZoomed = true;
+        spherical.radius = Math.max(4.5, Math.min(32, initialPinchRadius * factor));
         updateCameraFromSpherical();
       }
     };
@@ -587,6 +612,10 @@ export default function MemoryGalaxy3D({
       const newH = container.clientHeight;
       camera.aspect = newW / newH;
       camera.updateProjectionMatrix();
+      if (!userHasManuallyZoomed && !selectedNodeIdRef.current) {
+        spherical.radius = getOptimalRadius(newW, newH);
+        updateCameraFromSpherical();
+      }
       renderer.setSize(newW, newH);
     };
 
@@ -693,6 +722,7 @@ export default function MemoryGalaxy3D({
               if (onSelectNodeRef.current) {
                 onSelectNodeRef.current(null);
               }
+              resetCameraRef.current?.();
             }}
             className="px-2 sm:px-2.5 py-1 rounded-xl text-[11px] font-mono font-medium backdrop-blur-md border bg-black/50 text-white/70 border-white/10 hover:text-white flex items-center gap-1"
             title="重置视角对焦"

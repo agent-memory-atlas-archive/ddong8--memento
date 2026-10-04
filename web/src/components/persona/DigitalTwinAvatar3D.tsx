@@ -254,11 +254,34 @@ export default function DigitalTwinAvatar3D({
       typeof window !== "undefined" &&
       (window.innerWidth < 768 || /Mobi|Android|iPhone/i.test(navigator.userAgent));
 
-    // 1. Scene & Precision Camera Setup
+    // 1. Responsive Camera Setup (竖屏自适应全身缩放)
+    const getCameraConfig = (w: number, h: number) => {
+      const aspect = w / h;
+      if (aspect < 1.0) {
+        // 手机竖屏自适应：将相机适度拉远并向下微移目标点，保证角色全身、双手姿态、底盘与光环 100% 完整容纳
+        const zoomFactor = Math.max(1.0, 0.72 / Math.max(aspect, 0.35));
+        const dist = Math.min(4.3, 3.4 * zoomFactor);
+        return {
+          fov: 38,
+          pos: [0, 1.15, dist] as [number, number, number],
+          targetY: 1.02,
+        };
+      } else {
+        // PC 桌面端宽屏：优雅半身特写
+        return {
+          fov: 36,
+          pos: [0, 1.32, 2.15] as [number, number, number],
+          targetY: 1.22,
+        };
+      }
+    };
+
+    const initialConfig = getCameraConfig(width, height);
     const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(36, width / height, 0.1, 100);
-    camera.position.set(0, 1.32, 2.15);
-    camera.lookAt(0, 1.22, 0);
+    const camera = new THREE.PerspectiveCamera(initialConfig.fov, width / height, 0.1, 100);
+    camera.position.set(...initialConfig.pos);
+    const cameraTarget = new THREE.Vector3(0, initialConfig.targetY, 0);
+    camera.lookAt(cameraTarget);
 
     // 2. High-Performance WebGL Renderer
     const renderer = new THREE.WebGLRenderer({
@@ -482,10 +505,12 @@ export default function DigitalTwinAvatar3D({
       }
     );
 
-    // 6. Interactive Drag & Parallax Look-At
+    // 6. Interactive Drag, Parallax Look-At & Zoom Controls
     const mouse = new THREE.Vector2();
     let isDragging = false;
     let prevMouseX = 0;
+    let initialPinchDist = 0;
+    let initialCamZ = camera.position.z;
 
     const handlePointerDown = (e: MouseEvent) => {
       isDragging = true;
@@ -508,6 +533,11 @@ export default function DigitalTwinAvatar3D({
       }
     };
 
+    const handleWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      camera.position.z = Math.max(1.3, Math.min(5.5, camera.position.z + e.deltaY * 0.005));
+    };
+
     container.style.touchAction = "none";
 
     const handleTouchStart = (e: TouchEvent) => {
@@ -517,6 +547,13 @@ export default function DigitalTwinAvatar3D({
         const rect = container.getBoundingClientRect();
         mouse.x = ((e.touches[0].clientX - rect.left) / rect.width) * 2 - 1;
         mouse.y = -((e.touches[0].clientY - rect.top) / rect.height) * 2 + 1;
+      } else if (e.touches.length === 2) {
+        isDragging = false;
+        initialPinchDist = Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY
+        );
+        initialCamZ = camera.position.z;
       }
     };
 
@@ -528,16 +565,27 @@ export default function DigitalTwinAvatar3D({
         const rect = container.getBoundingClientRect();
         mouse.x = ((e.touches[0].clientX - rect.left) / rect.width) * 2 - 1;
         mouse.y = -((e.touches[0].clientY - rect.top) / rect.height) * 2 + 1;
+      } else if (e.touches.length === 2 && initialPinchDist > 0) {
+        const currentDist = Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY
+        );
+        const factor = initialPinchDist / (currentDist || 1);
+        camera.position.z = Math.max(1.3, Math.min(5.5, initialCamZ * factor));
       }
     };
 
-    const handleTouchEnd = () => {
-      isDragging = false;
+    const handleTouchEnd = (e: TouchEvent) => {
+      if (e.touches.length === 0) {
+        isDragging = false;
+        initialPinchDist = 0;
+      }
     };
 
     container.addEventListener("mousedown", handlePointerDown);
     window.addEventListener("mouseup", handlePointerUp);
     container.addEventListener("mousemove", handlePointerMove);
+    container.addEventListener("wheel", handleWheel, { passive: false });
     container.addEventListener("touchstart", handleTouchStart, { passive: false });
     container.addEventListener("touchmove", handleTouchMove, { passive: false });
     container.addEventListener("touchend", handleTouchEnd, { passive: false });
@@ -716,7 +764,7 @@ export default function DigitalTwinAvatar3D({
         avatarGroup.rotation.y += 0.005;
       }
 
-      camera.lookAt(0, 1.22, 0);
+      camera.lookAt(cameraTarget);
       renderer.render(scene, camera);
     };
 
@@ -726,9 +774,13 @@ export default function DigitalTwinAvatar3D({
       if (!container || !renderer || !camera) return;
       const newW = container.clientWidth;
       const newH = container.clientHeight;
+      const cfg = getCameraConfig(newW, newH);
       camera.aspect = newW / newH;
+      camera.fov = cfg.fov;
+      camera.position.set(camera.position.x, cfg.pos[1], cfg.pos[2]);
+      cameraTarget.set(0, cfg.targetY, 0);
       camera.updateProjectionMatrix();
-      camera.lookAt(0, 1.22, 0);
+      camera.lookAt(cameraTarget);
       renderer.setSize(newW, newH);
     };
 
@@ -742,6 +794,7 @@ export default function DigitalTwinAvatar3D({
       container.removeEventListener("mousedown", handlePointerDown);
       window.removeEventListener("mouseup", handlePointerUp);
       container.removeEventListener("mousemove", handlePointerMove);
+      container.removeEventListener("wheel", handleWheel);
       container.removeEventListener("touchstart", handleTouchStart);
       container.removeEventListener("touchmove", handleTouchMove);
       container.removeEventListener("touchend", handleTouchEnd);
