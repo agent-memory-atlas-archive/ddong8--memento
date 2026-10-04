@@ -126,6 +126,18 @@ export default function MemoryPage() {
   const [shareOpen, setShareOpen] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
 
+  // Fullscreen Theater & Panel Collapse State
+  const [isPanelCollapsed, setIsPanelCollapsed] = useState(false);
+  const cockpitRef = useRef<HTMLDivElement>(null);
+
+  const togglePhysicalFullscreen = () => {
+    if (!document.fullscreenElement) {
+      cockpitRef.current?.requestFullscreen?.();
+    } else {
+      document.exitFullscreen?.();
+    }
+  };
+
   // 1. Load Tree Data
   const loadMemoryTree = useCallback(async () => {
     setIsTreeLoading(true);
@@ -206,6 +218,7 @@ export default function MemoryPage() {
       return;
     }
     setSelectedNodeId(node.id);
+    setIsPanelCollapsed(false); // 选中节点自动展开右侧中枢查看详情
     try {
       const resp = await authFetch(`${getApiBase()}/api/memory/entities/${node.id}`);
       const detail: EntityDetail = await resp.json();
@@ -398,9 +411,11 @@ export default function MemoryPage() {
       {/* ─────────────────────────────────────────────────────────────
           2. 一屏全景双翼驾驶舱 (Unified Single-Screen Twin Cockpit)
           ───────────────────────────────────────────────────────────── */}
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-3 min-h-0 overflow-hidden">
-        {/* ── 左翼 (5 列 / 42%): 3D 认知星云主舞台 (顶天立地，免滚联动) ── */}
-        <div className="lg:col-span-5 h-full flex flex-col min-h-0 relative rounded-3xl overflow-hidden border border-[var(--aurora-border)] bg-[var(--aurora-surface)] shadow-xl">
+      <div ref={cockpitRef} className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-3 min-h-0 overflow-hidden relative">
+        {/* ── 左翼: 3D 认知星云主舞台 (支持 100% 满屏沉浸与分屏联动) ── */}
+        <div className={`h-full flex flex-col min-h-0 relative rounded-3xl overflow-hidden border border-[var(--aurora-border)] bg-[var(--aurora-surface)] shadow-xl transition-all duration-300 ${
+          isPanelCollapsed ? "lg:col-span-12 w-full" : "lg:col-span-5"
+        }`}>
           <MemoryGalaxy3D
             nodes={nodes}
             edges={edges}
@@ -420,28 +435,46 @@ export default function MemoryPage() {
               </span>
             </div>
 
-            {/* Quick Entity Type Pills */}
-            <div className="flex items-center gap-1 bg-black/60 backdrop-blur-md p-1 rounded-full border border-white/10 pointer-events-auto overflow-x-auto max-w-[280px]">
-              {[
-                { id: "", label: "全部", color: "#38BDF8" },
-                { id: "project", label: "核心工程", color: "#10B981" },
-                { id: "technology", label: "技术栈", color: "#38BDF8" },
-                { id: "concept", label: "概念", color: "#A855F7" },
-                { id: "rule", label: "铁律", color: "#EF4444" },
-              ].map((f) => (
-                <button
-                  key={f.id}
-                  onClick={() => setFilterType(f.id)}
-                  style={{
-                    backgroundColor: filterType === f.id ? `${f.color}40` : "transparent",
-                    borderColor: filterType === f.id ? f.color : "transparent",
-                    color: filterType === f.id ? "#FFFFFF" : "rgba(255,255,255,0.7)",
-                  }}
-                  className="px-2 py-0.5 rounded-full text-[10px] font-mono border transition-all hover:text-white"
-                >
-                  {f.label}
-                </button>
-              ))}
+            {/* Quick Entity Type Pills & Fullscreen Controls */}
+            <div className="flex items-center gap-1.5 pointer-events-auto">
+              <div className="flex items-center gap-1 bg-black/60 backdrop-blur-md p-1 rounded-full border border-white/10 overflow-x-auto max-w-[280px]">
+                {[
+                  { id: "", label: "全部", color: "#38BDF8" },
+                  { id: "project", label: "核心工程", color: "#10B981" },
+                  { id: "technology", label: "技术栈", color: "#38BDF8" },
+                  { id: "concept", label: "概念", color: "#A855F7" },
+                  { id: "rule", label: "铁律", color: "#EF4444" },
+                ].map((f) => (
+                  <button
+                    key={f.id}
+                    onClick={() => setFilterType(f.id)}
+                    style={{
+                      backgroundColor: filterType === f.id ? `${f.color}40` : "transparent",
+                      borderColor: filterType === f.id ? f.color : "transparent",
+                      color: filterType === f.id ? "#FFFFFF" : "rgba(255,255,255,0.7)",
+                    }}
+                    className="px-2 py-0.5 rounded-full text-[10px] font-mono border transition-all hover:text-white"
+                  >
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Viewport Fullscreen Theater Toggles */}
+              <button
+                onClick={() => setIsPanelCollapsed(!isPanelCollapsed)}
+                className="px-2.5 py-1 rounded-full text-[11px] font-mono font-semibold bg-black/65 hover:bg-black/90 backdrop-blur-md border border-white/20 text-white flex items-center gap-1 shadow-md transition-all active:scale-95"
+                title={isPanelCollapsed ? "还原双翼分屏" : "让 3D 认知星云铺满全屏"}
+              >
+                <span>{isPanelCollapsed ? "⧉ 还原分屏" : "⛶ 铺满全屏"}</span>
+              </button>
+              <button
+                onClick={togglePhysicalFullscreen}
+                className="p-1 rounded-full text-white/80 bg-black/65 hover:bg-black/90 backdrop-blur-md border border-white/20 hover:text-white shadow-md transition-all"
+                title="显示器物理全屏"
+              >
+                <Icon name="command" size={12} />
+              </button>
             </div>
           </div>
 
@@ -492,106 +525,118 @@ export default function MemoryPage() {
           </div>
         </div>
 
-        {/* ── 右翼 (7 列 / 58%): 知识准则树、拓扑与梦境提炼中枢 (独立平滑内滚) ── */}
-        <div className="lg:col-span-7 h-full flex flex-col min-h-0 bg-[var(--aurora-surface)] rounded-3xl border border-[var(--aurora-border)] shadow-xl overflow-hidden">
-          {/* A. 顶部仪表盘概览与 Tab 导航区 (Sticky Header) */}
-          <div className="p-3 bg-gradient-to-r from-[var(--aurora-surface-solid)] via-[var(--aurora-surface)] to-[var(--aurora-chip)] border-b border-[var(--aurora-border)] shrink-0 space-y-2.5">
-            {/* 三列高级 KPI 态势磁贴 */}
-            <div className="grid grid-cols-3 gap-2">
-              {/* Tile 1: 知识准则条数 */}
-              <div className="p-2 rounded-xl bg-[var(--aurora-surface)]/80 border border-[var(--aurora-border)] flex items-center justify-between">
-                <div>
-                  <div className="text-[10px] text-[var(--aurora-fg4)]">长效准则库</div>
-                  <div className="text-xs font-bold text-[#10B981] font-mono mt-0.5">
-                    {totalLeaves || 39} <span className="text-[10px] font-normal text-[var(--aurora-fg3)]">条</span>
+        {/* ── 右翼 (7 列 / 58%): 知识准则树、拓扑与梦境提炼中枢 (可收起让 3D 铺满整屏) ── */}
+        {!isPanelCollapsed && (
+          <div className="lg:col-span-7 h-full flex flex-col min-h-0 bg-[var(--aurora-surface)] rounded-3xl border border-[var(--aurora-border)] shadow-xl overflow-hidden animate-in fade-in duration-300">
+            {/* A. 顶部仪表盘概览与 Tab 导航区 (Sticky Header) */}
+            <div className="p-3 bg-gradient-to-r from-[var(--aurora-surface-solid)] via-[var(--aurora-surface)] to-[var(--aurora-chip)] border-b border-[var(--aurora-border)] shrink-0 space-y-2.5">
+              {/* 三列高级 KPI 态势磁贴 */}
+              <div className="grid grid-cols-3 gap-2">
+                {/* Tile 1: 知识准则条数 */}
+                <div className="p-2 rounded-xl bg-[var(--aurora-surface)]/80 border border-[var(--aurora-border)] flex items-center justify-between">
+                  <div>
+                    <div className="text-[10px] text-[var(--aurora-fg4)]">长效准则库</div>
+                    <div className="text-xs font-bold text-[#10B981] font-mono mt-0.5">
+                      {totalLeaves || 39} <span className="text-[10px] font-normal text-[var(--aurora-fg3)]">条</span>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-[rgba(16,185,129,0.1)] text-[#10B981]">
+                      分层索引
+                    </span>
                   </div>
                 </div>
-                <div className="text-right">
-                  <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-[rgba(16,185,129,0.1)] text-[#10B981]">
-                    分层索引
-                  </span>
-                </div>
-              </div>
 
-              {/* Tile 2: 星云实体规模 */}
-              <div className="p-2 rounded-xl bg-[var(--aurora-surface)]/80 border border-[var(--aurora-border)] flex items-center justify-between">
-                <div>
-                  <div className="text-[10px] text-[var(--aurora-fg4)]">知识星晶实体</div>
-                  <div className="text-xs font-bold text-[#38BDF8] font-mono mt-0.5">
-                    {nodes.length || stats?.entities || 42} <span className="text-[10px] font-normal text-[var(--aurora-fg3)]">星晶</span>
+                {/* Tile 2: 星云实体规模 */}
+                <div className="p-2 rounded-xl bg-[var(--aurora-surface)]/80 border border-[var(--aurora-border)] flex items-center justify-between">
+                  <div>
+                    <div className="text-[10px] text-[var(--aurora-fg4)]">知识星晶实体</div>
+                    <div className="text-xs font-bold text-[#38BDF8] font-mono mt-0.5">
+                      {nodes.length || stats?.entities || 42} <span className="text-[10px] font-normal text-[var(--aurora-fg3)]">星晶</span>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-[rgba(56,189,248,0.1)] text-[#38BDF8]">
+                      {edges.length || stats?.relations || 86} 突触
+                    </span>
                   </div>
                 </div>
-                <div className="text-right">
-                  <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-[rgba(56,189,248,0.1)] text-[#38BDF8]">
-                    {edges.length || stats?.relations || 86} 突触
-                  </span>
-                </div>
-              </div>
 
-              {/* Tile 3: 梦境蒸馏进化 */}
-              <div className="p-2 rounded-xl bg-[var(--aurora-surface)]/80 border border-[var(--aurora-border)] flex items-center justify-between">
-                <div>
-                  <div className="text-[10px] text-[var(--aurora-fg4)]">夜间梦境提炼</div>
-                  <div className="text-xs font-bold text-[#A855F7] font-mono mt-0.5">
-                    持续蒸馏 <span className="text-[10px] font-normal text-[var(--aurora-fg3)]">就绪</span>
+                {/* Tile 3: 梦境蒸馏进化 */}
+                <div className="p-2 rounded-xl bg-[var(--aurora-surface)]/80 border border-[var(--aurora-border)] flex items-center justify-between">
+                  <div>
+                    <div className="text-[10px] text-[var(--aurora-fg4)]">夜间梦境提炼</div>
+                    <div className="text-xs font-bold text-[#A855F7] font-mono mt-0.5">
+                      持续蒸馏 <span className="text-[10px] font-normal text-[var(--aurora-fg3)]">就绪</span>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-[rgba(168,85,247,0.1)] text-[#A855F7]">
+                      去重合并
+                    </span>
                   </div>
                 </div>
-                <div className="text-right">
-                  <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-[rgba(168,85,247,0.1)] text-[#A855F7]">
-                    去重合并
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* Navigation Tabs Bar */}
-            <div className="flex items-center justify-between gap-2 overflow-x-auto pb-0.5">
-              <div className="flex items-center gap-1.5">
-                {[
-                  { id: "tree", label: `🌳 知识准则树 (${totalLeaves || 39})`, color: "#10B981" },
-                  { id: "entity", label: `🌌 实体拓扑 ${selectedEntity ? `· ${selectedEntity.name}` : ""}`, color: "#38BDF8" },
-                  { id: "dreaming", label: "🌙 梦境夜间提炼", color: "#A855F7" },
-                  { id: "search", label: "🔍 认知检索", color: "#F59E0B" },
-                  { id: "markdown", label: "📜 MEMORY.md", color: "#64748B" },
-                ].map((tb) => (
-                  <button
-                    key={tb.id}
-                    onClick={() => setActiveTab(tb.id as typeof activeTab)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-medium whitespace-nowrap transition-all border ${
-                      activeTab === tb.id
-                        ? "bg-[var(--aurora-surface-solid)] text-[var(--aurora-fg1)] border-[var(--aurora-border-strong)] shadow-xs font-bold"
-                        : "border-transparent text-[var(--aurora-fg3)] hover:text-[var(--aurora-fg1)] hover:bg-[var(--aurora-surface-solid)]/60"
-                    }`}
-                  >
-                    {tb.label}
-                  </button>
-                ))}
               </div>
 
-              {/* Sub Search or Action */}
-              {activeTab === "tree" && (
-                <div className="relative w-40 shrink-0">
-                  <input
-                    type="text"
-                    value={treeFilter}
-                    onChange={(e) => setTreeFilter(e.target.value)}
-                    placeholder="过滤准则分支..."
-                    className="w-full pl-6 pr-2 py-0.8 text-[11px] rounded-lg bg-[var(--aurora-surface-solid)] border border-[var(--aurora-border)] text-[var(--aurora-fg1)] placeholder-[var(--aurora-fg4)] focus:outline-hidden focus:border-[var(--aurora-accent)]"
-                  />
-                  <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-[var(--aurora-fg4)]">
-                    <Icon name="search" size={10} />
-                  </span>
-                  {treeFilter && (
+              {/* Navigation Tabs Bar with Collapse Action */}
+              <div className="flex items-center justify-between gap-2 overflow-x-auto pb-0.5">
+                <div className="flex items-center gap-1.5">
+                  {[
+                    { id: "tree", label: `🌳 知识准则树 (${totalLeaves || 39})`, color: "#10B981" },
+                    { id: "entity", label: `🌌 实体拓扑 ${selectedEntity ? `· ${selectedEntity.name}` : ""}`, color: "#38BDF8" },
+                    { id: "dreaming", label: "🌙 梦境夜间提炼", color: "#A855F7" },
+                    { id: "search", label: "🔍 认知检索", color: "#F59E0B" },
+                    { id: "markdown", label: "📜 MEMORY.md", color: "#64748B" },
+                  ].map((tb) => (
                     <button
-                      onClick={() => setTreeFilter("")}
-                      className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[var(--aurora-fg4)] hover:text-[var(--aurora-fg1)]"
+                      key={tb.id}
+                      onClick={() => setActiveTab(tb.id as typeof activeTab)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-medium whitespace-nowrap transition-all border ${
+                        activeTab === tb.id
+                          ? "bg-[var(--aurora-surface-solid)] text-[var(--aurora-fg1)] border-[var(--aurora-border-strong)] shadow-xs font-bold"
+                          : "border-transparent text-[var(--aurora-fg3)] hover:text-[var(--aurora-fg1)] hover:bg-[var(--aurora-surface-solid)]/60"
+                      }`}
                     >
-                      <Icon name="close" size={9} />
+                      {tb.label}
                     </button>
-                  )}
+                  ))}
                 </div>
-              )}
-            </div>
+
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {/* Sub Search or Action */}
+                  {activeTab === "tree" && (
+                    <div className="relative w-36 shrink-0">
+                      <input
+                        type="text"
+                        value={treeFilter}
+                        onChange={(e) => setTreeFilter(e.target.value)}
+                        placeholder="过滤准则分支..."
+                        className="w-full pl-6 pr-2 py-0.8 text-[11px] rounded-lg bg-[var(--aurora-surface-solid)] border border-[var(--aurora-border)] text-[var(--aurora-fg1)] placeholder-[var(--aurora-fg4)] focus:outline-hidden focus:border-[var(--aurora-accent)]"
+                      />
+                      <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-[var(--aurora-fg4)]">
+                        <Icon name="search" size={10} />
+                      </span>
+                      {treeFilter && (
+                        <button
+                          onClick={() => setTreeFilter("")}
+                          className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[var(--aurora-fg4)] hover:text-[var(--aurora-fg1)]"
+                        >
+                          <Icon name="close" size={9} />
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  {/* 收起面板让 3D 铺满全屏按钮 */}
+                  <button
+                    onClick={() => setIsPanelCollapsed(true)}
+                    className="p-1.5 rounded-lg text-[var(--aurora-fg3)] hover:text-[var(--aurora-fg1)] hover:bg-[var(--aurora-chip)] border border-[var(--aurora-border)] transition-all shadow-2xs"
+                    title="收起右侧面板，3D 星云铺满全屏"
+                  >
+                    <Icon name="sidebar" size={13} />
+                  </button>
+                </div>
+              </div>
 
             {/* Tree Dimension HUD Filter Bar */}
             {activeTab === "tree" && (
@@ -1037,6 +1082,19 @@ export default function MemoryPage() {
             )}
           </div>
         </div>
+      )}
+
+        {/* 当处于全屏铺满模式时，右侧边缘浮动的展开业务中枢悬浮岛 */}
+        {isPanelCollapsed && (
+          <button
+            onClick={() => setIsPanelCollapsed(false)}
+            className="absolute right-4 top-1/2 -translate-y-1/2 z-30 px-3.5 py-2 rounded-2xl bg-black/80 hover:bg-black/95 backdrop-blur-2xl border border-white/25 text-white shadow-2xl transition-all flex items-center gap-2 group text-xs font-mono animate-in slide-in-from-right duration-300 hover:scale-105"
+            title="展开右侧知识准则中枢"
+          >
+            <Icon name="chevron_left" size={14} className="text-[#38BDF8] group-hover:-translate-x-0.5 transition-transform" />
+            <span className="font-semibold tracking-wide">展开控制台</span>
+          </button>
+        )}
       </div>
 
       <ShareModal

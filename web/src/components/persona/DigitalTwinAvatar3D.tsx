@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { Icon } from "@/components/aurora/Icon";
 
 export type PersonaDimension =
   | "brain"
@@ -35,6 +36,9 @@ interface DigitalTwinAvatar3DProps {
     execution: number;
     project: number;
   };
+  isPanelCollapsed?: boolean;
+  onToggleCollapse?: () => void;
+  onToggleFullscreen?: () => void;
   className?: string;
 }
 
@@ -158,6 +162,9 @@ export default function DigitalTwinAvatar3D({
   evolutionStage = "深度共生体",
   onSparkEvolution,
   ruleStats = { ironLaws: 11, communication: 6, tech: 15, execution: 13, project: 5 },
+  isPanelCollapsed = false,
+  onToggleCollapse,
+  onToggleFullscreen,
   className = "",
 }: DigitalTwinAvatar3DProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -867,6 +874,26 @@ export default function DigitalTwinAvatar3D({
           >
             {isRotating ? "自转中" : "自转"}
           </button>
+
+          {onToggleCollapse && (
+            <button
+              onClick={onToggleCollapse}
+              className="px-2.5 py-1 rounded-xl text-[11px] font-mono font-semibold bg-black/65 hover:bg-black/90 backdrop-blur-md border border-white/20 text-white flex items-center gap-1 shadow-md transition-all active:scale-95"
+              title={isPanelCollapsed ? "还原双翼分屏" : "让 3D 数字人铺满全屏"}
+            >
+              <span>{isPanelCollapsed ? "⧉ 还原分屏" : "⛶ 铺满全屏"}</span>
+            </button>
+          )}
+
+          {onToggleFullscreen && (
+            <button
+              onClick={onToggleFullscreen}
+              className="p-1 rounded-xl text-white/80 bg-black/65 hover:bg-black/90 backdrop-blur-md border border-white/20 hover:text-white shadow-md transition-all"
+              title="显示器物理全屏"
+            >
+              <Icon name="command" size={12} />
+            </button>
+          )}
         </div>
       </div>
 

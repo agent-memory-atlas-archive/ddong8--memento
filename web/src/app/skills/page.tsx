@@ -121,6 +121,18 @@ export default function SkillsPage() {
   const [selectedSkillSlug, setSelectedSkillSlug] = useState<string | null>(null);
   const poll = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // Fullscreen Theater & Panel Collapse State
+  const [isPanelCollapsed, setIsPanelCollapsed] = useState(false);
+  const cockpitRef = useRef<HTMLDivElement>(null);
+
+  const togglePhysicalFullscreen = () => {
+    if (!document.fullscreenElement) {
+      cockpitRef.current?.requestFullscreen?.();
+    } else {
+      document.exitFullscreen?.();
+    }
+  };
+
   const job = reviews.job ? obj(reviews.job) : null;
   const reviewRunning = job?.status === "running";
 
@@ -243,6 +255,7 @@ export default function SkillsPage() {
       return;
     }
     setSelectedSkillSlug(skill.slug || null);
+    setIsPanelCollapsed(false); // 选中技能晶核自动展开右侧 SOP 执行指令中枢
     if (skill.status === "draft") {
       setActiveTab("drafts");
     } else {
@@ -495,9 +508,11 @@ export default function SkillsPage() {
       {/* ─────────────────────────────────────────────────────────────
           2. 一屏全景双翼驾驶舱 (Unified Single-Screen Twin Cockpit)
           ───────────────────────────────────────────────────────────── */}
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-3 min-h-0 overflow-hidden">
-        {/* ── 左翼 (5 列 / 42%): 3D 技能科技树与 5 端激光阵列主舞台 (顶天立地，免滚联动) ── */}
-        <div className="lg:col-span-5 h-full flex flex-col min-h-0 relative rounded-3xl overflow-hidden border border-[var(--aurora-border)] bg-[var(--aurora-surface)] shadow-xl">
+      <div ref={cockpitRef} className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-3 min-h-0 overflow-hidden relative">
+        {/* ── 左翼: 3D 技能科技树与 5 端激光阵列主舞台 (支持 100% 满屏沉浸与分屏联动) ── */}
+        <div className={`h-full flex flex-col min-h-0 relative rounded-3xl overflow-hidden border border-[var(--aurora-border)] bg-[var(--aurora-surface)] shadow-xl transition-all duration-300 ${
+          isPanelCollapsed ? "lg:col-span-12 w-full" : "lg:col-span-5"
+        }`}>
           <SkillMatrix3D
             skills={matrixSkills}
             selectedSlug={selectedSkillSlug}
@@ -514,9 +529,27 @@ export default function SkillsPage() {
               </span>
             </div>
 
-            <div className="flex items-center gap-1 bg-black/60 backdrop-blur-md px-2.5 py-1 rounded-full border border-white/10 pointer-events-auto text-[10px] font-mono text-white/80">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#10B981] breathing-glow-emerald" />
-              <span>5/5 端基座实时能量注入</span>
+            <div className="flex items-center gap-1.5 pointer-events-auto">
+              <div className="flex items-center gap-1 bg-black/60 backdrop-blur-md px-2.5 py-1 rounded-full border border-white/10 text-[10px] font-mono text-white/80">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#10B981] breathing-glow-emerald" />
+                <span>5/5 端基座实时能量注入</span>
+              </div>
+
+              {/* Viewport Fullscreen Theater Toggles */}
+              <button
+                onClick={() => setIsPanelCollapsed(!isPanelCollapsed)}
+                className="px-2.5 py-1 rounded-full text-[11px] font-mono font-semibold bg-black/65 hover:bg-black/90 backdrop-blur-md border border-white/20 text-white flex items-center gap-1 shadow-md transition-all active:scale-95"
+                title={isPanelCollapsed ? "还原双翼分屏" : "让 3D 科技树铺满全屏"}
+              >
+                <span>{isPanelCollapsed ? "⧉ 还原分屏" : "⛶ 铺满全屏"}</span>
+              </button>
+              <button
+                onClick={togglePhysicalFullscreen}
+                className="p-1 rounded-full text-white/80 bg-black/65 hover:bg-black/90 backdrop-blur-md border border-white/20 hover:text-white shadow-md transition-all"
+                title="显示器物理全屏"
+              >
+                <Icon name="command" size={12} />
+              </button>
             </div>
           </div>
 
@@ -556,103 +589,115 @@ export default function SkillsPage() {
           </div>
         </div>
 
-        {/* ── 右翼 (7 列 / 58%): 技能列表、演进草稿与审查动态 (独立平滑内滚) ── */}
-        <div className="lg:col-span-7 h-full flex flex-col min-h-0 bg-[var(--aurora-surface)] rounded-3xl border border-[var(--aurora-border)] shadow-xl overflow-hidden">
-          {/* A. 顶部仪表盘概览与 Tab 导航区 (Sticky Header) */}
-          <div className="p-3 bg-gradient-to-r from-[var(--aurora-surface-solid)] via-[var(--aurora-surface)] to-[var(--aurora-chip)] border-b border-[var(--aurora-border)] shrink-0 space-y-2.5">
-            {/* 三列高级 KPI 态势磁贴 */}
-            <div className="grid grid-cols-3 gap-2">
-              {/* Tile 1: 活跃上线技能 */}
-              <div className="p-2 rounded-xl bg-[var(--aurora-surface)]/80 border border-[var(--aurora-border)] flex items-center justify-between">
-                <div>
-                  <div className="text-[10px] text-[var(--aurora-fg4)]">活跃上线技能</div>
-                  <div className="text-xs font-bold text-[#10B981] font-mono mt-0.5">
-                    {published.length} <span className="text-[10px] font-normal text-[var(--aurora-fg3)]">个</span>
+        {/* ── 右翼 (7 列 / 58%): 技能列表、演进草稿与审查动态 (可收起让 3D 铺满整屏) ── */}
+        {!isPanelCollapsed && (
+          <div className="lg:col-span-7 h-full flex flex-col min-h-0 bg-[var(--aurora-surface)] rounded-3xl border border-[var(--aurora-border)] shadow-xl overflow-hidden animate-in fade-in duration-300">
+            {/* A. 顶部仪表盘概览与 Tab 导航区 (Sticky Header) */}
+            <div className="p-3 bg-gradient-to-r from-[var(--aurora-surface-solid)] via-[var(--aurora-surface)] to-[var(--aurora-chip)] border-b border-[var(--aurora-border)] shrink-0 space-y-2.5">
+              {/* 三列高级 KPI 态势磁贴 */}
+              <div className="grid grid-cols-3 gap-2">
+                {/* Tile 1: 活跃上线技能 */}
+                <div className="p-2 rounded-xl bg-[var(--aurora-surface)]/80 border border-[var(--aurora-border)] flex items-center justify-between">
+                  <div>
+                    <div className="text-[10px] text-[var(--aurora-fg4)]">活跃上线技能</div>
+                    <div className="text-xs font-bold text-[#10B981] font-mono mt-0.5">
+                      {published.length} <span className="text-[10px] font-normal text-[var(--aurora-fg3)]">个</span>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-[rgba(16,185,129,0.1)] text-[#10B981]">
+                      Agent Skill 协议
+                    </span>
                   </div>
                 </div>
-                <div className="text-right">
-                  <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-[rgba(16,185,129,0.1)] text-[#10B981]">
-                    Agent Skill 协议
-                  </span>
+
+                {/* Tile 2: 待审草稿与演进 */}
+                <div className="p-2 rounded-xl bg-[var(--aurora-surface)]/80 border border-[var(--aurora-border)] flex items-center justify-between">
+                  <div>
+                    <div className="text-[10px] text-[var(--aurora-fg4)]">待审草稿与演进</div>
+                    <div className="text-xs font-bold text-[#F59E0B] font-mono mt-0.5">
+                      {drafts.length} <span className="text-[10px] font-normal text-[var(--aurora-fg3)]">个</span>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-[rgba(245,158,11,0.1)] text-[#F59E0B]">
+                      会话挖掘
+                    </span>
+                  </div>
+                </div>
+
+                {/* Tile 3: 5 端受护运行时 */}
+                <div className="p-2 rounded-xl bg-[var(--aurora-surface)]/80 border border-[var(--aurora-border)] flex items-center justify-between">
+                  <div>
+                    <div className="text-[10px] text-[var(--aurora-fg4)]">全息注入终端</div>
+                    <div className="text-xs font-bold text-[#3B82F6] font-mono mt-0.5">
+                      5 <span className="text-[10px] font-normal text-[var(--aurora-fg3)]">端在线</span>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-[rgba(59,130,246,0.1)] text-[#3B82F6]">
+                      全部激活
+                    </span>
+                  </div>
                 </div>
               </div>
 
-              {/* Tile 2: 待审草稿与演进 */}
-              <div className="p-2 rounded-xl bg-[var(--aurora-surface)]/80 border border-[var(--aurora-border)] flex items-center justify-between">
-                <div>
-                  <div className="text-[10px] text-[var(--aurora-fg4)]">待审草稿与演进</div>
-                  <div className="text-xs font-bold text-[#F59E0B] font-mono mt-0.5">
-                    {drafts.length} <span className="text-[10px] font-normal text-[var(--aurora-fg3)]">个</span>
-                  </div>
+              {/* Navigation Tabs Bar */}
+              <div className="flex items-center justify-between gap-2 overflow-x-auto pb-0.5">
+                <div className="flex items-center gap-1.5">
+                  {[
+                    { id: "published", label: `⚡ 活跃技能 (${published.length})`, color: "#10B981" },
+                    { id: "drafts", label: `📝 演进草稿 (${drafts.length})`, color: "#F59E0B" },
+                    { id: "reviews", label: `🔄 审查动态 ${reviewRunning ? "· 进行中" : ""}`, color: "#3B82F6" },
+                    { id: "archived", label: `📦 历史归档 (${archived.length})`, color: "#64748B" },
+                  ].map((tb) => (
+                    <button
+                      key={tb.id}
+                      onClick={() => setActiveTab(tb.id as typeof activeTab)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-medium whitespace-nowrap transition-all border ${
+                        activeTab === tb.id
+                          ? "bg-[var(--aurora-surface-solid)] text-[var(--aurora-fg1)] border-[var(--aurora-border-strong)] shadow-xs font-bold"
+                          : "border-transparent text-[var(--aurora-fg3)] hover:text-[var(--aurora-fg1)] hover:bg-[var(--aurora-surface-solid)]/60"
+                      }`}
+                    >
+                      {tb.label}
+                    </button>
+                  ))}
                 </div>
-                <div className="text-right">
-                  <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-[rgba(245,158,11,0.1)] text-[#F59E0B]">
-                    会话挖掘
-                  </span>
-                </div>
-              </div>
 
-              {/* Tile 3: 5 端受护运行时 */}
-              <div className="p-2 rounded-xl bg-[var(--aurora-surface)]/80 border border-[var(--aurora-border)] flex items-center justify-between">
-                <div>
-                  <div className="text-[10px] text-[var(--aurora-fg4)]">全息注入终端</div>
-                  <div className="text-xs font-bold text-[#3B82F6] font-mono mt-0.5">
-                    5 <span className="text-[10px] font-normal text-[var(--aurora-fg3)]">端在线</span>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {/* Search input */}
+                  <div className="relative w-32 shrink-0">
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder="过滤技能..."
+                      className="w-full pl-6 pr-2 py-0.8 text-[11px] rounded-lg bg-[var(--aurora-surface-solid)] border border-[var(--aurora-border)] text-[var(--aurora-fg1)] placeholder-[var(--aurora-fg4)] focus:outline-hidden focus:border-[var(--aurora-accent)]"
+                    />
+                    <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-[var(--aurora-fg4)]">
+                      <Icon name="search" size={10} />
+                    </span>
+                    {searchQuery && (
+                      <button
+                        onClick={() => setSearchQuery("")}
+                        className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[var(--aurora-fg4)] hover:text-[var(--aurora-fg1)]"
+                      >
+                        <Icon name="close" size={9} />
+                      </button>
+                    )}
                   </div>
-                </div>
-                <div className="text-right">
-                  <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-[rgba(59,130,246,0.1)] text-[#3B82F6]">
-                    全部激活
-                  </span>
-                </div>
-              </div>
-            </div>
 
-            {/* Navigation Tabs Bar */}
-            <div className="flex items-center justify-between gap-2 overflow-x-auto pb-0.5">
-              <div className="flex items-center gap-1.5">
-                {[
-                  { id: "published", label: `⚡ 活跃技能 (${published.length})`, color: "#10B981" },
-                  { id: "drafts", label: `📝 演进草稿 (${drafts.length})`, color: "#F59E0B" },
-                  { id: "reviews", label: `🔄 审查动态 ${reviewRunning ? "· 进行中" : ""}`, color: "#3B82F6" },
-                  { id: "archived", label: `📦 历史归档 (${archived.length})`, color: "#64748B" },
-                ].map((tb) => (
+                  {/* 收起面板让 3D 铺满全屏按钮 */}
                   <button
-                    key={tb.id}
-                    onClick={() => setActiveTab(tb.id as typeof activeTab)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-medium whitespace-nowrap transition-all border ${
-                      activeTab === tb.id
-                        ? "bg-[var(--aurora-surface-solid)] text-[var(--aurora-fg1)] border-[var(--aurora-border-strong)] shadow-xs font-bold"
-                        : "border-transparent text-[var(--aurora-fg3)] hover:text-[var(--aurora-fg1)] hover:bg-[var(--aurora-surface-solid)]/60"
-                    }`}
+                    onClick={() => setIsPanelCollapsed(true)}
+                    className="p-1.5 rounded-lg text-[var(--aurora-fg3)] hover:text-[var(--aurora-fg1)] hover:bg-[var(--aurora-chip)] border border-[var(--aurora-border)] transition-all shadow-2xs"
+                    title="收起右侧面板，3D 科技树铺满全屏"
                   >
-                    {tb.label}
+                    <Icon name="sidebar" size={13} />
                   </button>
-                ))}
+                </div>
               </div>
-
-              {/* Search input */}
-              <div className="relative w-36 shrink-0">
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="过滤技能..."
-                  className="w-full pl-6 pr-2 py-0.8 text-[11px] rounded-lg bg-[var(--aurora-surface-solid)] border border-[var(--aurora-border)] text-[var(--aurora-fg1)] placeholder-[var(--aurora-fg4)] focus:outline-hidden focus:border-[var(--aurora-accent)]"
-                />
-                <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-[var(--aurora-fg4)]">
-                  <Icon name="search" size={10} />
-                </span>
-                {searchQuery && (
-                  <button
-                    onClick={() => setSearchQuery("")}
-                    className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[var(--aurora-fg4)] hover:text-[var(--aurora-fg1)]"
-                  >
-                    <Icon name="close" size={9} />
-                  </button>
-                )}
-              </div>
-            </div>
           </div>
 
           {/* B. 内容滚动主视口 (Smooth Inner Scroll Container) */}
@@ -779,6 +824,19 @@ export default function SkillsPage() {
             )}
           </div>
         </div>
+      )}
+
+        {/* 当处于全屏铺满模式时，右侧边缘浮动的展开技能中枢悬浮岛 */}
+        {isPanelCollapsed && (
+          <button
+            onClick={() => setIsPanelCollapsed(false)}
+            className="absolute right-4 top-1/2 -translate-y-1/2 z-30 px-3.5 py-2 rounded-2xl bg-black/80 hover:bg-black/95 backdrop-blur-2xl border border-white/25 text-white shadow-2xl transition-all flex items-center gap-2 group text-xs font-mono animate-in slide-in-from-right duration-300 hover:scale-105"
+            title="展开右侧技能与 SOP 中枢"
+          >
+            <Icon name="chevron_left" size={14} className="text-[#F59E0B] group-hover:-translate-x-0.5 transition-transform" />
+            <span className="font-semibold tracking-wide">展开控制台</span>
+          </button>
+        )}
       </div>
     </div>
   );

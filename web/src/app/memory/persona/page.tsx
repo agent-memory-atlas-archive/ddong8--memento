@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, DailyDate, ProfileDevice, ProfileState } from "@/lib/api-client";
 import { useI18n } from "@/lib/i18n";
 import { BrandMark } from "@/components/aurora/BrandMark";
@@ -386,6 +386,18 @@ export default function PersonaPage() {
     prompt: string;
   } | null>(null);
 
+  // Fullscreen Theater & Panel Collapse State
+  const [isPanelCollapsed, setIsPanelCollapsed] = useState(false);
+  const cockpitRef = useRef<HTMLDivElement>(null);
+
+  const togglePhysicalFullscreen = () => {
+    if (!document.fullscreenElement) {
+      cockpitRef.current?.requestFullscreen?.();
+    } else {
+      document.exitFullscreen?.();
+    }
+  };
+
   const load = useCallback(async () => {
     try {
       const [profile, corrections, daily] = await Promise.all([
@@ -574,6 +586,7 @@ export default function PersonaPage() {
   // Handle 3D Body Selection -> Switch Chapter Tab & Pose
   const handleSelectDimension = (dim: PersonaDimension) => {
     setActiveDimension(dim);
+    setIsPanelCollapsed(false); // 选中人体部位自动展开右侧规则中枢
     if (dim === "all") setActiveTab("all");
     else if (dim === "evolution") setActiveTab("evolution");
     else setActiveTab(dim as ChapterTab);
@@ -762,9 +775,11 @@ export default function PersonaPage() {
       {/* ─────────────────────────────────────────────────────────────
           2. 一屏全景双翼驾驶舱 (Unified Single-Screen Twin Cockpit)
           ───────────────────────────────────────────────────────────── */}
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-3 min-h-0 overflow-hidden">
-        {/* ── 左翼 (5 列 / 42%): 3D 全息神经孪生体主舞台 (顶天立地，免滚联动) ── */}
-        <div className="lg:col-span-5 h-full flex flex-col min-h-0">
+      <div ref={cockpitRef} className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-3 min-h-0 overflow-hidden relative">
+        {/* ── 左翼: 3D 全息神经孪生体主舞台 (支持 100% 满屏沉浸与分屏联动) ── */}
+        <div className={`h-full flex flex-col min-h-0 transition-all duration-300 ${
+          isPanelCollapsed ? "lg:col-span-12 w-full" : "lg:col-span-5"
+        }`}>
           <DigitalTwinAvatar3D
             activeDimension={activeDimension}
             onSelectDimension={handleSelectDimension}
@@ -774,12 +789,16 @@ export default function PersonaPage() {
             evolutionStage={evolutionData.stage}
             onSparkEvolution={handleSparkEvolution}
             ruleStats={ruleStats}
+            isPanelCollapsed={isPanelCollapsed}
+            onToggleCollapse={() => setIsPanelCollapsed(!isPanelCollapsed)}
+            onToggleFullscreen={togglePhysicalFullscreen}
             className="w-full h-full"
           />
         </div>
 
-        {/* ── 右翼 (7 列 / 58%): 特征矩阵与每日进化成长中枢 (独立平滑内滚) ── */}
-        <div className="lg:col-span-7 h-full flex flex-col min-h-0 bg-[var(--aurora-surface)] rounded-3xl border border-[var(--aurora-border)] shadow-xl overflow-hidden">
+        {/* ── 右翼 (7 列 / 58%): 特征矩阵与每日进化成长中枢 (可收起让 3D 铺满整屏) ── */}
+        {!isPanelCollapsed && (
+          <div className="lg:col-span-7 h-full flex flex-col min-h-0 bg-[var(--aurora-surface)] rounded-3xl border border-[var(--aurora-border)] shadow-xl overflow-hidden animate-in fade-in duration-300">
           {/* A. 顶部仪表盘概览与 Tab 导航区 (Sticky Header) */}
           <div className="p-3 bg-gradient-to-r from-[var(--aurora-surface-solid)] via-[var(--aurora-surface)] to-[var(--aurora-chip)] border-b border-[var(--aurora-border)] shrink-0 space-y-2.5">
             {/* 三列高级 KPI 态势磁贴 */}
@@ -902,6 +921,15 @@ export default function PersonaPage() {
                   )}
                 </div>
               )}
+
+              {/* 收起面板让 3D 铺满全屏按钮 */}
+              <button
+                onClick={() => setIsPanelCollapsed(true)}
+                className="p-1.5 rounded-lg text-[var(--aurora-fg3)] hover:text-[var(--aurora-fg1)] hover:bg-[var(--aurora-chip)] border border-[var(--aurora-border)] transition-all shadow-2xs shrink-0"
+                title="收起右侧面板，3D 数字人铺满全屏"
+              >
+                <Icon name="sidebar" size={13} />
+              </button>
             </div>
 
             {/* Industrial-Grade Priority Filter Bar */}
@@ -1736,7 +1764,20 @@ export default function PersonaPage() {
             )}
           </div>
         </div>
-      </div>
+      )}
+
+      {/* 当处于全屏铺满模式时，右侧边缘浮动的展开画像中枢悬浮岛 */}
+      {isPanelCollapsed && (
+        <button
+          onClick={() => setIsPanelCollapsed(false)}
+          className="absolute right-4 top-1/2 -translate-y-1/2 z-30 px-3.5 py-2 rounded-2xl bg-black/80 hover:bg-black/95 backdrop-blur-2xl border border-white/25 text-white shadow-2xl transition-all flex items-center gap-2 group text-xs font-mono animate-in slide-in-from-right duration-300 hover:scale-105"
+          title="展开右侧画像与特征中枢"
+        >
+          <Icon name="chevron_left" size={14} className="text-[#EC4899] group-hover:-translate-x-0.5 transition-transform" />
+          <span className="font-semibold tracking-wide">展开控制台</span>
+        </button>
+      )}
     </div>
-  );
+  </div>
+);
 }
