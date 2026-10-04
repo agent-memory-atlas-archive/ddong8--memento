@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { getApiBase, authFetch, api, type ProfileState } from "@/lib/api-client";
 import { useI18n } from "@/lib/i18n";
@@ -10,6 +11,19 @@ import { ShareModal } from "@/components/ShareModal";
 import MarkdownViewer from "@/components/viewers/MarkdownViewer";
 import DreamingPanel from "@/components/memory/DreamingPanel";
 import CognitiveCompass from "@/components/memory/CognitiveCompass";
+
+const MemoryGalaxy3D = dynamic(
+  () => import("@/components/memory/MemoryGalaxy3D"),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="w-full h-[520px] rounded-3xl bg-[var(--aurora-surface)] border border-[var(--aurora-border)] animate-pulse flex flex-col items-center justify-center gap-3 text-xs text-[var(--aurora-fg3)]">
+        <div className="w-10 h-10 rounded-2xl bg-[var(--aurora-accent)]/20 animate-spin border-2 border-transparent border-t-[var(--aurora-accent)]" />
+        <span>正在载入 3D 认知星云中枢...</span>
+      </div>
+    ),
+  }
+);
 
 interface GraphNode {
   id: string;
@@ -167,6 +181,7 @@ export default function MemoryPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [shareOpen, setShareOpen] = useState(false);
+  const [graphViewMode, setGraphViewMode] = useState<"3d" | "2d">("3d");
   const svgRef = useRef<SVGSVGElement>(null);
 
   // Load Tree
@@ -806,16 +821,44 @@ export default function MemoryPage() {
       {activeTab === "dreaming" && <DreamingPanel />}
 
       {/* ─────────────────────────────────────────────────────────────
-          5. TAB: KNOWLEDGE GRAPH (实体拓扑图谱)
+          5. TAB: KNOWLEDGE GRAPH (实体拓扑图谱 · 3D 认知星云)
           ───────────────────────────────────────────────────────────── */}
       {activeTab === "graph" && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between gap-3 text-xs">
-            <span className="text-[var(--aurora-fg3)]">
-              当前收录 {nodes.length} 个核心概念实体 · {edges.length} 条关系拓扑
-            </span>
+        <div className="space-y-4 animate-in fade-in">
+          <div className="flex items-center justify-between gap-3 text-xs flex-wrap">
+            <div className="flex items-center gap-2">
+              <span className="text-[var(--aurora-fg3)]">
+                当前收录 {nodes.length} 个核心概念实体 · {edges.length} 条关系拓扑
+              </span>
+            </div>
 
             <div className="flex items-center gap-2">
+              {/* 3D Galaxy / 2D Graph Switcher */}
+              <div className="flex items-center gap-1 p-0.5 rounded-xl bg-[var(--aurora-surface-solid)] border border-[var(--aurora-border)]">
+                <button
+                  onClick={() => setGraphViewMode("3d")}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 ${
+                    graphViewMode === "3d"
+                      ? "bg-[var(--aurora-chip)] text-[var(--aurora-accent)] shadow-2xs font-bold"
+                      : "text-[var(--aurora-fg3)] hover:text-[var(--aurora-fg1)]"
+                  }`}
+                >
+                  <Icon name="sparkles" size={12} />
+                  <span>🌐 3D 认知星云</span>
+                </button>
+                <button
+                  onClick={() => setGraphViewMode("2d")}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 ${
+                    graphViewMode === "2d"
+                      ? "bg-[var(--aurora-chip)] text-[var(--aurora-fg1)] shadow-2xs font-bold"
+                      : "text-[var(--aurora-fg3)] hover:text-[var(--aurora-fg1)]"
+                  }`}
+                >
+                  <Icon name="grid" size={12} />
+                  <span>🗺️ 2D 拓扑图谱</span>
+                </button>
+              </div>
+
               <select
                 value={filterType}
                 onChange={(e) => setFilterType(e.target.value)}
@@ -830,69 +873,143 @@ export default function MemoryPage() {
             </div>
           </div>
 
-          <div className="relative rounded-2xl border border-[var(--aurora-border)] bg-[var(--aurora-surface-solid)] overflow-hidden h-[540px] flex items-center justify-center">
-            <svg ref={svgRef} className="w-full h-full cursor-grab active:cursor-grabbing">
-              {edges.map((e, idx) => {
-                const s = nodeMap.get(e.source);
-                const tnode = nodeMap.get(e.target);
-                if (!s || !tnode) return null;
-                return (
-                  <line
-                    key={idx}
-                    x1={s.x || 0}
-                    y1={s.y || 0}
-                    x2={tnode.x || 0}
-                    y2={tnode.y || 0}
-                    stroke="var(--aurora-border-strong)"
-                    strokeWidth={Math.min(e.strength || 1, 3)}
-                    strokeOpacity={0.4}
-                  />
-                );
-              })}
-
-              {nodes.map((n) => {
-                const color = TYPE_COLORS[n.type] || "#8b5cf6";
-                const isSelected = selectedEntity?.id === n.id;
-                return (
-                  <g
-                    key={n.id}
-                    transform={`translate(${n.x || 0}, ${n.y || 0})`}
-                    onClick={() => handleNodeClick(n.id)}
-                    className="cursor-pointer"
-                  >
-                    <circle
-                      r={isSelected ? 10 : 6}
-                      fill={color}
-                      stroke={isSelected ? "#ffffff" : "transparent"}
-                      strokeWidth={2}
-                      className="transition-all hover:scale-125"
+          <div className="relative rounded-3xl border border-[var(--aurora-border)] bg-[var(--aurora-surface-solid)] overflow-hidden min-h-[540px] flex items-center justify-center">
+            {graphViewMode === "3d" ? (
+              <MemoryGalaxy3D
+                nodes={nodes}
+                edges={edges}
+                selectedNodeId={selectedEntity?.id}
+                onSelectNode={(node) => {
+                  if (node) {
+                    handleNodeClick(node.id);
+                  } else {
+                    setSelectedEntity(null);
+                  }
+                }}
+                filterType={filterType}
+                className="w-full h-[560px]"
+              />
+            ) : (
+              <svg ref={svgRef} className="w-full h-[540px] cursor-grab active:cursor-grabbing">
+                {edges.map((e, idx) => {
+                  const s = nodeMap.get(e.source);
+                  const tnode = nodeMap.get(e.target);
+                  if (!s || !tnode) return null;
+                  return (
+                    <line
+                      key={idx}
+                      x1={s.x || 0}
+                      y1={s.y || 0}
+                      x2={tnode.x || 0}
+                      y2={tnode.y || 0}
+                      stroke="var(--aurora-border-strong)"
+                      strokeWidth={Math.min(e.strength || 1, 3)}
+                      strokeOpacity={0.4}
                     />
-                    <text
-                      dy={14}
-                      textAnchor="middle"
-                      fill="var(--aurora-fg2)"
-                      fontSize={10}
-                      className="select-none font-medium pointer-events-none"
+                  );
+                })}
+
+                {nodes.map((n) => {
+                  const color = TYPE_COLORS[n.type] || "#8b5cf6";
+                  const isSelected = selectedEntity?.id === n.id;
+                  return (
+                    <g
+                      key={n.id}
+                      transform={`translate(${n.x || 0}, ${n.y || 0})`}
+                      onClick={() => handleNodeClick(n.id)}
+                      className="cursor-pointer"
                     >
-                      {n.name}
-                    </text>
-                  </g>
-                );
-              })}
-            </svg>
+                      <circle
+                        r={isSelected ? 10 : 6}
+                        fill={color}
+                        stroke={isSelected ? "#ffffff" : "transparent"}
+                        strokeWidth={2}
+                        className="transition-all hover:scale-125"
+                      />
+                      <text
+                        dy={14}
+                        textAnchor="middle"
+                        fill="var(--aurora-fg2)"
+                        fontSize={10}
+                        className="select-none font-medium pointer-events-none"
+                      >
+                        {n.name}
+                      </text>
+                    </g>
+                  );
+                })}
+              </svg>
+            )}
 
             {/* Selected Node Details Drawer */}
             {selectedEntity && (
-              <div className="absolute top-4 right-4 w-72 rounded-2xl p-4 bg-[var(--aurora-surface)] backdrop-blur-md border border-[var(--aurora-border)] shadow-lg max-h-[480px] overflow-y-auto">
+              <div className="absolute top-4 right-4 w-80 rounded-2xl p-4 bg-[var(--aurora-surface)]/95 backdrop-blur-xl border border-[var(--aurora-border)] shadow-2xl max-h-[480px] overflow-y-auto z-20 animate-in fade-in slide-in-from-right-4">
                 <div className="flex items-center justify-between pb-2 border-b border-[var(--aurora-border)]">
-                  <span className="font-bold text-sm text-[var(--aurora-fg1)]">{selectedEntity.name}</span>
-                  <button onClick={() => setSelectedEntity(null)} className="text-[var(--aurora-fg4)] hover:text-[var(--aurora-fg1)]">
+                  <div className="flex items-center gap-2">
+                    <span
+                      className="w-2.5 h-2.5 rounded-full shrink-0"
+                      style={{ backgroundColor: TYPE_COLORS[selectedEntity.type] || "#8b5cf6" }}
+                    />
+                    <span className="font-bold text-sm text-[var(--aurora-fg1)] truncate">
+                      {selectedEntity.name}
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => setSelectedEntity(null)}
+                    className="p-1 rounded-md text-[var(--aurora-fg4)] hover:text-[var(--aurora-fg1)] hover:bg-[var(--aurora-chip)]"
+                  >
                     <Icon name="close" size={13} />
                   </button>
                 </div>
-                <div className="text-xs text-[var(--aurora-fg3)] mt-2">
-                  <div className="font-semibold text-[var(--aurora-fg2)] mb-1">实体摘要：</div>
-                  <p>{selectedEntity.summary || "暂无具体描述"}</p>
+
+                <div className="text-xs text-[var(--aurora-fg3)] mt-2 space-y-2">
+                  <div>
+                    <div className="font-semibold text-[10px] text-[var(--aurora-fg4)] uppercase font-mono">
+                      实体摘要
+                    </div>
+                    <p className="text-[var(--aurora-fg1)] leading-relaxed mt-0.5">
+                      {selectedEntity.summary || "暂无具体描述"}
+                    </p>
+                  </div>
+
+                  {selectedEntity.outgoing_relations.length > 0 && (
+                    <div className="pt-2 border-t border-[var(--aurora-border)]">
+                      <div className="font-semibold text-[10px] text-[var(--aurora-fg4)] uppercase font-mono mb-1">
+                        关联合约 / 依从关系 ({selectedEntity.outgoing_relations.length})
+                      </div>
+                      <div className="space-y-1">
+                        {selectedEntity.outgoing_relations.slice(0, 5).map((rel, rIdx) => (
+                          <div
+                            key={rIdx}
+                            className="p-1.5 rounded-lg bg-[var(--aurora-surface-solid)] border border-[var(--aurora-border)] flex items-center justify-between text-[11px]"
+                          >
+                            <span className="text-[var(--aurora-fg3)]">{rel.relation}</span>
+                            <span className="font-semibold text-[var(--aurora-accent)] truncate max-w-[140px]">
+                              {rel.target_name}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {selectedEntity.observations.length > 0 && (
+                    <div className="pt-2 border-t border-[var(--aurora-border)]">
+                      <div className="font-semibold text-[10px] text-[var(--aurora-fg4)] uppercase font-mono mb-1">
+                        真实交互事实捕获 ({selectedEntity.observations.length})
+                      </div>
+                      <div className="space-y-1">
+                        {selectedEntity.observations.slice(0, 3).map((obs, oIdx) => (
+                          <div
+                            key={oIdx}
+                            className="p-1.5 rounded-lg bg-[var(--aurora-chip)] text-[10px] text-[var(--aurora-fg2)] leading-tight"
+                          >
+                            "{obs.content}"
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             )}

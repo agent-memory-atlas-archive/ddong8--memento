@@ -1,12 +1,26 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import dynamic from "next/dynamic";
 import { api } from "@/lib/api-client";
 import { fmt, useI18n } from "@/lib/i18n";
 import { Btn, Chip, Glass } from "@/components/aurora/primitives";
 import { Icon } from "@/components/aurora/Icon";
 import MarkdownViewer from "@/components/viewers/MarkdownViewer";
 import CognitiveCompass from "@/components/memory/CognitiveCompass";
+
+const SkillMatrix3D = dynamic(
+  () => import("@/components/skills/SkillMatrix3D"),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="w-full h-[460px] rounded-3xl bg-[var(--aurora-surface)] border border-[var(--aurora-border)] animate-pulse flex flex-col items-center justify-center gap-3 text-xs text-[var(--aurora-fg3)]">
+        <div className="w-10 h-10 rounded-2xl bg-[var(--aurora-accent)]/20 animate-spin border-2 border-transparent border-t-[var(--aurora-accent)]" />
+        <span>正在载入 3D 技能科技树星阵...</span>
+      </div>
+    ),
+  }
+);
 
 type Obj = Record<string, unknown>;
 const obj = (v: unknown): Obj => (v && typeof v === "object" && !Array.isArray(v) ? (v as Obj) : {});
@@ -98,7 +112,8 @@ export default function SkillsPage() {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [editing, setEditing] = useState<string | null>(null);
   const [showUpdate, setShowUpdate] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"published" | "drafts" | "reviews" | "archived">("published");
+  const [activeTab, setActiveTab] = useState<"3d-matrix" | "published" | "drafts" | "reviews" | "archived">("3d-matrix");
+  const [selectedSkillSlug, setSelectedSkillSlug] = useState<string | null>(null);
   const poll = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const job = reviews.job ? obj(reviews.job) : null;
@@ -466,8 +481,9 @@ export default function SkillsPage() {
       {/* ─────────────────────────────────────────────────────────────
           3. 胶囊过滤器 (Filter Pills)
           ───────────────────────────────────────────────────────────── */}
-      <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-[var(--aurora-surface)] border border-[var(--aurora-border)] shadow-xs self-start">
+      <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-[var(--aurora-surface)] border border-[var(--aurora-border)] shadow-xs self-start flex-wrap">
         {[
+          { id: "3d-matrix" as const, label: `🌐 3D 技能科技树 (${published.length + drafts.length})`, icon: "sparkles" as const },
           { id: "published" as const, label: `活跃技能 (${published.length})`, icon: "zap" as const },
           { id: "drafts" as const, label: `待审草稿 (${drafts.length})`, icon: "edit" as const },
           { id: "reviews" as const, label: `审查动态 (${reviewList.length})`, icon: "sparkles" as const },
@@ -492,7 +508,52 @@ export default function SkillsPage() {
       </div>
 
       {/* ─────────────────────────────────────────────────────────────
-          4. 技能网格 (Bento Skill Cards)
+          4. TAB: 3D 技能科技树与能力星阵 (Skill Matrix 3D)
+          ───────────────────────────────────────────────────────────── */}
+      {activeTab === "3d-matrix" && (
+        <div className="space-y-4 animate-in fade-in">
+          <SkillMatrix3D
+            skills={[...published, ...drafts]}
+            selectedSlug={selectedSkillSlug}
+            onSelectSkill={(skill) => {
+              if (skill?.slug) {
+                setSelectedSkillSlug(skill.slug);
+                if (skill.id) {
+                  setExpanded((prev) => new Set([...prev, str(skill.id)]));
+                }
+              } else {
+                setSelectedSkillSlug(null);
+              }
+            }}
+          />
+
+          {/* Selected Skill Focus Card */}
+          {selectedSkillSlug && (
+            <div className="animate-in fade-in slide-in-from-bottom-2 space-y-2">
+              <div className="flex items-center justify-between text-xs font-bold text-[var(--aurora-fg2)]">
+                <span className="flex items-center gap-1.5 text-[#38BDF8]">
+                  <span className="w-2 h-2 rounded-full bg-[#38BDF8] animate-ping" />
+                  <span>🎯 已聚焦技能晶核与 5 端热注通道：</span>
+                </span>
+                <button
+                  onClick={() => setSelectedSkillSlug(null)}
+                  className="text-xs text-[var(--aurora-accent)] hover:underline font-mono"
+                >
+                  关闭对焦
+                </button>
+              </div>
+              {(() => {
+                const matched = [...published, ...drafts].find((s) => str(s.slug) === selectedSkillSlug);
+                if (!matched) return null;
+                return renderSkillCard(matched);
+              })()}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ─────────────────────────────────────────────────────────────
+          5. 技能网格 (Bento Skill Cards)
           ───────────────────────────────────────────────────────────── */}
       {activeTab === "published" && (
         <div>
