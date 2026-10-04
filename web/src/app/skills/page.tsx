@@ -255,7 +255,6 @@ export default function SkillsPage() {
       return;
     }
     setSelectedSkillSlug(skill.slug || null);
-    setIsPanelCollapsed(false); // 选中技能晶核自动展开右侧 SOP 执行指令中枢
     if (skill.status === "draft") {
       setActiveTab("drafts");
     } else {
@@ -264,6 +263,28 @@ export default function SkillsPage() {
     if (skill.id) {
       setExpanded((prev) => new Set(prev).add(skill.id!));
     }
+  };
+
+  const [copiedSkillSlug, setCopiedSkillSlug] = useState<string | null>(null);
+
+  const selectedSkillObj = useMemo(() => {
+    if (!selectedSkillSlug) return null;
+    return matrixSkills.find((s) => s.slug === selectedSkillSlug) || null;
+  }, [matrixSkills, selectedSkillSlug]);
+
+  const activeRawSkill = useMemo(() => {
+    if (!selectedSkillSlug) return null;
+    return (
+      published.find((p) => p.slug === selectedSkillSlug) ||
+      drafts.find((d) => d.slug === selectedSkillSlug) ||
+      null
+    );
+  }, [published, drafts, selectedSkillSlug]);
+
+  const handleCopySkillBody = (text: string, slug: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedSkillSlug(slug);
+    setTimeout(() => setCopiedSkillSlug(null), 2000);
   };
 
   const reviewList = list(reviews.reviews);
@@ -553,40 +574,139 @@ export default function SkillsPage() {
             </div>
           </div>
 
-          {/* 3D 悬浮底部交互指示器 */}
-          <div className="absolute bottom-3 left-3 right-3 pointer-events-none">
-            {selectedSkillSlug ? (
-              <div className="bg-black/75 backdrop-blur-md p-3 rounded-2xl border border-white/20 pointer-events-auto flex items-center justify-between shadow-lg animate-in fade-in">
-                <div className="space-y-0.5 min-w-0 pr-2">
-                  <div className="flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-[#F59E0B]" />
-                    <span className="text-xs font-bold text-white truncate font-mono">
-                      /{selectedSkillSlug}
+          {/* 3D 场景内全息技能 SOP 详情视窗 (In-Scene Holographic Skill SOP Inspector) */}
+          {selectedSkillObj && (
+            <div className="absolute top-14 right-3 bottom-3 z-30 w-80 sm:w-96 md:w-[440px] max-w-[calc(100%-24px)] flex flex-col pointer-events-auto bg-black/85 backdrop-blur-2xl border border-white/20 rounded-2xl shadow-2xl overflow-hidden animate-in fade-in slide-in-from-right-4 duration-200">
+              {/* Top Title & Quick Actions */}
+              <div className="p-3.5 border-b border-white/10 bg-white/5 flex items-start justify-between gap-2 shrink-0">
+                <div className="min-w-0 flex-1 space-y-1">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span
+                      className={`text-[9px] font-mono px-2 py-0.5 rounded-full font-bold uppercase ${
+                        selectedSkillObj.status === "published"
+                          ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                          : "bg-amber-500/20 text-amber-300 border border-amber-500/30"
+                      }`}
+                    >
+                      {selectedSkillObj.status === "published" ? "✓ 生产运行中" : "⚡ 演进草稿"}
                     </span>
-                    <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300">
-                      能量束注入中
+                    <span className="text-[10px] font-mono text-white/50 px-1.5 py-0.5 rounded bg-white/10">
+                      v{selectedSkillObj.version}
+                    </span>
+                    <span className="text-[10px] font-mono text-amber-400 font-bold truncate">
+                      /{selectedSkillObj.slug}
                     </span>
                   </div>
-                  <p className="text-[11px] text-white/70 truncate">
-                    全息激光已注入 5 大受护终端基座
-                  </p>
+                  <h3 className="text-sm font-bold text-white truncate tracking-tight">
+                    {selectedSkillObj.title || selectedSkillObj.slug}
+                  </h3>
+                  {selectedSkillObj.description && (
+                    <p className="text-[11px] text-white/70 line-clamp-2 leading-relaxed">
+                      {selectedSkillObj.description}
+                    </p>
+                  )}
                 </div>
-                <button
-                  onClick={() => setSelectedSkillSlug(null)}
-                  className="p-1 rounded-xl bg-white/10 text-white/60 hover:text-white transition-all shrink-0"
-                  title="重置对焦"
-                >
-                  <Icon name="close" size={12} />
-                </button>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    onClick={() => handleCopySkillBody(selectedSkillObj.body || "", selectedSkillObj.slug || "")}
+                    className="p-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white/80 hover:text-white transition-all text-xs flex items-center gap-1"
+                    title="复制 SOP 完整指令"
+                  >
+                    <Icon name="copy" size={13} />
+                    <span className="text-[10px] font-mono">
+                      {copiedSkillSlug === selectedSkillObj.slug ? "已复制" : "复制代码"}
+                    </span>
+                  </button>
+                  <button
+                    onClick={() => setSelectedSkillSlug(null)}
+                    className="p-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white/60 hover:text-white transition-all"
+                    title="关闭视窗"
+                  >
+                    <Icon name="close" size={13} />
+                  </button>
+                </div>
               </div>
-            ) : (
-              <div className="text-center">
-                <span className="text-[10px] font-mono text-white/50 bg-black/40 backdrop-blur-xs px-3 py-1 rounded-full border border-white/10 pointer-events-auto">
-                  点击技能晶核发射激光束注入 5 端基座 · 滚轮缩放 · 左键旋转
+
+              {/* 5 端全息实时注入基座状态指示 */}
+              <div className="px-3.5 py-2 bg-black/40 border-b border-white/5 flex items-center justify-between text-[10px] font-mono shrink-0">
+                <span className="text-white/60 flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 breathing-glow-emerald" />
+                  5 端热注入就绪
                 </span>
+                <div className="flex items-center gap-1">
+                  {["Claude", "Cursor", "OpenCode", "VSCode", "Windsurf"].map((c) => (
+                    <span key={c} className="px-1.5 py-0.2 rounded bg-white/10 text-white/80 text-[9px]">
+                      {c}
+                    </span>
+                  ))}
+                </div>
               </div>
-            )}
-          </div>
+
+              {/* Scrollable SOP Markdown Instructions Content */}
+              <div className="flex-1 min-h-0 overflow-y-auto p-3.5 space-y-3 custom-scrollbar text-xs leading-relaxed text-white/90">
+                <div className="text-[11px] font-mono text-white/50 flex items-center justify-between">
+                  <span>📄 标准作业程序 (SOP) 执行指令</span>
+                  <span>{selectedSkillObj.body?.length || 0} 字符</span>
+                </div>
+                {selectedSkillObj.body ? (
+                  <div className="p-3 rounded-xl bg-white/5 border border-white/10 font-mono text-[11px] text-white/90 overflow-x-auto">
+                    <MarkdownViewer content={selectedSkillObj.body} />
+                  </div>
+                ) : (
+                  <div className="text-white/40 text-center py-6 text-xs font-mono">
+                    该技能暂未定义正文指令
+                  </div>
+                )}
+
+                {/* 演化复盘分析元数据 (若有) */}
+                {selectedSkillObj.results && Object.keys(selectedSkillObj.results).length > 0 && (
+                  <div className="p-2.5 rounded-xl bg-purple-500/10 border border-purple-500/20 text-[10px] space-y-1">
+                    <div className="font-bold text-purple-300 font-mono flex items-center gap-1">
+                      <Icon name="sparkles" size={12} />
+                      <span>自进化复盘元数据</span>
+                    </div>
+                    <pre className="text-white/70 overflow-x-auto whitespace-pre-wrap font-mono">
+                      {JSON.stringify(selectedSkillObj.results, null, 2)}
+                    </pre>
+                  </div>
+                )}
+              </div>
+
+              {/* Bottom Quick Action Footer */}
+              <div className="p-2.5 bg-white/5 border-t border-white/10 flex items-center justify-between gap-2 shrink-0">
+                <div className="text-[10px] font-mono text-white/50">
+                  点击 3D 外部空白可取消对焦
+                </div>
+                {activeRawSkill && (
+                  <button
+                    onClick={() => {
+                      if (selectedSkillObj.status === "draft") {
+                        setActiveTab("drafts");
+                        setEditing(str(activeRawSkill.id));
+                      } else {
+                        setActiveTab("published");
+                        setShowUpdate(str(activeRawSkill.id));
+                      }
+                      setIsPanelCollapsed(false);
+                    }}
+                    className="px-3 py-1 rounded-xl text-xs font-semibold bg-[var(--aurora-accent)] text-white hover:opacity-90 transition-all flex items-center gap-1 shadow-md"
+                  >
+                    <Icon name="edit" size={12} />
+                    <span>在编辑台打开</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* 3D 悬浮底部小指示器 (未选中时提示) */}
+          {!selectedSkillObj && (
+            <div className="absolute bottom-3 left-3 right-3 pointer-events-none text-center">
+              <span className="text-[10px] font-mono text-white/70 bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/15 pointer-events-auto shadow-lg">
+                点击技能晶核发射激光束注入 5 端基座并在场景内查看 SOP · 滚轮缩放 · 左键旋转
+              </span>
+            </div>
+          )}
         </div>
 
         {/* ── 右翼 (7 列 / 58%): 技能列表、演进草稿与审查动态 (可收起让 3D 铺满整屏) ── */}

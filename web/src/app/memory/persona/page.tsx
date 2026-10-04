@@ -583,10 +583,9 @@ export default function PersonaPage() {
     [sandboxPrompt, triggerSynapse]
   );
 
-  // Handle 3D Body Selection -> Switch Chapter Tab & Pose
+  // Handle 3D Body Selection -> Switch Chapter Tab & Pose (In-Scene Hologram)
   const handleSelectDimension = (dim: PersonaDimension) => {
     setActiveDimension(dim);
-    setIsPanelCollapsed(false); // 选中人体部位自动展开右侧规则中枢
     if (dim === "all") setActiveTab("all");
     else if (dim === "evolution") setActiveTab("evolution");
     else setActiveTab(dim as ChapterTab);
@@ -602,6 +601,20 @@ export default function PersonaPage() {
     if (labels[dim]) {
       triggerSynapse(labels[dim], dim);
     }
+  };
+
+  // 当前 3D 场景内全息特征清单
+  const activeInSceneSection = useMemo(() => {
+    if (activeDimension === "all" || activeDimension === "evolution") return null;
+    return structuredSections.find((s) => s.dimension === activeDimension) || null;
+  }, [structuredSections, activeDimension]);
+
+  const [copiedRuleIndex, setCopiedRuleIndex] = useState<number | null>(null);
+
+  const handleCopyRule = (ruleText: string, idx: number) => {
+    navigator.clipboard.writeText(ruleText);
+    setCopiedRuleIndex(idx);
+    setTimeout(() => setCopiedRuleIndex(null), 2000);
   };
 
   // Spark Evolution Ritual
@@ -777,7 +790,7 @@ export default function PersonaPage() {
           ───────────────────────────────────────────────────────────── */}
       <div ref={cockpitRef} className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-3 min-h-0 overflow-hidden relative">
         {/* ── 左翼: 3D 全息神经孪生体主舞台 (支持 100% 满屏沉浸与分屏联动) ── */}
-        <div className={`h-full flex flex-col min-h-0 transition-all duration-300 ${
+        <div className={`h-full flex flex-col min-h-0 transition-all duration-300 relative ${
           isPanelCollapsed ? "lg:col-span-12 w-full" : "lg:col-span-5"
         }`}>
           <DigitalTwinAvatar3D
@@ -794,6 +807,141 @@ export default function PersonaPage() {
             onToggleFullscreen={togglePhysicalFullscreen}
             className="w-full h-full"
           />
+
+          {/* 3D 场景内心智特征全息视窗 (In-Scene Holographic Persona Trait Inspector) */}
+          {activeDimension !== "all" && (
+            <div className="absolute top-14 right-3 bottom-14 z-30 w-80 sm:w-96 md:w-[440px] max-w-[calc(100%-24px)] flex flex-col pointer-events-auto bg-black/85 backdrop-blur-2xl border border-white/20 rounded-2xl shadow-2xl overflow-hidden animate-in fade-in slide-in-from-right-4 duration-200">
+              {/* Header */}
+              <div className="p-3.5 border-b border-white/10 bg-white/5 flex items-start justify-between gap-2 shrink-0">
+                <div className="min-w-0 flex-1 space-y-1">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span
+                      className="text-[9px] font-mono px-2 py-0.5 rounded-full font-bold uppercase"
+                      style={{
+                        backgroundColor: activeDimension === "brain" ? "rgba(239,68,68,0.2)" : "rgba(139,92,246,0.2)",
+                        color: activeDimension === "brain" ? "#EF4444" : "#A78BFA",
+                        border: `1px solid ${activeDimension === "brain" ? "rgba(239,68,68,0.4)" : "rgba(139,92,246,0.4)"}`,
+                      }}
+                    >
+                      {activeDimension === "brain" ? "P0 绝对红线" : "心智基线准则"}
+                    </span>
+                    <span className="text-[10px] font-mono text-white/50 px-1.5 py-0.5 rounded bg-white/10">
+                      {activeInSceneSection ? `${activeInSceneSection.items.length} 条准则` : activeDimension === "evolution" ? `${dailyHistory.length} 轮进化` : ""}
+                    </span>
+                  </div>
+                  <h3 className="text-sm font-bold text-white truncate tracking-tight flex items-center gap-1.5">
+                    <span>
+                      {activeDimension === "brain" && "🧠 脑核绝对铁律"}
+                      {activeDimension === "communication" && "💬 沟通风格准则"}
+                      {activeDimension === "tech" && "⚡ 架构技术规范"}
+                      {activeDimension === "execution" && "🛠️ 工作习惯协同"}
+                      {activeDimension === "project" && "🎯 项目专属约束"}
+                      {activeDimension === "evolution" && "✨ 每日自进化记录"}
+                    </span>
+                  </h3>
+                  <p className="text-[11px] text-white/70 truncate">
+                    点击任意准则可在 3D 场景内直接触发数字人微姿态与拟态宣导
+                  </p>
+                </div>
+                <button
+                  onClick={() => setActiveDimension("all")}
+                  className="p-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white/60 hover:text-white transition-all shrink-0"
+                  title="关闭全息视窗"
+                >
+                  <Icon name="close" size={13} />
+                </button>
+              </div>
+
+              {/* 5 端实时热守护状态指示 */}
+              <div className="px-3.5 py-1.5 bg-black/40 border-b border-white/5 flex items-center justify-between text-[10px] font-mono shrink-0">
+                <span className="text-white/60 flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 breathing-glow-emerald" />
+                  已热守护 5 端终端
+                </span>
+                <span className="text-white/40">点击条目联动 3D 动作</span>
+              </div>
+
+              {/* 规则清单列表 (Scrollable) */}
+              <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-2 custom-scrollbar text-xs">
+                {activeInSceneSection && activeInSceneSection.items.map((rule, idx) => (
+                  <div
+                    key={idx}
+                    onClick={() => {
+                      triggerSynapse(rule, activeDimension);
+                    }}
+                    className="group p-2.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 hover:border-[var(--aurora-accent)] cursor-pointer transition-all active:scale-[0.99] space-y-1"
+                  >
+                    <div className="flex items-center justify-between text-[10px] font-mono text-white/50">
+                      <span className="flex items-center gap-1.5">
+                        <span className={`w-1.5 h-1.5 rounded-full ${
+                          activeDimension === "brain" ? "bg-red-500 animate-pulse" : "bg-[var(--aurora-accent)]"
+                        }`} />
+                        <span className="font-semibold text-white/70">
+                          {activeDimension === "brain" ? `P0-${idx + 1}` : `RULE-${idx + 1}`}
+                        </span>
+                      </span>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleCopyRule(rule, idx);
+                        }}
+                        className="opacity-0 group-hover:opacity-100 hover:text-white p-0.5 rounded transition-all"
+                        title="复制此条准则"
+                      >
+                        <span className="text-[9px] font-mono text-white/60 hover:text-white">
+                          {copiedRuleIndex === idx ? "已复制" : "复制"}
+                        </span>
+                      </button>
+                    </div>
+                    <p className="text-xs text-white/90 leading-relaxed group-hover:text-white">
+                      {rule}
+                    </p>
+                  </div>
+                ))}
+
+                {/* 每日进化维度 */}
+                {activeDimension === "evolution" && (
+                  <div className="space-y-2">
+                    {dailyHistory.map((item, idx) => (
+                      <div
+                        key={idx}
+                        onClick={() => {
+                          triggerSynapse(`✨ 心智进化回顾（${item.date}）：已巩固准则，经验值 +${item.document_count}`, "evolution");
+                        }}
+                        className="p-2.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 cursor-pointer transition-all"
+                      >
+                        <div className="flex items-center justify-between text-[10px] font-mono text-amber-300">
+                          <span>{item.date}</span>
+                          <span>+{item.document_count} EXP</span>
+                        </div>
+                        <p className="text-xs text-white/90 mt-1">
+                          {item.tools && item.tools.length > 0
+                            ? `已协同端：${item.tools.join(" · ")}`
+                            : `心智自进化吸收与反思沉淀 (${item.document_count} 条记录)`}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Footer */}
+              <div className="p-2.5 bg-white/5 border-t border-white/10 flex items-center justify-between gap-2 shrink-0">
+                <div className="text-[10px] font-mono text-white/50">
+                  点击准则驱动 3D 虚拟人姿态
+                </div>
+                <button
+                  onClick={() => {
+                    setIsPanelCollapsed(false);
+                  }}
+                  className="px-3 py-1 rounded-xl text-xs font-semibold bg-[var(--aurora-accent)] text-white hover:opacity-90 transition-all flex items-center gap-1 shadow-md"
+                >
+                  <Icon name="edit" size={12} />
+                  <span>在编辑台打开</span>
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* ── 右翼 (7 列 / 58%): 特征矩阵与每日进化成长中枢 (可收起让 3D 铺满整屏) ── */}

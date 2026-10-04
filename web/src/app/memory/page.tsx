@@ -478,51 +478,169 @@ export default function MemoryPage() {
             </div>
           </div>
 
-          {/* 3D 悬浮底部交互指示器 / 选中卡片 */}
-          <div className="absolute bottom-3 left-3 right-3 pointer-events-none">
-            {selectedEntity ? (
-              <div className="bg-black/75 backdrop-blur-md p-3 rounded-2xl border border-white/20 pointer-events-auto flex items-center justify-between shadow-lg animate-in fade-in">
-                <div className="space-y-0.5 min-w-0 pr-2">
-                  <div className="flex items-center gap-2">
-                    <span
-                      className="w-2 h-2 rounded-full"
-                      style={{ backgroundColor: TYPE_COLORS[selectedEntity.type] || "#38BDF8" }}
-                    />
-                    <span className="text-xs font-bold text-white truncate font-mono">
-                      {selectedEntity.name}
-                    </span>
-                    <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-white/10 text-white/80">
-                      {selectedEntity.type}
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-white/70 truncate">
-                    {selectedEntity.summary || "知识星晶已锁定 · 关联突触已高亮"}
-                  </p>
+          {/* ── 3D 场景内全息实体详情视窗 (In-Scene 3D Holographic Inspector) ── */}
+          {selectedEntity ? (
+            <div className="absolute top-14 right-3 bottom-3 z-30 w-[340px] sm:w-[380px] xl:w-[420px] rounded-2xl bg-black/85 backdrop-blur-2xl border border-white/20 shadow-2xl flex flex-col overflow-hidden animate-in fade-in slide-in-from-right-4 duration-300 pointer-events-auto">
+              {/* 视窗 Header */}
+              <div className="p-3 bg-white/5 border-b border-white/10 flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-2 min-w-0 pr-2">
+                  <span
+                    className="w-2.5 h-2.5 rounded-full shrink-0 shadow-xs"
+                    style={{ backgroundColor: TYPE_COLORS[selectedEntity.type] || "#38BDF8" }}
+                  />
+                  <h3 className="text-xs sm:text-sm font-bold text-white font-mono truncate">
+                    {selectedEntity.name}
+                  </h3>
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-white/10 text-white/80 shrink-0">
+                    {selectedEntity.type}
+                  </span>
                 </div>
-                <div className="flex items-center gap-1.5 shrink-0">
-                  <button
-                    onClick={() => setActiveTab("entity")}
-                    className="px-2.5 py-1 rounded-xl text-[11px] font-medium bg-[#38BDF8] text-black font-mono hover:bg-[#38BDF8]/90 transition-all"
-                  >
-                    查看详情 →
-                  </button>
+                <div className="flex items-center gap-1 shrink-0">
                   <button
                     onClick={() => handleSelectNode(null)}
-                    className="p-1 rounded-xl bg-white/10 text-white/60 hover:text-white transition-all"
-                    title="重置选中"
+                    className="p-1 rounded-xl bg-white/10 text-white/60 hover:text-white hover:bg-white/20 transition-all"
+                    title="关闭全息详情"
                   >
                     <Icon name="close" size={12} />
                   </button>
                 </div>
               </div>
-            ) : (
-              <div className="text-center">
-                <span className="text-[10px] font-mono text-white/50 bg-black/40 backdrop-blur-xs px-3 py-1 rounded-full border border-white/10 pointer-events-auto">
-                  按住左键 360° 旋转 · 滚轮缩放 · 点击星晶联动右侧详情
-                </span>
+
+              {/* 视窗 Body: 知识摘要、突触关联与观察记录 */}
+              <div className="flex-1 overflow-y-auto p-3 space-y-3 min-h-0 scrollbar-thin text-xs">
+                {/* 知识摘要 */}
+                {selectedEntity.summary && (
+                  <div className="p-2.5 rounded-xl bg-white/5 border border-white/10 text-white/80 leading-relaxed text-xs">
+                    {selectedEntity.summary}
+                  </div>
+                )}
+
+                {/* 突触拓扑互联 (Outgoing) */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between text-[11px] font-bold text-white/70">
+                    <span>指向关联突触 (Outgoing)</span>
+                    <span className="text-[10px] font-mono text-white/40">
+                      {selectedEntity.outgoing_relations.length} 条
+                    </span>
+                  </div>
+                  {selectedEntity.outgoing_relations.length === 0 ? (
+                    <div className="text-[10px] text-white/40 py-1 pl-1">暂无主动突触</div>
+                  ) : (
+                    <div className="space-y-1">
+                      {selectedEntity.outgoing_relations.map((rel, idx) => (
+                        <div
+                          key={idx}
+                          onClick={() => handleJumpToEntity(rel.target_name)}
+                          className="p-2 rounded-xl bg-white/5 hover:bg-white/15 border border-white/10 cursor-pointer transition-all flex items-center justify-between group"
+                          title="在 3D 场景中飞跃对焦该星晶"
+                        >
+                          <div className="flex items-center gap-1.5 truncate">
+                            <span className="text-[10px] font-mono text-[#38BDF8] shrink-0">
+                              --[{rel.relation}]--&gt;
+                            </span>
+                            <span className="font-semibold text-white group-hover:text-[#38BDF8] truncate">
+                              {rel.target_name}
+                            </span>
+                          </div>
+                          <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-white/10 text-white/60 shrink-0">
+                            {rel.target_type}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* 突触拓扑互联 (Incoming) */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between text-[11px] font-bold text-white/70">
+                    <span>被指关联突触 (Incoming)</span>
+                    <span className="text-[10px] font-mono text-white/40">
+                      {selectedEntity.incoming_relations.length} 条
+                    </span>
+                  </div>
+                  {selectedEntity.incoming_relations.length === 0 ? (
+                    <div className="text-[10px] text-white/40 py-1 pl-1">暂无被指突触</div>
+                  ) : (
+                    <div className="space-y-1">
+                      {selectedEntity.incoming_relations.map((rel, idx) => (
+                        <div
+                          key={idx}
+                          onClick={() => handleJumpToEntity(rel.source_name)}
+                          className="p-2 rounded-xl bg-white/5 hover:bg-white/15 border border-white/10 cursor-pointer transition-all flex items-center justify-between group"
+                          title="在 3D 场景中飞跃对焦该星晶"
+                        >
+                          <div className="flex items-center gap-1.5 truncate">
+                            <span className="font-semibold text-white group-hover:text-[#38BDF8] truncate">
+                              {rel.source_name}
+                            </span>
+                            <span className="text-[10px] font-mono text-[#38BDF8] shrink-0">
+                              --[{rel.relation}]--&gt;
+                            </span>
+                          </div>
+                          <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-white/10 text-white/60 shrink-0">
+                            {rel.source_type}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* 历史会话真实观察记录 */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between text-[11px] font-bold text-white/70">
+                    <span>历史会话真实观察记录</span>
+                    <span className="text-[10px] font-mono text-white/40">
+                      {selectedEntity.observations.length} 条
+                    </span>
+                  </div>
+                  {selectedEntity.observations.length === 0 ? (
+                    <div className="text-[10px] text-white/40 py-1 pl-1">
+                      暂无底层观察沉淀，该星晶由准则系统直接定义
+                    </div>
+                  ) : (
+                    <div className="space-y-1.5">
+                      {selectedEntity.observations.map((obs, i) => (
+                        <div
+                          key={i}
+                          className="p-2 rounded-xl bg-white/5 border border-white/10 text-[11px] text-white/80 leading-relaxed space-y-1"
+                        >
+                          <p>{obs.content}</p>
+                          {obs.observed_at && (
+                            <div className="text-[9px] font-mono text-white/40 text-right">
+                              {new Date(obs.observed_at).toLocaleString()}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
-            )}
-          </div>
+
+              {/* 视窗 Footer 操作栏 */}
+              <div className="p-2.5 bg-white/5 border-t border-white/10 flex items-center justify-between shrink-0 text-[11px] font-mono">
+                <span className="text-white/40">知识星晶已锁定 · 突触双向飞跃</span>
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(selectedEntity.name);
+                    setNotice(`已复制实体名称「${selectedEntity.name}」到剪贴板`);
+                  }}
+                  className="px-2 py-0.8 rounded-lg bg-white/10 hover:bg-white/20 text-white/80 transition-all flex items-center gap-1"
+                >
+                  <Icon name="copy" size={10} />
+                  <span>复制名称</span>
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="absolute bottom-3 left-3 right-3 pointer-events-none text-center">
+              <span className="text-[10px] font-mono text-white/50 bg-black/40 backdrop-blur-xs px-3 py-1 rounded-full border border-white/10 pointer-events-auto">
+                按住左键 360° 旋转 · 滚轮缩放 · 点击星晶在 3D 页面直接展开全息详情
+              </span>
+            </div>
+          )}
         </div>
 
         {/* ── 右翼 (7 列 / 58%): 知识准则树、拓扑与梦境提炼中枢 (可收起让 3D 铺满整屏) ── */}
