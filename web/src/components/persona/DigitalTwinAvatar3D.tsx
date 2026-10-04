@@ -537,7 +537,7 @@ export default function DigitalTwinAvatar3D({
 
   return (
     <div
-      className={`relative w-full h-full min-h-[460px] rounded-3xl overflow-hidden select-none border border-[var(--aurora-border)] bg-gradient-to-b from-[#0c0d18] via-[#080912] to-[#040509] shadow-2xl flex flex-col justify-between ${className}`}
+      className={`relative w-full h-full min-h-[460px] rounded-3xl overflow-hidden select-none border border-[var(--aurora-border)] bg-[radial-gradient(ellipse_at_50%_0%,#181a36_0%,#080912_55%,#030308_100%)] shadow-2xl flex flex-col justify-between ${className}`}
     >
       {/* 3D WebGL Canvas */}
       <div ref={containerRef} className="absolute inset-0 cursor-grab active:cursor-grabbing z-0" />
@@ -545,10 +545,10 @@ export default function DigitalTwinAvatar3D({
       {/* Top Floating Holographic Growth & Level HUD */}
       <div className="relative z-10 p-3.5 flex items-center justify-between pointer-events-none gap-2">
         {/* Level & Evolution Status Pill */}
-        <div className="flex items-center gap-2.5 bg-black/60 backdrop-blur-md px-3.5 py-1.5 rounded-full border border-white/10 shadow-lg pointer-events-auto">
-          <div className="w-2.5 h-2.5 rounded-full bg-[#10B981] animate-ping" />
+        <div className="flex items-center gap-2.5 bg-black/65 backdrop-blur-xl px-3.5 py-1.5 rounded-full border border-white/15 shadow-xl pointer-events-auto">
+          <div className="w-2 h-2 rounded-full bg-[#10B981] animate-ping" />
           <div className="flex items-center gap-2 text-xs">
-            <span className="font-bold text-transparent bg-clip-text bg-gradient-to-r from-[#F59E0B] via-[#EC4899] to-[#8B5CF6] font-mono">
+            <span className="font-bold text-transparent bg-clip-text bg-gradient-to-r from-[#F59E0B] via-[#EC4899] to-[#8B5CF6] font-mono tracking-wide">
               Lv.{evolutionLevel} · {evolutionStage}
             </span>
             <span className="text-[10px] text-white/50 font-mono hidden sm:inline">
@@ -567,10 +567,10 @@ export default function DigitalTwinAvatar3D({
                 onSparkEvolution();
               }}
               title="激发今日心智进化共鸣"
-              className="px-2.5 py-1 rounded-xl text-[11px] font-mono font-medium transition-all backdrop-blur-md border bg-gradient-to-r from-[#F59E0B]/20 to-[#EC4899]/20 hover:from-[#F59E0B]/30 hover:to-[#EC4899]/30 text-[#F59E0B] border-[#F59E0B]/40 hover:scale-102 flex items-center gap-1 shadow-md"
+              className="px-2.5 py-1 rounded-xl text-[11px] font-mono font-medium transition-all backdrop-blur-md border bg-gradient-to-r from-[#F59E0B]/20 to-[#EC4899]/20 hover:from-[#F59E0B]/35 hover:to-[#EC4899]/35 text-[#F59E0B] border-[#F59E0B]/40 hover:scale-102 flex items-center gap-1 shadow-md"
             >
               <span>⚡</span>
-              <span className="hidden sm:inline">进化共鸣</span>
+              <span className="hidden sm:inline">共鸣激发</span>
             </button>
           )}
 
@@ -590,7 +590,7 @@ export default function DigitalTwinAvatar3D({
       {/* Center Dynamic Holographic Synapse Activation Banner */}
       {hudSynapse && (
         <div className="relative z-20 self-center pointer-events-none px-4 animate-in fade-in zoom-in-95 duration-200">
-          <div className="bg-black/85 backdrop-blur-lg px-4 py-2.5 rounded-2xl border border-[var(--aurora-accent)] shadow-[0_0_30px_rgba(139,92,246,0.45)] flex items-center gap-2.5 max-w-[420px]">
+          <div className="bg-black/85 backdrop-blur-xl px-4 py-2.5 rounded-2xl border border-[var(--aurora-accent)] shadow-[0_0_30px_rgba(139,92,246,0.5)] flex items-center gap-2.5 max-w-[420px]">
             <span className="w-2.5 h-2.5 rounded-full bg-[var(--aurora-accent)] animate-ping shrink-0" />
             <div className="flex flex-col min-w-0">
               <span className="text-[10px] font-mono text-[var(--aurora-accent)] font-bold tracking-wider flex items-center gap-1.5">
@@ -605,42 +605,44 @@ export default function DigitalTwinAvatar3D({
         </div>
       )}
 
-      {/* Bottom Holographic Dimension Pills Bar (Tied directly to right-side panel) */}
-      <div className="relative z-10 p-3 flex items-center justify-center gap-1.5 pointer-events-auto overflow-x-auto scrollbar-none">
-        <button
-          onClick={() => onSelectDimension("all")}
-          className={`px-3 py-1.5 rounded-xl text-xs font-medium transition-all shrink-0 backdrop-blur-md border ${
-            activeDimension === "all"
-              ? "bg-[#8B5CF6] text-white border-[#8B5CF6] shadow-lg font-semibold"
-              : "bg-black/60 text-white/70 border-white/10 hover:text-white hover:bg-black/80"
-          }`}
-        >
-          🌐 全景
-        </button>
+      {/* Bottom Holographic Dimension Floating Dock */}
+      <div className="relative z-10 pb-3 px-3 flex justify-center pointer-events-auto">
+        <div className="bg-black/65 backdrop-blur-xl border border-white/10 rounded-2xl p-1 shadow-2xl flex items-center gap-1 overflow-x-auto scrollbar-none max-w-full">
+          <button
+            onClick={() => onSelectDimension("all")}
+            className={`px-3 py-1.2 rounded-xl text-xs font-medium transition-all shrink-0 border ${
+              activeDimension === "all"
+                ? "bg-[#8B5CF6] text-white border-[#8B5CF6] shadow-md font-semibold"
+                : "border-transparent text-white/70 hover:text-white hover:bg-white/10"
+            }`}
+          >
+            🌐 全景
+          </button>
 
-        {DIMENSIONS_CONFIG.map((dim) => {
-          const isSelected = activeDimension === dim.id;
-          return (
-            <button
-              key={dim.id}
-              onClick={() => onSelectDimension(dim.id)}
-              className={`px-2.5 py-1.5 rounded-xl text-xs font-medium transition-all shrink-0 backdrop-blur-md border flex items-center gap-1.5 ${
-                isSelected
-                  ? "text-white shadow-lg font-semibold scale-102"
-                  : "bg-black/60 text-white/70 border-white/10 hover:text-white hover:bg-black/80"
-              }`}
-              style={{
-                backgroundColor: isSelected ? dim.color : undefined,
-                borderColor: isSelected ? dim.color : undefined,
-              }}
-            >
-              <span>{dim.label.split(" · ")[0]}</span>
-              <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-black/30 font-mono font-bold">
-                {dim.count}
-              </span>
-            </button>
-          );
-        })}
+          {DIMENSIONS_CONFIG.map((dim) => {
+            const isSelected = activeDimension === dim.id;
+            return (
+              <button
+                key={dim.id}
+                onClick={() => onSelectDimension(dim.id)}
+                className={`px-2.5 py-1.2 rounded-xl text-xs font-medium transition-all shrink-0 border flex items-center gap-1.5 ${
+                  isSelected
+                    ? "text-white shadow-md font-semibold scale-102"
+                    : "border-transparent text-white/70 hover:text-white hover:bg-white/10"
+                }`}
+                style={{
+                  backgroundColor: isSelected ? dim.color : undefined,
+                  borderColor: isSelected ? dim.color : undefined,
+                }}
+              >
+                <span>{dim.label.split(" · ")[0]}</span>
+                <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-black/35 font-mono font-bold">
+                  {dim.count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
       </div>
     </div>
   );

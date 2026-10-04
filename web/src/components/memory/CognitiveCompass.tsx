@@ -6,6 +6,7 @@ import { Chip } from "@/components/aurora/primitives";
 
 interface CognitiveCompassProps {
   currentTab: "memory" | "persona" | "skills";
+  variant?: "full" | "compact";
   summaryStats?: {
     memoryCount?: number;
     personaVersion?: number | string;
@@ -14,7 +15,7 @@ interface CognitiveCompassProps {
   };
 }
 
-export default function CognitiveCompass({ currentTab, summaryStats }: CognitiveCompassProps) {
+export default function CognitiveCompass({ currentTab, variant = "full", summaryStats }: CognitiveCompassProps) {
   const pillars = [
     {
       id: "memory" as const,
@@ -55,6 +56,48 @@ export default function CognitiveCompass({ currentTab, summaryStats }: Cognitive
       badge: summaryStats?.skillsCount !== undefined ? `${summaryStats.skillsCount} 个自进化技能` : "标准化能力",
     },
   ];
+
+  if (variant === "compact") {
+    return (
+      <div className="w-full flex items-center justify-between gap-3 px-3 py-1.5 rounded-2xl border border-[var(--aurora-border)] bg-[var(--aurora-surface)] shadow-2xs">
+        <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none py-0.5">
+          <span className="text-[10px] font-bold text-[var(--aurora-fg4)] uppercase tracking-wider font-mono mr-1 shrink-0">
+            认知大脑
+          </span>
+          {pillars.map((p) => {
+            const isActive = currentTab === p.id;
+            return (
+              <Link
+                key={p.id}
+                href={p.href}
+                className={`px-3 py-1 rounded-xl text-xs font-medium transition-all flex items-center gap-1.5 shrink-0 ${
+                  isActive
+                    ? "bg-[var(--aurora-surface-solid)] text-[var(--aurora-fg1)] shadow-xs font-semibold border border-[var(--aurora-border-strong)]"
+                    : "text-[var(--aurora-fg3)] hover:text-[var(--aurora-fg1)] hover:bg-[var(--aurora-chip)]"
+                }`}
+              >
+                <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: p.color }} />
+                <span>{p.title}</span>
+                <span className="text-[10px] text-[var(--aurora-fg4)] font-mono hidden sm:inline">
+                  · {p.tagline}
+                </span>
+              </Link>
+            );
+          })}
+        </div>
+
+        <div className="hidden lg:flex items-center gap-2 text-[10px] font-mono text-[var(--aurora-fg4)] shrink-0">
+          <span>记忆输入</span>
+          <span className="opacity-40">→</span>
+          <span>提炼</span>
+          <span className="opacity-40">→</span>
+          <span className="text-[var(--aurora-accent)] font-semibold">画像注入</span>
+          <span className="opacity-40">→</span>
+          <span>技能固化</span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="w-full mb-6 rounded-2xl p-4 sm:p-5 border border-[var(--aurora-border)] bg-[var(--aurora-surface)] shadow-xs transition-all">
