@@ -22,6 +22,7 @@ interface SkillMatrix3DProps {
   isPanelCollapsed?: boolean;
   onToggleCollapse?: () => void;
   onToggleFullscreen?: () => void;
+  isPaused?: boolean;
   className?: string;
 }
 
@@ -79,12 +80,16 @@ export default function SkillMatrix3D({
   isPanelCollapsed,
   onToggleCollapse,
   onToggleFullscreen,
+  isPaused = false,
   className = "",
 }: SkillMatrix3DProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [hoveredSkill, setHoveredSkill] = useState<SkillItem | null>(null);
   const [isRotating, setIsRotating] = useState(true);
   const [injectedTerminal, setInjectedTerminal] = useState<string | null>(null);
+
+  const isPausedRef = useRef(isPaused);
+  isPausedRef.current = isPaused;
 
   const onSelectSkillRef = useRef(onSelectSkill);
   onSelectSkillRef.current = onSelectSkill;
@@ -99,6 +104,11 @@ export default function SkillMatrix3D({
     const width = container.clientWidth || 600;
     const height = container.clientHeight || 460;
 
+    // Detect mobile device for performance optimization
+    const isMobile =
+      typeof window !== "undefined" &&
+      (window.innerWidth < 768 || /Mobi|Android|iPhone/i.test(navigator.userAgent));
+
     // 1. Scene, Camera, Renderer
     const scene = new THREE.Scene();
     scene.fog = new THREE.FogExp2(0x060814, 0.04);
@@ -106,9 +116,13 @@ export default function SkillMatrix3D({
     const camera = new THREE.PerspectiveCamera(48, width / height, 0.1, 100);
     camera.position.set(0, 5.5, 10);
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    const renderer = new THREE.WebGLRenderer({
+      antialias: !isMobile, // Disable hardware MSAA on mobile for significant power and memory savings
+      alpha: true,
+      powerPreference: "high-performance",
+    });
     renderer.setSize(width, height);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, isMobile ? 1.25 : 1.75));
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.25;
     container.innerHTML = "";
@@ -180,6 +194,7 @@ export default function SkillMatrix3D({
     scene.add(skillRoot);
 
     const skillMeshMap = new Map<string, THREE.Mesh>();
+    const skillMeshList: THREE.Mesh[] = [];
     const skillList = skills.length > 0 ? skills : [
       { slug: "auto-update", title: "三位一体发版校验", version: 2, status: "published" },
       { slug: "code-review", title: "代码规范自检", version: 1, status: "published" },
@@ -229,6 +244,7 @@ export default function SkillMatrix3D({
       mesh.add(sprite);
 
       skillRoot.add(mesh);
+      skillMeshList.push(mesh);
       if (skill.slug) {
         skillMeshMap.set(skill.slug, mesh);
       }
@@ -251,6 +267,7 @@ export default function SkillMatrix3D({
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
     let isDragging = false;
+    let isMouseActive = false;
     let prevMousePos = { x: 0, y: 0 };
     let spherical = { radius: 10, theta: 0, phi: Math.PI / 3.0 };
     let targetCameraTarget = new THREE.Vector3(0, 1.2, 0);
@@ -290,6 +307,7 @@ export default function SkillMatrix3D({
       const rect = container.getBoundingClientRect();
       mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
       mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+      isMouseActive = true;
 
       if (isDragging) {
         const dx = e.clientX - prevMousePos.x;
@@ -313,8 +331,7 @@ export default function SkillMatrix3D({
       if (dist > 6) return; // 过滤拖拽旋转操作
 
       raycaster.setFromCamera(mouse, camera);
-      const meshes = Array.from(skillMeshMap.values());
-      const intersects = raycaster.intersectObjects(meshes, false);
+      const intersects = raycaster.intersectObjects(skillMeshList, false);
 
       if (intersects.length > 0) {
         const hit = intersects[0].object as THREE.Mesh;
@@ -386,8 +403,7 @@ export default function SkillMatrix3D({
             mouse.y = -((touch.clientY - rect.top) / rect.height) * 2 + 1;
 
             raycaster.setFromCamera(mouse, camera);
-            const meshes = Array.from(skillMeshMap.values());
-            const intersects = raycaster.intersectObjects(meshes, false);
+            const intersects = raycaster.intersectObjects(skillMeshList, false);
             if (intersects.length > 0) {
               const hit = intersects[0].object as THREE.Mesh;
               const skill = hit.userData.skill as SkillItem;
@@ -415,12 +431,22 @@ export default function SkillMatrix3D({
     container.addEventListener("touchmove", handleTouchMove, { passive: false });
     container.addEventListener("touchend", handleTouchEnd, { passive: false });
 
-    // 8. Render Animation Loop
+    // 8. Render Animation Loop (with Battery-Friendly Pause on Inactivity / Background)
     let animId = 0;
     const clock = new THREE.Clock();
+    let isPageVisible = !document.hidden;
+
+    const handleVisibilityChange = () => {
+      isPageVisible = !document.hidden;
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
 
     const animate = () => {
       animId = requestAnimationFrame(animate);
+
+      // Stop GPU work when tab is in background or parent page asks to pause
+      if (!isPageVisible || isPausedRef.current) return;
+
       const elapsed = clock.getElapsedTime();
 
       // Camera lerp
@@ -464,19 +490,21 @@ export default function SkillMatrix3D({
         beamMat.opacity = 0;
       }
 
-      // Hover Raycasting
-      raycaster.setFromCamera(mouse, camera);
-      const meshes = Array.from(skillMeshMap.values());
-      const intersects = raycaster.intersectObjects(meshes, false);
+      // Hover Raycasting (Desktop only & only on active mouse movement, saving mobile GPU)
+      if (!isMobile && isMouseActive) {
+        raycaster.setFromCamera(mouse, camera);
+        const intersects = raycaster.intersectObjects(skillMeshList, false);
 
-      if (intersects.length > 0) {
-        const hit = intersects[0].object as THREE.Mesh;
-        const skill = hit.userData.skill as SkillItem;
-        setHoveredSkill(skill);
-        document.body.style.cursor = "pointer";
-      } else {
-        setHoveredSkill(null);
-        document.body.style.cursor = "default";
+        if (intersects.length > 0) {
+          const hit = intersects[0].object as THREE.Mesh;
+          const skill = hit.userData.skill as SkillItem;
+          setHoveredSkill(skill);
+          document.body.style.cursor = "pointer";
+        } else {
+          setHoveredSkill(null);
+          document.body.style.cursor = "default";
+        }
+        isMouseActive = false;
       }
 
       renderer.render(scene, camera);
@@ -499,6 +527,7 @@ export default function SkillMatrix3D({
     return () => {
       cancelAnimationFrame(animId);
       resizeObserver.disconnect();
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
       container.removeEventListener("mousedown", handlePointerDown);
       window.removeEventListener("mouseup", handlePointerUp);
       container.removeEventListener("mousemove", handlePointerMove);
@@ -511,36 +540,53 @@ export default function SkillMatrix3D({
       if (renderer.domElement && container.contains(renderer.domElement)) {
         container.removeChild(renderer.domElement);
       }
+      // Deep dispose geometries and materials to prevent WebGL memory leak
+      scene.traverse((obj) => {
+        if ((obj as THREE.Mesh).geometry) {
+          (obj as THREE.Mesh).geometry.dispose();
+        }
+        if ((obj as THREE.Mesh).material) {
+          const mat = (obj as THREE.Mesh).material;
+          if (Array.isArray(mat)) {
+            mat.forEach((m) => m.dispose());
+          } else {
+            mat.dispose();
+          }
+        }
+      });
       renderer.dispose();
     };
   }, [skills, isRotating]);
 
   return (
     <div
-      className={`relative w-full h-[460px] rounded-3xl overflow-hidden select-none border border-[var(--aurora-border)] bg-[radial-gradient(ellipse_at_50%_0%,#181a32_0%,#090a16_60%,#04050a_100%)] shadow-2xl flex flex-col justify-between ${className}`}
+      className={`relative w-full h-full min-h-[340px] sm:min-h-[460px] rounded-3xl overflow-hidden select-none border border-[var(--aurora-border)] bg-[radial-gradient(ellipse_at_50%_0%,#181a32_0%,#090a16_60%,#04050a_100%)] shadow-2xl flex flex-col justify-between ${className}`}
     >
       {/* 3D WebGL Canvas */}
       <div ref={containerRef} className="absolute inset-0 cursor-grab active:cursor-grabbing z-0" />
 
       {/* Top Floating Holographic HUD: Unified Single-Row Controls & Metrics */}
-      <div className="relative z-10 p-3 sm:p-3.5 flex items-center justify-between pointer-events-none gap-2 flex-wrap sm:flex-nowrap overflow-hidden">
+      <div className="relative z-10 p-2 sm:p-3.5 flex items-center justify-between pointer-events-none gap-1 sm:gap-2 flex-nowrap overflow-hidden">
         {/* Left: Skill Matrix Badge & 5-End Link Indicator */}
-        <div className="flex items-center gap-1.5 min-w-0">
-          <div className="flex items-center gap-2 bg-black/65 backdrop-blur-xl px-2.5 sm:px-3 py-1.5 rounded-full border border-white/10 shadow-lg pointer-events-auto shrink-0">
-            <div className="w-2 h-2 rounded-full bg-[#F59E0B] animate-pulse" />
-            <span className="text-xs font-bold text-white font-mono tracking-wide">
-              3D 科技树 · {skills.length}
+        <div className="flex items-center gap-1 sm:gap-1.5 min-w-0">
+          <div className="flex items-center gap-1.5 bg-black/65 backdrop-blur-xl px-2 sm:px-3 py-1 sm:py-1.5 rounded-full border border-white/10 shadow-lg pointer-events-auto shrink-0">
+            <div className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-[#F59E0B] animate-pulse" />
+            <span className="text-[11px] sm:text-xs font-bold text-white font-mono tracking-wide">
+              <span className="sm:hidden">⚡ </span>
+              <span className="hidden sm:inline">3D 科技树 · </span>
+              {skills.length}
             </span>
           </div>
 
-          <div className="flex items-center gap-1 bg-black/60 backdrop-blur-md px-2.5 py-1 rounded-full border border-white/10 text-[10px] font-mono text-white/80 pointer-events-auto shrink-0">
+          <div className="flex items-center gap-1 bg-black/60 backdrop-blur-md px-2 py-0.5 sm:py-1 rounded-full border border-white/10 text-[9px] sm:text-[10px] font-mono text-white/80 pointer-events-auto shrink-0">
             <span className="w-1.5 h-1.5 rounded-full bg-[#10B981] breathing-glow-emerald" />
-            <span>5/5 端基座实时能量注入</span>
+            <span className="hidden sm:inline">5/5 端基座实时能量注入</span>
+            <span className="sm:hidden">5端热注</span>
           </div>
         </div>
 
         {/* Right: Unified Action Controls (Never overlapping) */}
-        <div className="flex items-center gap-1.5 pointer-events-auto shrink-0">
+        <div className="flex items-center gap-1 sm:gap-1.5 pointer-events-auto shrink-0">
           <button
             onClick={() => setIsRotating((v) => !v)}
             className={`px-2 sm:px-2.5 py-1 rounded-xl text-[11px] font-mono font-medium transition-all backdrop-blur-md border flex items-center gap-1 ${
@@ -550,7 +596,7 @@ export default function SkillMatrix3D({
             }`}
             title="切换科技树自转"
           >
-            <span>🔄</span>
+            <span className="text-xs">🔄</span>
             <span className="hidden sm:inline">{isRotating ? "自转中" : "已暂停"}</span>
           </button>
 
@@ -563,7 +609,7 @@ export default function SkillMatrix3D({
             className="px-2 sm:px-2.5 py-1 rounded-xl text-[11px] font-mono font-medium backdrop-blur-md border bg-black/50 text-white/70 border-white/10 hover:text-white flex items-center gap-1"
             title="重置技能对焦"
           >
-            <span>🎯</span>
+            <span className="text-xs">🎯</span>
             <span className="hidden sm:inline">重置对焦</span>
           </button>
 
@@ -571,17 +617,17 @@ export default function SkillMatrix3D({
             <button
               onClick={onToggleCollapse}
               className="px-2 sm:px-2.5 py-1 rounded-xl text-[11px] font-mono font-semibold bg-black/65 hover:bg-black/90 backdrop-blur-md border border-white/20 text-white flex items-center gap-1 shadow-md transition-all active:scale-95"
-              title={isPanelCollapsed ? "打开右侧管理面板" : "让 3D 科技树铺满整屏"}
+              title={isPanelCollapsed ? "打开管理面板" : "让 3D 科技树铺满整屏"}
             >
-              <span>{isPanelCollapsed ? "⧉" : "⛶"}</span>
-              <span className="hidden sm:inline">{isPanelCollapsed ? "打开侧边面板" : "3D 铺满整屏"}</span>
+              <span className="text-xs">{isPanelCollapsed ? "⧉" : "⛶"}</span>
+              <span className="hidden sm:inline">{isPanelCollapsed ? "侧边面板" : "铺满整屏"}</span>
             </button>
           )}
 
           {onToggleFullscreen && (
             <button
               onClick={onToggleFullscreen}
-              className="p-1 rounded-xl text-white/80 bg-black/65 hover:bg-black/90 backdrop-blur-md border border-white/20 hover:text-white shadow-md transition-all"
+              className="p-1 sm:p-1.5 rounded-xl text-white/80 bg-black/65 hover:bg-black/90 backdrop-blur-md border border-white/20 hover:text-white shadow-md transition-all"
               title="显示器物理全屏"
             >
               <Icon name="command" size={12} />

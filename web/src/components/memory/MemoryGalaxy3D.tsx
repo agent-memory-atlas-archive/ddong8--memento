@@ -29,6 +29,7 @@ interface MemoryGalaxy3DProps {
   isPanelCollapsed?: boolean;
   onToggleCollapse?: () => void;
   onToggleFullscreen?: () => void;
+  isPaused?: boolean;
   className?: string;
 }
 
@@ -99,11 +100,15 @@ export default function MemoryGalaxy3D({
   isPanelCollapsed,
   onToggleCollapse,
   onToggleFullscreen,
+  isPaused = false,
   className = "",
 }: MemoryGalaxy3DProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [hoveredNode, setHoveredNode] = useState<GalaxyNode | null>(null);
   const [isRotating, setIsRotating] = useState(true);
+
+  const isPausedRef = useRef(isPaused);
+  isPausedRef.current = isPaused;
 
   // Filtered nodes
   const activeNodes = useMemo(() => {
@@ -136,6 +141,11 @@ export default function MemoryGalaxy3D({
     const width = container.clientWidth || 600;
     const height = container.clientHeight || 500;
 
+    // Detect mobile device for performance optimization
+    const isMobile =
+      typeof window !== "undefined" &&
+      (window.innerWidth < 768 || /Mobi|Android|iPhone/i.test(navigator.userAgent));
+
     // 1. Scene, Camera, Renderer
     const scene = new THREE.Scene();
     scene.fog = new THREE.FogExp2(0x04060f, 0.035);
@@ -143,9 +153,13 @@ export default function MemoryGalaxy3D({
     const camera = new THREE.PerspectiveCamera(50, width / height, 0.1, 100);
     camera.position.set(0, 4.5, 11);
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    const renderer = new THREE.WebGLRenderer({
+      antialias: !isMobile, // Disable hardware MSAA on mobile for significant power and memory savings
+      alpha: true,
+      powerPreference: "high-performance",
+    });
     renderer.setSize(width, height);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, isMobile ? 1.25 : 1.75));
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.25;
     container.innerHTML = "";
@@ -231,6 +245,7 @@ export default function MemoryGalaxy3D({
     scene.add(galaxyRoot);
 
     const nodeMeshMap = new Map<string, THREE.Mesh>();
+    const nodeMeshList: THREE.Mesh[] = [];
     const nodePositionMap = new Map<string, THREE.Vector3>();
 
     // Compute 3D Fibonacci Sphere positions for nice organic balance
@@ -291,6 +306,7 @@ export default function MemoryGalaxy3D({
 
       galaxyRoot.add(mesh);
       nodeMeshMap.set(node.id, mesh);
+      nodeMeshList.push(mesh);
     });
 
     // 6. Draw 3D Synaptic Connections (Neural Fiber Lines)
@@ -326,6 +342,7 @@ export default function MemoryGalaxy3D({
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
     let isDragging = false;
+    let isMouseActive = false;
     let prevMousePos = { x: 0, y: 0 };
     let spherical = { radius: 11, theta: 0, phi: Math.PI / 2.8 };
     let targetCameraTarget = new THREE.Vector3(0, 0, 0);
@@ -365,6 +382,7 @@ export default function MemoryGalaxy3D({
       const rect = container.getBoundingClientRect();
       mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
       mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+      isMouseActive = true;
 
       if (isDragging) {
         const dx = e.clientX - prevMousePos.x;
@@ -388,8 +406,7 @@ export default function MemoryGalaxy3D({
       if (dist > 6) return; // 过滤拖拽旋转视角操作
 
       raycaster.setFromCamera(mouse, camera);
-      const meshes = Array.from(nodeMeshMap.values());
-      const intersects = raycaster.intersectObjects(meshes, false);
+      const intersects = raycaster.intersectObjects(nodeMeshList, false);
 
       if (intersects.length > 0) {
         const hit = intersects[0].object as THREE.Mesh;
@@ -461,8 +478,7 @@ export default function MemoryGalaxy3D({
             mouse.y = -((touch.clientY - rect.top) / rect.height) * 2 + 1;
 
             raycaster.setFromCamera(mouse, camera);
-            const meshes = Array.from(nodeMeshMap.values());
-            const intersects = raycaster.intersectObjects(meshes, false);
+            const intersects = raycaster.intersectObjects(nodeMeshList, false);
             if (intersects.length > 0) {
               const hit = intersects[0].object as THREE.Mesh;
               const node = hit.userData.node as GalaxyNode;
@@ -490,12 +506,22 @@ export default function MemoryGalaxy3D({
     container.addEventListener("touchmove", handleTouchMove, { passive: false });
     container.addEventListener("touchend", handleTouchEnd, { passive: false });
 
-    // 8. Animation Render Loop
+    // 8. Animation Render Loop (with Battery-Friendly Pause on Inactivity / Background)
     let animId = 0;
     const clock = new THREE.Clock();
+    let isPageVisible = !document.hidden;
+
+    const handleVisibilityChange = () => {
+      isPageVisible = !document.hidden;
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
 
     const animate = () => {
       animId = requestAnimationFrame(animate);
+
+      // Stop GPU work when tab is in background or parent page asks to pause
+      if (!isPageVisible || isPausedRef.current) return;
+
       const elapsed = clock.getElapsedTime();
 
       // Smooth Camera Target Lerp (Fly-to Node)
@@ -520,19 +546,21 @@ export default function MemoryGalaxy3D({
         starField.rotation.y += 0.008;
       }
 
-      // Raycast Hover Inspection
-      raycaster.setFromCamera(mouse, camera);
-      const meshes = Array.from(nodeMeshMap.values());
-      const intersects = raycaster.intersectObjects(meshes, false);
+      // Raycast Hover Inspection (Desktop only & only on active mouse movement, saving mobile GPU)
+      if (!isMobile && isMouseActive) {
+        raycaster.setFromCamera(mouse, camera);
+        const intersects = raycaster.intersectObjects(nodeMeshList, false);
 
-      if (intersects.length > 0) {
-        const hit = intersects[0].object as THREE.Mesh;
-        const node = hit.userData.node as GalaxyNode;
-        setHoveredNode(node);
-        document.body.style.cursor = "pointer";
-      } else {
-        setHoveredNode(null);
-        document.body.style.cursor = "default";
+        if (intersects.length > 0) {
+          const hit = intersects[0].object as THREE.Mesh;
+          const node = hit.userData.node as GalaxyNode;
+          setHoveredNode(node);
+          document.body.style.cursor = "pointer";
+        } else {
+          setHoveredNode(null);
+          document.body.style.cursor = "default";
+        }
+        isMouseActive = false;
       }
 
       // Highlight Selected Node with Radiant Pulsing
@@ -568,6 +596,7 @@ export default function MemoryGalaxy3D({
     return () => {
       cancelAnimationFrame(animId);
       resizeObserver.disconnect();
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
       container.removeEventListener("mousedown", handlePointerDown);
       window.removeEventListener("mouseup", handlePointerUp);
       container.removeEventListener("mousemove", handlePointerMove);
@@ -580,30 +609,46 @@ export default function MemoryGalaxy3D({
       if (renderer.domElement && container.contains(renderer.domElement)) {
         container.removeChild(renderer.domElement);
       }
+      // Deep dispose geometries and materials to prevent WebGL memory leak
+      scene.traverse((obj) => {
+        if ((obj as THREE.Mesh).geometry) {
+          (obj as THREE.Mesh).geometry.dispose();
+        }
+        if ((obj as THREE.Mesh).material) {
+          const mat = (obj as THREE.Mesh).material;
+          if (Array.isArray(mat)) {
+            mat.forEach((m) => m.dispose());
+          } else {
+            mat.dispose();
+          }
+        }
+      });
       renderer.dispose();
     };
   }, [activeNodes, activeEdges, isRotating]);
 
   return (
     <div
-      className={`relative w-full h-full min-h-[520px] rounded-3xl overflow-hidden select-none border border-[var(--aurora-border)] bg-[radial-gradient(ellipse_at_50%_0%,#13172e_0%,#080914_60%,#030308_100%)] shadow-2xl flex flex-col justify-between ${className}`}
+      className={`relative w-full h-full min-h-[340px] sm:min-h-[520px] rounded-3xl overflow-hidden select-none border border-[var(--aurora-border)] bg-[radial-gradient(ellipse_at_50%_0%,#13172e_0%,#080914_60%,#030308_100%)] shadow-2xl flex flex-col justify-between ${className}`}
     >
       {/* 3D WebGL Canvas */}
       <div ref={containerRef} className="absolute inset-0 cursor-grab active:cursor-grabbing z-0" />
 
       {/* Top Floating HUD: Unified Single-Row Controls & Metrics */}
-      <div className="relative z-10 p-3 sm:p-3.5 flex items-center justify-between pointer-events-none gap-2 flex-wrap sm:flex-nowrap overflow-hidden">
+      <div className="relative z-10 p-2 sm:p-3.5 flex items-center justify-between pointer-events-none gap-1 sm:gap-2 flex-nowrap overflow-hidden">
         {/* Left: Galaxy Badge & Filter Type Pills */}
-        <div className="flex items-center gap-1.5 min-w-0">
-          <div className="flex items-center gap-1.5 bg-black/65 backdrop-blur-xl px-2.5 sm:px-3 py-1.5 rounded-full border border-white/10 shadow-lg pointer-events-auto shrink-0">
-            <div className="w-2 h-2 rounded-full bg-[#38BDF8] animate-ping" />
-            <span className="text-xs font-bold text-white font-mono tracking-wide">
-              3D 认知星云 · {activeNodes.length}
+        <div className="flex items-center gap-1 sm:gap-1.5 min-w-0">
+          <div className="flex items-center gap-1.5 bg-black/65 backdrop-blur-xl px-2 sm:px-3 py-1 sm:py-1.5 rounded-full border border-white/10 shadow-lg pointer-events-auto shrink-0">
+            <div className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-[#38BDF8] animate-ping" />
+            <span className="text-[11px] sm:text-xs font-bold text-white font-mono tracking-wide">
+              <span className="sm:hidden">🌌 </span>
+              <span className="hidden sm:inline">3D 认知星云 · </span>
+              {activeNodes.length}
             </span>
           </div>
 
           {onFilterChange && (
-            <div className="flex items-center gap-1 bg-black/60 backdrop-blur-md p-1 rounded-full border border-white/10 overflow-x-auto scrollbar-none pointer-events-auto max-w-[140px] sm:max-w-[280px]">
+            <div className="flex items-center gap-0.5 sm:gap-1 bg-black/60 backdrop-blur-md p-0.5 sm:p-1 rounded-full border border-white/10 overflow-x-auto scrollbar-none pointer-events-auto max-w-[130px] sm:max-w-[280px]">
               {[
                 { id: "", label: "全部", color: "#38BDF8" },
                 { id: "project", label: "核心工程", color: "#10B981" },
@@ -619,7 +664,7 @@ export default function MemoryGalaxy3D({
                     borderColor: filterType === f.id ? f.color : "transparent",
                     color: filterType === f.id ? "#FFFFFF" : "rgba(255,255,255,0.7)",
                   }}
-                  className="px-2 py-0.5 rounded-full text-[10px] font-mono border transition-all hover:text-white shrink-0"
+                  className="px-1.5 sm:px-2 py-0.5 rounded-full text-[9px] sm:text-[10px] font-mono border transition-all hover:text-white shrink-0 whitespace-nowrap"
                 >
                   {f.label}
                 </button>
@@ -629,7 +674,7 @@ export default function MemoryGalaxy3D({
         </div>
 
         {/* Right: Unified Action Controls (Never overlapping) */}
-        <div className="flex items-center gap-1.5 pointer-events-auto shrink-0">
+        <div className="flex items-center gap-1 sm:gap-1.5 pointer-events-auto shrink-0">
           <button
             onClick={() => setIsRotating((v) => !v)}
             className={`px-2 sm:px-2.5 py-1 rounded-xl text-[11px] font-mono font-medium transition-all backdrop-blur-md border flex items-center gap-1 ${
@@ -639,7 +684,7 @@ export default function MemoryGalaxy3D({
             }`}
             title="切换星云自转"
           >
-            <span>🔄</span>
+            <span className="text-xs">🔄</span>
             <span className="hidden sm:inline">{isRotating ? "自转中" : "已暂停"}</span>
           </button>
 
@@ -652,7 +697,7 @@ export default function MemoryGalaxy3D({
             className="px-2 sm:px-2.5 py-1 rounded-xl text-[11px] font-mono font-medium backdrop-blur-md border bg-black/50 text-white/70 border-white/10 hover:text-white flex items-center gap-1"
             title="重置视角对焦"
           >
-            <span>🎯</span>
+            <span className="text-xs">🎯</span>
             <span className="hidden sm:inline">重置视角</span>
           </button>
 
@@ -660,17 +705,17 @@ export default function MemoryGalaxy3D({
             <button
               onClick={onToggleCollapse}
               className="px-2 sm:px-2.5 py-1 rounded-xl text-[11px] font-mono font-semibold bg-black/65 hover:bg-black/90 backdrop-blur-md border border-white/20 text-white flex items-center gap-1 shadow-md transition-all active:scale-95"
-              title={isPanelCollapsed ? "打开右侧管理面板" : "让 3D 认知星云铺满整屏"}
+              title={isPanelCollapsed ? "打开侧边面板" : "让 3D 认知星云铺满整屏"}
             >
-              <span>{isPanelCollapsed ? "⧉" : "⛶"}</span>
-              <span className="hidden sm:inline">{isPanelCollapsed ? "打开侧边面板" : "3D 铺满整屏"}</span>
+              <span className="text-xs">{isPanelCollapsed ? "⧉" : "⛶"}</span>
+              <span className="hidden sm:inline">{isPanelCollapsed ? "侧边面板" : "铺满整屏"}</span>
             </button>
           )}
 
           {onToggleFullscreen && (
             <button
               onClick={onToggleFullscreen}
-              className="p-1 rounded-xl text-white/80 bg-black/65 hover:bg-black/90 backdrop-blur-md border border-white/20 hover:text-white shadow-md transition-all"
+              className="p-1 sm:p-1.5 rounded-xl text-white/80 bg-black/65 hover:bg-black/90 backdrop-blur-md border border-white/20 hover:text-white shadow-md transition-all"
               title="显示器物理全屏"
             >
               <Icon name="command" size={12} />

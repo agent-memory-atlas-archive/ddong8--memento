@@ -462,7 +462,7 @@ export default function SkillsPage() {
   }, [drafts, searchQuery]);
 
   return (
-    <div className="h-[calc(100vh-68px)] max-h-[calc(100vh-68px)] flex flex-col gap-2 overflow-hidden">
+    <div className="h-[calc(100dvh-68px)] max-h-[calc(100dvh-68px)] flex flex-col gap-2 overflow-hidden">
       {/* ─────────────────────────────────────────────────────────────
           1. 统一顶栏 (Ultra-Refined Single-Row Cockpit Header)
           ───────────────────────────────────────────────────────────── */}
@@ -541,14 +541,24 @@ export default function SkillsPage() {
             isPanelCollapsed={isPanelCollapsed}
             onToggleCollapse={() => setIsPanelCollapsed(!isPanelCollapsed)}
             onToggleFullscreen={togglePhysicalFullscreen}
+            isPaused={!isPanelCollapsed}
             className="w-full h-full"
           />
 
           {/* 3D 场景内全息技能 SOP 详情视窗 (In-Scene Holographic Skill SOP Inspector) */}
           {selectedSkillObj && (
-            <div className="absolute z-30 max-sm:inset-x-2 max-sm:bottom-2 max-sm:max-h-[72vh] sm:top-14 sm:right-3 sm:bottom-3 sm:w-[380px] xl:w-[440px] flex flex-col pointer-events-auto bg-black/90 backdrop-blur-2xl border border-white/20 rounded-2xl shadow-2xl overflow-hidden animate-in fade-in max-sm:slide-in-from-bottom-6 sm:slide-in-from-right-4 duration-200">
-              {/* Mobile Drag Handle */}
-              <div className="w-10 h-1 rounded-full bg-white/25 mx-auto my-1.5 sm:hidden shrink-0" />
+            <>
+              {/* Mobile Backdrop to prevent gesture leakage */}
+              <div
+                onClick={() => handleSelectSkillFrom3D(null)}
+                className="sm:hidden absolute inset-0 z-25 bg-black/60 backdrop-blur-xs animate-in fade-in"
+              />
+              <div
+                onTouchStart={(e) => e.stopPropagation()}
+                className="absolute z-30 max-sm:inset-x-2 max-sm:bottom-2 max-sm:max-h-[72vh] sm:top-14 sm:right-3 sm:bottom-3 sm:w-[380px] xl:w-[440px] flex flex-col pointer-events-auto bg-black/90 backdrop-blur-2xl border border-white/20 rounded-2xl shadow-2xl overflow-hidden animate-in fade-in max-sm:slide-in-from-bottom-6 sm:slide-in-from-right-4 duration-200"
+              >
+                {/* Mobile Drag Handle */}
+                <div className="w-10 h-1 rounded-full bg-white/25 mx-auto my-1.5 sm:hidden shrink-0" />
 
               {/* Top Title & Quick Actions */}
               <div className="p-3.5 border-b border-white/10 bg-white/5 flex items-start justify-between gap-2 shrink-0">
@@ -670,6 +680,7 @@ export default function SkillsPage() {
                 )}
               </div>
             </div>
+            </>
           )}
 
           {/* 3D 悬浮底部小指示器 (未选中时提示) */}
@@ -682,11 +693,22 @@ export default function SkillsPage() {
           )}
         </div>
 
-        {/* ── 右翼 (7 列 / 58%): 技能列表、演进草稿与审查动态 (可收起让 3D 铺满整屏) ── */}
+        {/* ── 右翼 (7 列 / 58%): 技能列表、演进草稿与审查动态 (移动端自适应全屏抽屉，桌面端双翼分屏) ── */}
         {!isPanelCollapsed && (
-          <div className="lg:col-span-7 h-full flex flex-col min-h-0 bg-[var(--aurora-surface)] rounded-3xl border border-[var(--aurora-border)] shadow-xl overflow-hidden animate-in fade-in duration-300">
+          <div className="max-lg:fixed max-lg:inset-0 max-lg:z-50 max-lg:rounded-none max-lg:border-none lg:col-span-7 h-full flex flex-col min-h-0 bg-[var(--aurora-surface)] rounded-3xl border border-[var(--aurora-border)] shadow-2xl overflow-hidden animate-in fade-in max-lg:slide-in-from-bottom-6 duration-300">
             {/* A. 顶部仪表盘概览与 Tab 导航区 (Sticky Header) */}
             <div className="p-3 bg-gradient-to-r from-[var(--aurora-surface-solid)] via-[var(--aurora-surface)] to-[var(--aurora-chip)] border-b border-[var(--aurora-border)] shrink-0 space-y-2.5">
+              {/* Mobile Back Button to 3D */}
+              <div className="flex items-center justify-between lg:hidden pb-1 border-b border-white/10">
+                <button
+                  onClick={() => setIsPanelCollapsed(true)}
+                  className="px-2.5 py-1 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-semibold flex items-center gap-1.5 shrink-0 text-white"
+                >
+                  <Icon name="arrow_left" size={14} />
+                  <span>返回 3D 科技树</span>
+                </button>
+                <span className="text-[11px] font-mono text-white/50">技能管理中枢</span>
+              </div>
               {/* 三列高级 KPI 态势磁贴 */}
               <div className="grid grid-cols-3 gap-2">
                 {/* Tile 1: 活跃上线技能 */}

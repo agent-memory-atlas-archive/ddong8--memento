@@ -39,6 +39,7 @@ interface DigitalTwinAvatar3DProps {
   isPanelCollapsed?: boolean;
   onToggleCollapse?: () => void;
   onToggleFullscreen?: () => void;
+  isPaused?: boolean;
   className?: string;
 }
 
@@ -165,12 +166,16 @@ export default function DigitalTwinAvatar3D({
   isPanelCollapsed = false,
   onToggleCollapse,
   onToggleFullscreen,
+  isPaused = false,
   className = "",
 }: DigitalTwinAvatar3DProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isRotating, setIsRotating] = useState(false);
   const [isVoiceEnabled, setIsVoiceEnabled] = useState(true);
   const [hudSynapse, setHudSynapse] = useState<SynapsePulse | null>(null);
+
+  const isPausedRef = useRef(isPaused);
+  isPausedRef.current = isPaused;
 
   // References for live 3D mutations without React re-renders
   const avatarGroupRef = useRef<THREE.Group | null>(null);
@@ -244,6 +249,11 @@ export default function DigitalTwinAvatar3D({
     const width = container.clientWidth || 600;
     const height = container.clientHeight || 500;
 
+    // Detect mobile device for performance optimization
+    const isMobile =
+      typeof window !== "undefined" &&
+      (window.innerWidth < 768 || /Mobi|Android|iPhone/i.test(navigator.userAgent));
+
     // 1. Scene & Precision Camera Setup
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(36, width / height, 0.1, 100);
@@ -252,12 +262,12 @@ export default function DigitalTwinAvatar3D({
 
     // 2. High-Performance WebGL Renderer
     const renderer = new THREE.WebGLRenderer({
-      antialias: true,
+      antialias: !isMobile,
       alpha: true,
       powerPreference: "high-performance",
     });
     renderer.setSize(width, height);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, isMobile ? 1.25 : 1.5));
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.38;
     container.appendChild(renderer.domElement);
@@ -535,6 +545,13 @@ export default function DigitalTwinAvatar3D({
     // 7. 60fps Trait-Driven Gesture & Physics Loop
     let animId: number;
     const clock = new THREE.Clock();
+    let isPageVisible = !document.hidden;
+
+    const handleVisibilityChange = () => {
+      isPageVisible = !document.hidden;
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
     const currentColor = new THREE.Color(0xef4444);
     const targetColor = new THREE.Color(0xef4444);
 
@@ -550,6 +567,10 @@ export default function DigitalTwinAvatar3D({
 
     const animate = () => {
       animId = requestAnimationFrame(animate);
+
+      // Stop GPU work when tab is in background or parent page asks to pause
+      if (!isPageVisible || isPausedRef.current) return;
+
       const elapsed = clock.getElapsedTime();
 
       // Lifelike Micro-Gaze Saccades (每 3 秒极微小的视线生理颤动，告别木讷)
@@ -717,6 +738,7 @@ export default function DigitalTwinAvatar3D({
     return () => {
       cancelAnimationFrame(animId);
       resizeObserver.disconnect();
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
       container.removeEventListener("mousedown", handlePointerDown);
       window.removeEventListener("mouseup", handlePointerUp);
       container.removeEventListener("mousemove", handlePointerMove);
@@ -726,6 +748,20 @@ export default function DigitalTwinAvatar3D({
       if (renderer.domElement && container.contains(renderer.domElement)) {
         container.removeChild(renderer.domElement);
       }
+      // Deep dispose geometries and materials to prevent WebGL memory leak
+      scene.traverse((obj) => {
+        if ((obj as THREE.Mesh).geometry) {
+          (obj as THREE.Mesh).geometry.dispose();
+        }
+        if ((obj as THREE.Mesh).material) {
+          const mat = (obj as THREE.Mesh).material;
+          if (Array.isArray(mat)) {
+            mat.forEach((m) => m.dispose());
+          } else {
+            mat.dispose();
+          }
+        }
+      });
       renderer.dispose();
     };
   }, [isRotating]);
@@ -775,13 +811,13 @@ export default function DigitalTwinAvatar3D({
 
   return (
     <div
-      className={`relative w-full h-full min-h-[460px] rounded-3xl overflow-hidden select-none border border-[var(--aurora-border)] bg-[radial-gradient(ellipse_at_50%_0%,#181a36_0%,#080912_55%,#030308_100%)] shadow-2xl flex flex-col justify-between ${className}`}
+      className={`relative w-full h-full min-h-[340px] sm:min-h-[460px] rounded-3xl overflow-hidden select-none border border-[var(--aurora-border)] bg-[radial-gradient(ellipse_at_50%_0%,#181a36_0%,#080912_55%,#030308_100%)] shadow-2xl flex flex-col justify-between ${className}`}
     >
       {/* 3D WebGL Canvas */}
       <div ref={containerRef} className="absolute inset-0 cursor-grab active:cursor-grabbing z-0" />
 
-      {/* 身体各部位「特点神经突触热点」 */}
-      <div className="absolute inset-0 pointer-events-none z-15 overflow-hidden">
+      {/* 身体各部位「特点神经突触热点」(仅在桌面端显示，手机端通过底部精致 Dock 掌控，彻底消除小屏重叠) */}
+      <div className="hidden sm:block absolute inset-0 pointer-events-none z-15 overflow-hidden">
         <button
           onClick={() => onSelectDimension("brain")}
           className={`absolute top-[16%] left-[16%] pointer-events-auto px-2 py-0.8 rounded-full border text-[10px] font-mono transition-all flex items-center gap-1 backdrop-blur-md shadow-md hover:scale-105 ${
@@ -849,22 +885,22 @@ export default function DigitalTwinAvatar3D({
       </div>
 
       {/* Top Floating Holographic Growth & Level HUD */}
-      <div className="relative z-20 p-3.5 flex items-center justify-between pointer-events-none gap-2">
+      <div className="relative z-20 p-2 sm:p-3.5 flex items-center justify-between pointer-events-none gap-1 sm:gap-2 flex-nowrap overflow-hidden">
         {/* Level & Evolution Status Pill */}
-        <div className="flex items-center gap-2.5 bg-black/65 backdrop-blur-xl px-3.5 py-1.5 rounded-full border border-white/15 shadow-xl pointer-events-auto">
-          <div className="w-2 h-2 rounded-full bg-[#10B981] animate-ping" />
-          <div className="flex items-center gap-2 text-xs">
+        <div className="flex items-center gap-1.5 sm:gap-2.5 bg-black/65 backdrop-blur-xl px-2.5 sm:px-3.5 py-1 sm:py-1.5 rounded-full border border-white/15 shadow-xl pointer-events-auto shrink-0">
+          <div className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-[#10B981] animate-ping" />
+          <div className="flex items-center gap-1.5 sm:gap-2 text-[11px] sm:text-xs">
             <span className="font-bold text-transparent bg-clip-text bg-gradient-to-r from-[#F59E0B] via-[#EC4899] to-[#8B5CF6] font-mono tracking-wide">
-              Lv.{evolutionLevel} · {evolutionStage}
+              Lv.{evolutionLevel} <span className="hidden sm:inline">· {evolutionStage}</span>
             </span>
-            <span className="text-[10px] text-white/50 font-mono hidden sm:inline">
+            <span className="text-[10px] text-white/50 font-mono hidden md:inline">
               EXP {evolutionExp}/1000
             </span>
           </div>
         </div>
 
         {/* Action Controls: Voice, Spark Evolution & Rotation */}
-        <div className="flex items-center gap-1.5 pointer-events-auto">
+        <div className="flex items-center gap-1 sm:gap-1.5 pointer-events-auto shrink-0">
           {/* Voice Toggle */}
           <button
             onClick={() => {

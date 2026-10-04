@@ -332,7 +332,7 @@ export default function MemoryPage() {
   };
 
   return (
-    <div className="h-[calc(100vh-68px)] max-h-[calc(100vh-68px)] flex flex-col gap-2 overflow-hidden">
+    <div className="h-[calc(100dvh-68px)] max-h-[calc(100dvh-68px)] flex flex-col gap-2 overflow-hidden">
       {/* ─────────────────────────────────────────────────────────────
           1. 统一顶栏 (Ultra-Refined Single-Row Cockpit Header)
           ───────────────────────────────────────────────────────────── */}
@@ -426,14 +426,24 @@ export default function MemoryPage() {
             isPanelCollapsed={isPanelCollapsed}
             onToggleCollapse={() => setIsPanelCollapsed(!isPanelCollapsed)}
             onToggleFullscreen={togglePhysicalFullscreen}
+            isPaused={!isPanelCollapsed}
             className="w-full h-full"
           />
 
           {/* ── 3D 场景内全息实体详情视窗 (In-Scene 3D Holographic Inspector) ── */}
           {selectedEntity ? (
-            <div className="absolute z-30 max-sm:inset-x-2 max-sm:bottom-2 max-sm:max-h-[70vh] sm:top-14 sm:right-3 sm:bottom-3 sm:w-[380px] xl:w-[440px] rounded-2xl bg-black/90 backdrop-blur-2xl border border-white/20 shadow-2xl flex flex-col overflow-hidden animate-in fade-in max-sm:slide-in-from-bottom-6 sm:slide-in-from-right-4 duration-300 pointer-events-auto">
-              {/* Mobile Drag Handle */}
-              <div className="w-10 h-1 rounded-full bg-white/25 mx-auto my-1.5 sm:hidden shrink-0" />
+            <>
+              {/* Mobile Backdrop to prevent touch bleed */}
+              <div
+                onClick={() => handleSelectNode(null)}
+                className="sm:hidden absolute inset-0 z-25 bg-black/60 backdrop-blur-xs animate-in fade-in"
+              />
+              <div
+                onTouchStart={(e) => e.stopPropagation()}
+                className="absolute z-30 max-sm:inset-x-2 max-sm:bottom-2 max-sm:max-h-[70vh] sm:top-14 sm:right-3 sm:bottom-3 sm:w-[380px] xl:w-[440px] rounded-2xl bg-black/90 backdrop-blur-2xl border border-white/20 shadow-2xl flex flex-col overflow-hidden animate-in fade-in max-sm:slide-in-from-bottom-6 sm:slide-in-from-right-4 duration-300 pointer-events-auto"
+              >
+                {/* Mobile Drag Handle */}
+                <div className="w-10 h-1 rounded-full bg-white/25 mx-auto my-1.5 sm:hidden shrink-0" />
 
               {/* 视窗 Header */}
               <div className="p-3 bg-white/5 border-b border-white/10 flex items-center justify-between shrink-0">
@@ -602,6 +612,7 @@ export default function MemoryPage() {
                 </div>
               </div>
             </div>
+            </>
           ) : (
             <div className="absolute bottom-3 left-3 right-3 pointer-events-none text-center">
               <span className="text-[10px] font-mono text-white/50 bg-black/40 backdrop-blur-xs px-3 py-1 rounded-full border border-white/10 pointer-events-auto">
@@ -611,11 +622,22 @@ export default function MemoryPage() {
           )}
         </div>
 
-        {/* ── 右翼 (7 列 / 58%): 知识准则树、拓扑与梦境提炼中枢 (可收起让 3D 铺满整屏) ── */}
+        {/* ── 右翼 (7 列 / 58%): 知识准则树、拓扑与梦境提炼中枢 (移动端自适应全屏抽屉，桌面端双翼分屏) ── */}
         {!isPanelCollapsed && (
-          <div className="lg:col-span-7 h-full flex flex-col min-h-0 bg-[var(--aurora-surface)] rounded-3xl border border-[var(--aurora-border)] shadow-xl overflow-hidden animate-in fade-in duration-300">
+          <div className="max-lg:fixed max-lg:inset-0 max-lg:z-50 max-lg:rounded-none max-lg:border-none lg:col-span-7 h-full flex flex-col min-h-0 bg-[var(--aurora-surface)] rounded-3xl border border-[var(--aurora-border)] shadow-2xl overflow-hidden animate-in fade-in max-lg:slide-in-from-bottom-6 duration-300">
             {/* A. 顶部仪表盘概览与 Tab 导航区 (Sticky Header) */}
             <div className="p-3 bg-gradient-to-r from-[var(--aurora-surface-solid)] via-[var(--aurora-surface)] to-[var(--aurora-chip)] border-b border-[var(--aurora-border)] shrink-0 space-y-2.5">
+              {/* Mobile Back Button to 3D */}
+              <div className="flex items-center justify-between lg:hidden pb-1 border-b border-white/10">
+                <button
+                  onClick={() => setIsPanelCollapsed(true)}
+                  className="px-2.5 py-1 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-semibold flex items-center gap-1.5 shrink-0 text-white"
+                >
+                  <Icon name="arrow_left" size={14} />
+                  <span>返回 3D 认知舞台</span>
+                </button>
+                <span className="text-[11px] font-mono text-white/50">知识准则管理中枢</span>
+              </div>
               {/* 三列高级 KPI 态势磁贴 */}
               <div className="grid grid-cols-3 gap-2">
                 {/* Tile 1: 知识准则条数 */}
