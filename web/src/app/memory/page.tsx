@@ -421,61 +421,13 @@ export default function MemoryPage() {
             selectedNodeId={selectedNodeId}
             onSelectNode={handleSelectNode}
             filterType={filterType}
+            onFilterChange={setFilterType}
             dreamingActive={dreamingActive}
+            isPanelCollapsed={isPanelCollapsed}
+            onToggleCollapse={() => setIsPanelCollapsed(!isPanelCollapsed)}
+            onToggleFullscreen={togglePhysicalFullscreen}
             className="w-full h-full"
           />
-
-          {/* 3D 悬浮顶部滤镜与状态栏 */}
-          <div className="absolute top-2.5 left-2.5 right-2.5 flex items-center justify-between pointer-events-none gap-1.5 overflow-hidden">
-            <div className="flex items-center gap-1.5 bg-black/60 backdrop-blur-md px-2.5 py-1 rounded-full border border-white/10 pointer-events-auto shrink-0">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#38BDF8] animate-pulse" />
-              <span className="text-[10px] sm:text-[11px] font-mono font-bold text-white tracking-wide">
-                认知星云 3D
-              </span>
-            </div>
-
-            {/* Quick Entity Type Pills & Fullscreen Controls */}
-            <div className="flex items-center gap-1 pointer-events-auto min-w-0">
-              <div className="flex items-center gap-0.5 bg-black/60 backdrop-blur-md p-0.5 rounded-full border border-white/10 overflow-x-auto scrollbar-none max-w-[130px] sm:max-w-[280px]">
-                {[
-                  { id: "", label: "全部", color: "#38BDF8" },
-                  { id: "project", label: "核心工程", color: "#10B981" },
-                  { id: "technology", label: "技术栈", color: "#38BDF8" },
-                  { id: "concept", label: "概念", color: "#A855F7" },
-                  { id: "rule", label: "铁律", color: "#EF4444" },
-                ].map((f) => (
-                  <button
-                    key={f.id}
-                    onClick={() => setFilterType(f.id)}
-                    style={{
-                      backgroundColor: filterType === f.id ? `${f.color}40` : "transparent",
-                      borderColor: filterType === f.id ? f.color : "transparent",
-                      color: filterType === f.id ? "#FFFFFF" : "rgba(255,255,255,0.7)",
-                    }}
-                    className="px-2 py-0.5 rounded-full text-[10px] font-mono border transition-all hover:text-white"
-                  >
-                    {f.label}
-                  </button>
-                ))}
-              </div>
-
-              {/* Viewport Fullscreen Theater Toggles */}
-              <button
-                onClick={() => setIsPanelCollapsed(!isPanelCollapsed)}
-                className="px-2.5 py-1 rounded-full text-[11px] font-mono font-semibold bg-black/65 hover:bg-black/90 backdrop-blur-md border border-white/20 text-white flex items-center gap-1 shadow-md transition-all active:scale-95"
-                title={isPanelCollapsed ? "打开右侧管理面板" : "让 3D 认知星云铺满整屏"}
-              >
-                <span>{isPanelCollapsed ? "⧉ 打开侧边面板" : "⛶ 3D 铺满整屏"}</span>
-              </button>
-              <button
-                onClick={togglePhysicalFullscreen}
-                className="p-1 rounded-full text-white/80 bg-black/65 hover:bg-black/90 backdrop-blur-md border border-white/20 hover:text-white shadow-md transition-all"
-                title="显示器物理全屏"
-              >
-                <Icon name="command" size={12} />
-              </button>
-            </div>
-          </div>
 
           {/* ── 3D 场景内全息实体详情视窗 (In-Scene 3D Holographic Inspector) ── */}
           {selectedEntity ? (

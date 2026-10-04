@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import * as THREE from "three";
+import { Icon } from "@/components/aurora/Icon";
 
 export interface GalaxyNode {
   id: string;
@@ -23,7 +24,11 @@ interface MemoryGalaxy3DProps {
   selectedNodeId?: string | null;
   onSelectNode?: (node: GalaxyNode | null) => void;
   filterType?: string;
+  onFilterChange?: (filterType: string) => void;
   dreamingActive?: boolean;
+  isPanelCollapsed?: boolean;
+  onToggleCollapse?: () => void;
+  onToggleFullscreen?: () => void;
   className?: string;
 }
 
@@ -88,8 +93,12 @@ export default function MemoryGalaxy3D({
   edges,
   selectedNodeId,
   onSelectNode,
-  filterType,
+  filterType = "",
+  onFilterChange,
   dreamingActive = false,
+  isPanelCollapsed,
+  onToggleCollapse,
+  onToggleFullscreen,
   className = "",
 }: MemoryGalaxy3DProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -582,29 +591,56 @@ export default function MemoryGalaxy3D({
       {/* 3D WebGL Canvas */}
       <div ref={containerRef} className="absolute inset-0 cursor-grab active:cursor-grabbing z-0" />
 
-      {/* Top Floating HUD: Controls & Metrics */}
-      <div className="relative z-10 p-3.5 flex items-center justify-between pointer-events-none gap-2 flex-wrap">
-        <div className="flex items-center gap-2 bg-black/60 backdrop-blur-xl px-3 py-1.5 rounded-full border border-white/10 shadow-lg pointer-events-auto">
-          <div className="w-2 h-2 rounded-full bg-[#10B981] animate-ping" />
-          <span className="text-xs font-bold text-white font-mono tracking-wide">
-            3D 认知星云 · {activeNodes.length} 实体晶体
-          </span>
-          <span className="text-[10px] text-white/50 font-mono hidden sm:inline">
-            · {activeEdges.length} 神经光缆
-          </span>
+      {/* Top Floating HUD: Unified Single-Row Controls & Metrics */}
+      <div className="relative z-10 p-3 sm:p-3.5 flex items-center justify-between pointer-events-none gap-2 flex-wrap sm:flex-nowrap overflow-hidden">
+        {/* Left: Galaxy Badge & Filter Type Pills */}
+        <div className="flex items-center gap-1.5 min-w-0">
+          <div className="flex items-center gap-1.5 bg-black/65 backdrop-blur-xl px-2.5 sm:px-3 py-1.5 rounded-full border border-white/10 shadow-lg pointer-events-auto shrink-0">
+            <div className="w-2 h-2 rounded-full bg-[#38BDF8] animate-ping" />
+            <span className="text-xs font-bold text-white font-mono tracking-wide">
+              3D 认知星云 · {activeNodes.length}
+            </span>
+          </div>
+
+          {onFilterChange && (
+            <div className="flex items-center gap-1 bg-black/60 backdrop-blur-md p-1 rounded-full border border-white/10 overflow-x-auto scrollbar-none pointer-events-auto max-w-[140px] sm:max-w-[280px]">
+              {[
+                { id: "", label: "全部", color: "#38BDF8" },
+                { id: "project", label: "核心工程", color: "#10B981" },
+                { id: "technology", label: "技术栈", color: "#38BDF8" },
+                { id: "concept", label: "概念", color: "#A855F7" },
+                { id: "rule", label: "铁律", color: "#EF4444" },
+              ].map((f) => (
+                <button
+                  key={f.id}
+                  onClick={() => onFilterChange(f.id)}
+                  style={{
+                    backgroundColor: filterType === f.id ? `${f.color}40` : "transparent",
+                    borderColor: filterType === f.id ? f.color : "transparent",
+                    color: filterType === f.id ? "#FFFFFF" : "rgba(255,255,255,0.7)",
+                  }}
+                  className="px-2 py-0.5 rounded-full text-[10px] font-mono border transition-all hover:text-white shrink-0"
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
-        {/* Action Controls */}
-        <div className="flex items-center gap-1.5 pointer-events-auto">
+        {/* Right: Unified Action Controls (Never overlapping) */}
+        <div className="flex items-center gap-1.5 pointer-events-auto shrink-0">
           <button
             onClick={() => setIsRotating((v) => !v)}
-            className={`px-2.5 py-1 rounded-xl text-[11px] font-mono font-medium transition-all backdrop-blur-md border ${
+            className={`px-2 sm:px-2.5 py-1 rounded-xl text-[11px] font-mono font-medium transition-all backdrop-blur-md border flex items-center gap-1 ${
               isRotating
                 ? "bg-[#8B5CF6]/30 text-[#C084FC] border-[#8B5CF6]/50 shadow-xs"
                 : "bg-black/50 text-white/70 border-white/10 hover:text-white"
             }`}
+            title="切换星云自转"
           >
-            {isRotating ? "自转中" : "已暂停"}
+            <span>🔄</span>
+            <span className="hidden sm:inline">{isRotating ? "自转中" : "已暂停"}</span>
           </button>
 
           <button
@@ -613,10 +649,33 @@ export default function MemoryGalaxy3D({
                 onSelectNodeRef.current(null);
               }
             }}
-            className="px-2.5 py-1 rounded-xl text-[11px] font-mono font-medium backdrop-blur-md border bg-black/50 text-white/70 border-white/10 hover:text-white"
+            className="px-2 sm:px-2.5 py-1 rounded-xl text-[11px] font-mono font-medium backdrop-blur-md border bg-black/50 text-white/70 border-white/10 hover:text-white flex items-center gap-1"
+            title="重置视角对焦"
           >
-            重置视角
+            <span>🎯</span>
+            <span className="hidden sm:inline">重置视角</span>
           </button>
+
+          {onToggleCollapse && (
+            <button
+              onClick={onToggleCollapse}
+              className="px-2 sm:px-2.5 py-1 rounded-xl text-[11px] font-mono font-semibold bg-black/65 hover:bg-black/90 backdrop-blur-md border border-white/20 text-white flex items-center gap-1 shadow-md transition-all active:scale-95"
+              title={isPanelCollapsed ? "打开右侧管理面板" : "让 3D 认知星云铺满整屏"}
+            >
+              <span>{isPanelCollapsed ? "⧉" : "⛶"}</span>
+              <span className="hidden sm:inline">{isPanelCollapsed ? "打开侧边面板" : "3D 铺满整屏"}</span>
+            </button>
+          )}
+
+          {onToggleFullscreen && (
+            <button
+              onClick={onToggleFullscreen}
+              className="p-1 rounded-xl text-white/80 bg-black/65 hover:bg-black/90 backdrop-blur-md border border-white/20 hover:text-white shadow-md transition-all"
+              title="显示器物理全屏"
+            >
+              <Icon name="command" size={12} />
+            </button>
+          )}
         </div>
       </div>
 

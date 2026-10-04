@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useMemo } from "react";
 import * as THREE from "three";
+import { Icon } from "@/components/aurora/Icon";
 
 export interface SkillItem {
   id?: string;
@@ -18,6 +19,9 @@ interface SkillMatrix3DProps {
   skills: SkillItem[];
   selectedSlug?: string | null;
   onSelectSkill?: (skill: SkillItem | null) => void;
+  isPanelCollapsed?: boolean;
+  onToggleCollapse?: () => void;
+  onToggleFullscreen?: () => void;
   className?: string;
 }
 
@@ -72,6 +76,9 @@ export default function SkillMatrix3D({
   skills,
   selectedSlug,
   onSelectSkill,
+  isPanelCollapsed,
+  onToggleCollapse,
+  onToggleFullscreen,
   className = "",
 }: SkillMatrix3DProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -515,28 +522,36 @@ export default function SkillMatrix3D({
       {/* 3D WebGL Canvas */}
       <div ref={containerRef} className="absolute inset-0 cursor-grab active:cursor-grabbing z-0" />
 
-      {/* Top Floating Holographic HUD */}
-      <div className="relative z-10 p-3.5 flex items-center justify-between pointer-events-none gap-2 flex-wrap">
-        <div className="flex items-center gap-2 bg-black/65 backdrop-blur-xl px-3.5 py-1.5 rounded-full border border-white/10 shadow-lg pointer-events-auto">
-          <div className="w-2 h-2 rounded-full bg-[#3B82F6] animate-ping" />
-          <span className="text-xs font-bold text-white font-mono tracking-wide">
-            3D 技能科技树 · {skills.length} 项能力晶核
-          </span>
-          <span className="text-[10px] text-white/50 font-mono hidden sm:inline">
-            · 5 端热注通道激活
-          </span>
+      {/* Top Floating Holographic HUD: Unified Single-Row Controls & Metrics */}
+      <div className="relative z-10 p-3 sm:p-3.5 flex items-center justify-between pointer-events-none gap-2 flex-wrap sm:flex-nowrap overflow-hidden">
+        {/* Left: Skill Matrix Badge & 5-End Link Indicator */}
+        <div className="flex items-center gap-1.5 min-w-0">
+          <div className="flex items-center gap-2 bg-black/65 backdrop-blur-xl px-2.5 sm:px-3 py-1.5 rounded-full border border-white/10 shadow-lg pointer-events-auto shrink-0">
+            <div className="w-2 h-2 rounded-full bg-[#F59E0B] animate-pulse" />
+            <span className="text-xs font-bold text-white font-mono tracking-wide">
+              3D 科技树 · {skills.length}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-1 bg-black/60 backdrop-blur-md px-2.5 py-1 rounded-full border border-white/10 text-[10px] font-mono text-white/80 pointer-events-auto shrink-0">
+            <span className="w-1.5 h-1.5 rounded-full bg-[#10B981] breathing-glow-emerald" />
+            <span>5/5 端基座实时能量注入</span>
+          </div>
         </div>
 
-        <div className="flex items-center gap-1.5 pointer-events-auto">
+        {/* Right: Unified Action Controls (Never overlapping) */}
+        <div className="flex items-center gap-1.5 pointer-events-auto shrink-0">
           <button
             onClick={() => setIsRotating((v) => !v)}
-            className={`px-2.5 py-1 rounded-xl text-[11px] font-mono font-medium transition-all backdrop-blur-md border ${
+            className={`px-2 sm:px-2.5 py-1 rounded-xl text-[11px] font-mono font-medium transition-all backdrop-blur-md border flex items-center gap-1 ${
               isRotating
                 ? "bg-[#3B82F6]/30 text-[#93C5FD] border-[#3B82F6]/50 shadow-xs"
                 : "bg-black/50 text-white/70 border-white/10 hover:text-white"
             }`}
+            title="切换科技树自转"
           >
-            {isRotating ? "自转中" : "已暂停"}
+            <span>🔄</span>
+            <span className="hidden sm:inline">{isRotating ? "自转中" : "已暂停"}</span>
           </button>
 
           <button
@@ -545,10 +560,33 @@ export default function SkillMatrix3D({
                 onSelectSkillRef.current(null);
               }
             }}
-            className="px-2.5 py-1 rounded-xl text-[11px] font-mono font-medium backdrop-blur-md border bg-black/50 text-white/70 border-white/10 hover:text-white"
+            className="px-2 sm:px-2.5 py-1 rounded-xl text-[11px] font-mono font-medium backdrop-blur-md border bg-black/50 text-white/70 border-white/10 hover:text-white flex items-center gap-1"
+            title="重置技能对焦"
           >
-            重置对焦
+            <span>🎯</span>
+            <span className="hidden sm:inline">重置对焦</span>
           </button>
+
+          {onToggleCollapse && (
+            <button
+              onClick={onToggleCollapse}
+              className="px-2 sm:px-2.5 py-1 rounded-xl text-[11px] font-mono font-semibold bg-black/65 hover:bg-black/90 backdrop-blur-md border border-white/20 text-white flex items-center gap-1 shadow-md transition-all active:scale-95"
+              title={isPanelCollapsed ? "打开右侧管理面板" : "让 3D 科技树铺满整屏"}
+            >
+              <span>{isPanelCollapsed ? "⧉" : "⛶"}</span>
+              <span className="hidden sm:inline">{isPanelCollapsed ? "打开侧边面板" : "3D 铺满整屏"}</span>
+            </button>
+          )}
+
+          {onToggleFullscreen && (
+            <button
+              onClick={onToggleFullscreen}
+              className="p-1 rounded-xl text-white/80 bg-black/65 hover:bg-black/90 backdrop-blur-md border border-white/20 hover:text-white shadow-md transition-all"
+              title="显示器物理全屏"
+            >
+              <Icon name="command" size={12} />
+            </button>
+          )}
         </div>
       </div>
 
