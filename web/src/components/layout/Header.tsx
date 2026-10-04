@@ -9,11 +9,13 @@ import { SkinPicker, ThemeToggle } from "@/components/aurora/primitives";
 
 import { useEffect, useState } from "react";
 import { desktop } from "@/lib/desktop";
+import { useSidebar } from "@/lib/sidebar-context";
 
 export default function Header({ onMenuToggle }: { onMenuToggle: () => void }) {
   const { user } = useAuth();
   const { t, locale, setLocale } = useI18n();
   const { devices, selectedDeviceId, setSelectedDeviceId } = useDevice();
+  const { collapsed, toggleCollapsed } = useSidebar();
   const selectedDevice = devices.find((d) => d.device_id === selectedDeviceId);
   const [isMacDesktop, setIsMacDesktop] = useState(false);
 
@@ -25,7 +27,7 @@ export default function Header({ onMenuToggle }: { onMenuToggle: () => void }) {
 
   return (
     <header
-      className={`h-14 flex items-center justify-between px-3 sm:px-4 md:px-6 fixed top-0 left-0 lg:left-60 right-0 z-20 ${isMacDesktop ? "app-region-drag" : ""}`}
+      className={`h-14 flex items-center justify-between px-3 sm:px-4 md:px-6 fixed top-0 left-0 ${collapsed ? "lg:left-[68px]" : "lg:left-60"} right-0 z-20 transition-all duration-200 ${isMacDesktop ? "app-region-drag" : ""}`}
       style={{
         background: "var(--aurora-surface)",
         backdropFilter: "blur(20px) saturate(180%)",
@@ -43,6 +45,19 @@ export default function Header({ onMenuToggle }: { onMenuToggle: () => void }) {
         >
           <Icon name="menu" size={22} />
         </button>
+
+        {/* Desktop Sidebar toggle when collapsed */}
+        {collapsed && (
+          <button
+            type="button"
+            onClick={toggleCollapsed}
+            title="展开侧边栏 (⌘B)"
+            className="hidden lg:flex items-center justify-center p-1.5 rounded-lg text-[var(--aurora-fg3)] hover:text-[var(--aurora-fg1)] hover:bg-[var(--aurora-chip)] transition-colors app-region-no-drag"
+            style={{ border: "none", background: "transparent", cursor: "pointer" }}
+          >
+            <Icon name="sidebar" size={17} />
+          </button>
+        )}
 
         {/* Device selector */}
         {devices.length > 0 && (

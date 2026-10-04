@@ -12,6 +12,7 @@ type IconName = Parameters<typeof Icon>[0]["name"];
 
 interface UserMenuProps {
   variant?: "sidebar" | "header";
+  collapsed?: boolean;
   onNavClick?: () => void;
 }
 
@@ -20,7 +21,7 @@ interface UserMenuProps {
  * - In 'sidebar' mode: Renders a sleek full-width profile card with avatar, name, role and dropup menu.
  * - In 'header' mode: Renders a compact circular avatar button with dropdown menu.
  */
-export function UserMenu({ variant = "sidebar", onNavClick }: UserMenuProps) {
+export function UserMenu({ variant = "sidebar", collapsed = false, onNavClick }: UserMenuProps) {
   const { user, logout } = useAuth();
   const { t } = useI18n();
   const pathname = usePathname();
@@ -110,9 +111,10 @@ export function UserMenu({ variant = "sidebar", onNavClick }: UserMenuProps) {
           style={{
             display: "flex",
             alignItems: "center",
+            justifyContent: collapsed ? "center" : "flex-start",
             gap: 10,
             width: "100%",
-            padding: "7px 10px",
+            padding: collapsed ? "7px 0" : "7px 10px",
             borderRadius: 12,
             background: open
               ? "var(--aurora-chip)"
@@ -179,74 +181,78 @@ export function UserMenu({ variant = "sidebar", onNavClick }: UserMenuProps) {
           </div>
 
           {/* User Details */}
-          <div style={{ minWidth: 0, flex: 1 }}>
-            <div
-              style={{
-                fontSize: 12.5,
-                fontWeight: 600,
-                color: isProfileActive ? "var(--aurora-accent)" : "var(--aurora-fg1)",
-                letterSpacing: "-0.01em",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-                lineHeight: 1.3,
-              }}
-              title={displayName}
-            >
-              {displayName}
-            </div>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 5,
-                marginTop: 2,
-              }}
-            >
-              <span
+          {!collapsed && (
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div
                 style={{
-                  fontSize: 10,
-                  color: "var(--aurora-fg4)",
+                  fontSize: 12.5,
+                  fontWeight: 600,
+                  color: isProfileActive ? "var(--aurora-accent)" : "var(--aurora-fg1)",
+                  letterSpacing: "-0.01em",
                   overflow: "hidden",
                   textOverflow: "ellipsis",
                   whiteSpace: "nowrap",
-                  maxWidth: 90,
+                  lineHeight: 1.3,
                 }}
-                title={user.email}
+                title={displayName}
               >
-                {user.email || user.role}
-              </span>
-              <span
+                {displayName}
+              </div>
+              <div
                 style={{
-                  fontSize: 9,
-                  lineHeight: 1,
-                  padding: "1px 5px",
-                  borderRadius: 4,
-                  background: "var(--aurora-chip)",
-                  color: "var(--aurora-fg3)",
-                  border: "1px solid var(--aurora-border)",
-                  fontWeight: 500,
-                  textTransform: "uppercase",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 5,
+                  marginTop: 2,
                 }}
               >
-                {user.role}
-              </span>
+                <span
+                  style={{
+                    fontSize: 10,
+                    color: "var(--aurora-fg4)",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                    maxWidth: 90,
+                  }}
+                  title={user.email}
+                >
+                  {user.email || user.role}
+                </span>
+                <span
+                  style={{
+                    fontSize: 9,
+                    lineHeight: 1,
+                    padding: "1px 5px",
+                    borderRadius: 4,
+                    background: "var(--aurora-chip)",
+                    color: "var(--aurora-fg3)",
+                    border: "1px solid var(--aurora-border)",
+                    fontWeight: 500,
+                    textTransform: "uppercase",
+                  }}
+                >
+                  {user.role}
+                </span>
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Action icon (settings / chevron) */}
-          <div
-            style={{
-              color: "var(--aurora-fg4)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              transform: open ? "rotate(180deg)" : "rotate(0deg)",
-              transition: "transform .2s ease",
-            }}
-          >
-            <Icon name="chevron_up" size={14} />
-          </div>
+          {!collapsed && (
+            <div
+              style={{
+                color: "var(--aurora-fg4)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                transform: open ? "rotate(180deg)" : "rotate(0deg)",
+                transition: "transform .2s ease",
+              }}
+            >
+              <Icon name="chevron_up" size={14} />
+            </div>
+          )}
         </button>
       ) : (
         /* Header Compact Avatar Trigger */

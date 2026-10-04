@@ -65,8 +65,13 @@ export default function CommandPalette() {
         setOpen(false);
       }
     };
+    const onCustomOpen = () => setOpen(true);
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("memento:open-search", onCustomOpen);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("memento:open-search", onCustomOpen);
+    };
   }, []);
 
   useEffect(() => {

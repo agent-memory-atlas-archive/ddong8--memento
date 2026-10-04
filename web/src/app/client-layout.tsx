@@ -61,6 +61,30 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
   );
 }
 
+import { SidebarProvider, useSidebar } from "@/lib/sidebar-context";
+
+function AppShellInner({
+  sidebarOpen,
+  setSidebarOpen,
+  children,
+}: {
+  sidebarOpen: boolean;
+  setSidebarOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  children: React.ReactNode;
+}) {
+  const { collapsed } = useSidebar();
+
+  return (
+    <div className="min-h-screen">
+      <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+      <div className={`transition-all duration-200 ${collapsed ? "lg:ml-[68px]" : "lg:ml-60"} relative z-0`}>
+        <Header onMenuToggle={() => setSidebarOpen((v) => !v)} />
+        <main className="pt-20 px-4 pb-4 md:px-6 md:pb-6">{children}</main>
+      </div>
+    </div>
+  );
+}
+
 /** Renders Sidebar+Header only inside the authenticated app; the public
  *  landing page ("/") and auth pages always use plain layout. */
 function AppShell({ children }: { children: React.ReactNode }) {
@@ -94,18 +118,16 @@ function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <DeviceProvider>
-      {/* Global Cmd/Ctrl+K search. Inside DeviceProvider (it reads the device
-          filter) and inside the authed branch, so it never mounts on the
-          landing or public share pages. */}
-      <CommandPalette />
-      <div className="min-h-screen">
-        <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-        <div className="lg:ml-60 relative z-0">
-          <Header onMenuToggle={() => setSidebarOpen((v) => !v)} />
-          <main className="pt-20 px-4 pb-4 md:px-6 md:pb-6">{children}</main>
-        </div>
-      </div>
-    </DeviceProvider>
+    <SidebarProvider>
+      <DeviceProvider>
+        {/* Global Cmd/Ctrl+K search. Inside DeviceProvider (it reads the device
+            filter) and inside the authed branch, so it never mounts on the
+            landing or public share pages. */}
+        <CommandPalette />
+        <AppShellInner sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen}>
+          {children}
+        </AppShellInner>
+      </DeviceProvider>
+    </SidebarProvider>
   );
 }
