@@ -121,8 +121,8 @@ export default function SkillsPage() {
   const [selectedSkillSlug, setSelectedSkillSlug] = useState<string | null>(null);
   const poll = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Fullscreen Theater & Panel Collapse State
-  const [isPanelCollapsed, setIsPanelCollapsed] = useState(false);
+  // Fullscreen Theater & Panel Collapse State (Default: True for 100% 3D Skill Matrix)
+  const [isPanelCollapsed, setIsPanelCollapsed] = useState(true);
   const cockpitRef = useRef<HTMLDivElement>(null);
 
   const togglePhysicalFullscreen = () => {
@@ -560,9 +560,9 @@ export default function SkillsPage() {
               <button
                 onClick={() => setIsPanelCollapsed(!isPanelCollapsed)}
                 className="px-2.5 py-1 rounded-full text-[11px] font-mono font-semibold bg-black/65 hover:bg-black/90 backdrop-blur-md border border-white/20 text-white flex items-center gap-1 shadow-md transition-all active:scale-95"
-                title={isPanelCollapsed ? "还原双翼分屏" : "让 3D 科技树铺满全屏"}
+                title={isPanelCollapsed ? "打开右侧管理面板" : "让 3D 科技树铺满整屏"}
               >
-                <span>{isPanelCollapsed ? "⧉ 还原分屏" : "⛶ 铺满全屏"}</span>
+                <span>{isPanelCollapsed ? "⧉ 打开侧边面板" : "⛶ 3D 铺满整屏"}</span>
               </button>
               <button
                 onClick={togglePhysicalFullscreen}

@@ -126,8 +126,8 @@ export default function MemoryPage() {
   const [shareOpen, setShareOpen] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
 
-  // Fullscreen Theater & Panel Collapse State
-  const [isPanelCollapsed, setIsPanelCollapsed] = useState(false);
+  // Fullscreen Theater & Panel Collapse State (Default: True for 100% 3D Cognitive Nebula)
+  const [isPanelCollapsed, setIsPanelCollapsed] = useState(true);
   const cockpitRef = useRef<HTMLDivElement>(null);
 
   const togglePhysicalFullscreen = () => {
@@ -218,7 +218,6 @@ export default function MemoryPage() {
       return;
     }
     setSelectedNodeId(node.id);
-    setIsPanelCollapsed(false); // 选中节点自动展开右侧中枢查看详情
     try {
       const resp = await authFetch(`${getApiBase()}/api/memory/entities/${node.id}`);
       const detail: EntityDetail = await resp.json();
@@ -464,9 +463,9 @@ export default function MemoryPage() {
               <button
                 onClick={() => setIsPanelCollapsed(!isPanelCollapsed)}
                 className="px-2.5 py-1 rounded-full text-[11px] font-mono font-semibold bg-black/65 hover:bg-black/90 backdrop-blur-md border border-white/20 text-white flex items-center gap-1 shadow-md transition-all active:scale-95"
-                title={isPanelCollapsed ? "还原双翼分屏" : "让 3D 认知星云铺满全屏"}
+                title={isPanelCollapsed ? "打开右侧管理面板" : "让 3D 认知星云铺满整屏"}
               >
-                <span>{isPanelCollapsed ? "⧉ 还原分屏" : "⛶ 铺满全屏"}</span>
+                <span>{isPanelCollapsed ? "⧉ 打开侧边面板" : "⛶ 3D 铺满整屏"}</span>
               </button>
               <button
                 onClick={togglePhysicalFullscreen}
@@ -622,16 +621,30 @@ export default function MemoryPage() {
               {/* 视窗 Footer 操作栏 */}
               <div className="p-2.5 bg-white/5 border-t border-white/10 flex items-center justify-between shrink-0 text-[11px] font-mono">
                 <span className="text-white/40">知识星晶已锁定 · 突触双向飞跃</span>
-                <button
-                  onClick={() => {
-                    navigator.clipboard.writeText(selectedEntity.name);
-                    setNotice(`已复制实体名称「${selectedEntity.name}」到剪贴板`);
-                  }}
-                  className="px-2 py-0.8 rounded-lg bg-white/10 hover:bg-white/20 text-white/80 transition-all flex items-center gap-1"
-                >
-                  <Icon name="copy" size={10} />
-                  <span>复制名称</span>
-                </button>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(selectedEntity.name);
+                      setNotice(`已复制实体名称「${selectedEntity.name}」到剪贴板`);
+                    }}
+                    className="px-2 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-white/80 transition-all flex items-center gap-1"
+                    title="复制实体名称"
+                  >
+                    <Icon name="copy" size={10} />
+                    <span>复制</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setIsPanelCollapsed(false);
+                      setActiveTab("entity");
+                    }}
+                    className="px-2 py-1 rounded-lg bg-[var(--aurora-accent)] text-white hover:opacity-90 transition-all flex items-center gap-1 shadow-sm"
+                    title="展开右侧完整管理面板"
+                  >
+                    <Icon name="edit" size={10} />
+                    <span>侧边面板</span>
+                  </button>
+                </div>
               </div>
             </div>
           ) : (

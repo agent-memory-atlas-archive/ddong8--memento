@@ -263,9 +263,11 @@ export default function SkillMatrix3D({
 
     updateCameraFromSpherical();
 
+    let pointerDownPos = { x: 0, y: 0 };
     const handlePointerDown = (e: MouseEvent) => {
       isDragging = true;
       prevMousePos = { x: e.clientX, y: e.clientY };
+      pointerDownPos = { x: e.clientX, y: e.clientY };
     };
 
     const handlePointerUp = () => {
@@ -294,7 +296,10 @@ export default function SkillMatrix3D({
       updateCameraFromSpherical();
     };
 
-    const handleClick = () => {
+    const handleClick = (e: MouseEvent) => {
+      const dist = Math.hypot(e.clientX - pointerDownPos.x, e.clientY - pointerDownPos.y);
+      if (dist > 6) return; // 过滤拖拽旋转操作
+
       raycaster.setFromCamera(mouse, camera);
       const meshes = Array.from(skillMeshMap.values());
       const intersects = raycaster.intersectObjects(meshes, false);

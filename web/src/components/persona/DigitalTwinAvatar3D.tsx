@@ -879,9 +879,9 @@ export default function DigitalTwinAvatar3D({
             <button
               onClick={onToggleCollapse}
               className="px-2.5 py-1 rounded-xl text-[11px] font-mono font-semibold bg-black/65 hover:bg-black/90 backdrop-blur-md border border-white/20 text-white flex items-center gap-1 shadow-md transition-all active:scale-95"
-              title={isPanelCollapsed ? "还原双翼分屏" : "让 3D 数字人铺满全屏"}
+              title={isPanelCollapsed ? "打开右侧管理面板" : "让 3D 数字人铺满整屏"}
             >
-              <span>{isPanelCollapsed ? "⧉ 还原分屏" : "⛶ 铺满全屏"}</span>
+              <span>{isPanelCollapsed ? "⧉ 打开侧边面板" : "⛶ 3D 铺满整屏"}</span>
             </button>
           )}
 

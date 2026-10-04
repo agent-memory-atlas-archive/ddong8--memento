@@ -386,8 +386,8 @@ export default function PersonaPage() {
     prompt: string;
   } | null>(null);
 
-  // Fullscreen Theater & Panel Collapse State
-  const [isPanelCollapsed, setIsPanelCollapsed] = useState(false);
+  // Fullscreen Theater & Panel Collapse State (Default: True for 100% 3D Digital Twin Avatar)
+  const [isPanelCollapsed, setIsPanelCollapsed] = useState(true);
   const cockpitRef = useRef<HTMLDivElement>(null);
 
   const togglePhysicalFullscreen = () => {
