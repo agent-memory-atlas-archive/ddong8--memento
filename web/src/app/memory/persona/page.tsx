@@ -414,7 +414,7 @@ export default function PersonaPage() {
       {/* ─────────────────────────────────────────────────────────────
           2. 3D 全息神经元孪生体主舞台 (Holographic Digital Twin Stage)
           ───────────────────────────────────────────────────────────── */}
-      <div className="relative w-full h-[380px] rounded-3xl overflow-hidden shadow-2xl border border-[var(--aurora-border)] bg-[#07080f]">
+      <div className="relative w-full h-[420px] rounded-3xl overflow-hidden shadow-2xl border border-[var(--aurora-border)] bg-[#07080f]">
         <DigitalTwinAvatar3D
           activeDimension={activeTab === "all" ? "all" : (activeTab as PersonaDimension)}
           onSelectDimension={handleSelectDimension}
