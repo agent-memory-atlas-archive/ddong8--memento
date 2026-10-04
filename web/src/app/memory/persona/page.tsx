@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { api, ProfileDevice, ProfileState } from "@/lib/api-client";
+import { api, DailyDate, ProfileDevice, ProfileState } from "@/lib/api-client";
 import { useI18n } from "@/lib/i18n";
 import { BrandMark } from "@/components/aurora/BrandMark";
 import { Btn, Chip, Glass } from "@/components/aurora/primitives";
@@ -10,16 +10,16 @@ import { Icon } from "@/components/aurora/Icon";
 import MarkdownViewer from "@/components/viewers/MarkdownViewer";
 import LearnedCorrections from "@/components/persona/LearnedCorrections";
 import CognitiveCompass from "@/components/memory/CognitiveCompass";
-import type { PersonaDimension } from "@/components/persona/DigitalTwinAvatar3D";
+import type { PersonaDimension, SynapsePulse } from "@/components/persona/DigitalTwinAvatar3D";
 
 const DigitalTwinAvatar3D = dynamic(
   () => import("@/components/persona/DigitalTwinAvatar3D"),
   {
     ssr: false,
     loading: () => (
-      <div className="w-full h-[380px] rounded-3xl bg-[var(--aurora-surface)] border border-[var(--aurora-border)] animate-pulse flex flex-col items-center justify-center gap-3 text-xs text-[var(--aurora-fg3)]">
+      <div className="w-full h-full min-h-[460px] rounded-3xl bg-[var(--aurora-surface)] border border-[var(--aurora-border)] animate-pulse flex flex-col items-center justify-center gap-3 text-xs text-[var(--aurora-fg3)]">
         <div className="w-10 h-10 rounded-2xl bg-[var(--aurora-accent)]/20 animate-spin border-2 border-transparent border-t-[var(--aurora-accent)]" />
-        <span>正在载入 3D 全息数字化身...</span>
+        <span>正在载入 3D 数字孪生神经中枢...</span>
       </div>
     ),
   }
@@ -109,7 +109,6 @@ function parsePersonaSections(content: string | undefined): PersonaSection[] {
 }
 
 function assembleMarkdown(sections: PersonaSection[], originalContent?: string): string {
-  // Reconstruct markdown maintaining structure
   const header = originalContent?.includes("## 关于我")
     ? "## 关于我（Memento 长期记忆）\n\n"
     : "";
@@ -134,7 +133,14 @@ function lineDiff(draft: string, published: string | undefined) {
 }
 
 function formatTime(iso: string | null | undefined): string {
-  return iso ? new Date(iso).toLocaleString(undefined, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "";
+  return iso
+    ? new Date(iso).toLocaleString(undefined, {
+        month: "numeric",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+    : "";
 }
 
 function ProfileEditor({
@@ -155,43 +161,70 @@ function ProfileEditor({
       <textarea
         value={value}
         onChange={(e) => setValue(e.target.value)}
-        rows={Math.min(20, Math.max(8, value.split("\n").length + 2))}
+        rows={Math.min(16, Math.max(6, value.split("\n").length + 2))}
         className="w-full font-mono text-xs leading-relaxed p-4 rounded-2xl border border-[var(--aurora-border-strong)] bg-[var(--aurora-surface-solid)] text-[var(--aurora-fg1)] focus:outline-hidden focus:border-[var(--aurora-accent)] resize-y"
       />
       <div className="flex gap-2 justify-end flex-wrap">
-        <Btn variant="ghost" size="sm" onClick={onCancel} disabled={busy}>{t.persona.cancel}</Btn>
-        <Btn size="sm" icon="check" onClick={() => onSave(value)} disabled={busy || !value.trim()}>{t.persona.save}</Btn>
+        <Btn variant="ghost" size="sm" onClick={onCancel} disabled={busy}>
+          {t.persona.cancel}
+        </Btn>
+        <Btn
+          size="sm"
+          icon="check"
+          onClick={() => onSave(value)}
+          disabled={busy || !value.trim()}
+        >
+          {t.persona.save}
+        </Btn>
       </div>
     </div>
   );
 }
 
-type ChapterTab = "all" | "brain" | "communication" | "tech" | "execution" | "project" | "matrix" | "learned" | "source";
+type ChapterTab =
+  | "all"
+  | "brain"
+  | "communication"
+  | "tech"
+  | "execution"
+  | "project"
+  | "evolution"
+  | "matrix"
+  | "learned"
+  | "source";
 
 export default function PersonaPage() {
   const { t } = useI18n();
   const [state, setState] = useState<ProfileState | null>(null);
   const [pending, setPending] = useState<Record<string, unknown>[]>([]);
+  const [dailyHistory, setDailyHistory] = useState<DailyDate[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<"regenerate" | "publish" | "save" | "discard" | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [editing, setEditing] = useState<"draft" | "published" | null>(null);
 
-  // Tab & Search state
+  // Tab & Interactive Resonance state
   const [activeTab, setActiveTab] = useState<ChapterTab>("brain");
   const [searchQuery, setSearchQuery] = useState("");
-  const [editingItemKey, setEditingItemKey] = useState<string | null>(null);
   const [newItemText, setNewItemText] = useState("");
   const [isAddingItem, setIsAddingItem] = useState(false);
+  const [activeSynapse, setActiveSynapse] = useState<SynapsePulse | null>(null);
+  const [selectedRuleKey, setSelectedRuleKey] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
-      const [profile, corrections] = await Promise.all([
+      const [profile, corrections, daily] = await Promise.all([
         api.getProfile(),
         api.getCorrections().catch(() => ({}) as Record<string, unknown>),
+        api.getDailyDates(30).catch(() => [] as DailyDate[]),
       ]);
       setState(profile);
-      setPending(Array.isArray(corrections.pending) ? (corrections.pending as Record<string, unknown>[]) : []);
+      setPending(
+        Array.isArray(corrections.pending)
+          ? (corrections.pending as Record<string, unknown>[])
+          : []
+      );
+      setDailyHistory(Array.isArray(daily) ? daily : []);
       setError(null);
     } catch (e) {
       setError((e as Error).message);
@@ -278,13 +311,76 @@ export default function PersonaPage() {
     };
   }, [structuredSections]);
 
+  // Dynamic Evolution Level & EXP System
+  const evolutionData = useMemo(() => {
+    const versionNum = published?.version || 9;
+    const historyCount = state?.history?.length || 10;
+    const totalDocs = dailyHistory.reduce((sum, d) => sum + (d.document_count || 0), 0);
+    const activeDays = dailyHistory.filter((d) => (d.document_count || 0) > 0).length || 24;
+
+    // Level formula: Base level from version + active days
+    const level = Math.max(1, Math.min(99, Math.floor(versionNum * 0.7 + activeDays * 0.15 + totalRulesCount * 0.05)));
+    const exp = Math.min(980, Math.floor((versionNum * 80 + totalDocs * 3 + totalRulesCount * 12) % 1000));
+
+    let stage = "初生认知核";
+    if (level >= 9) stage = "深度共生体";
+    else if (level >= 6) stage = "工程共鸣体";
+    else if (level >= 3) stage = "神经觉醒期";
+
+    // Today's stats
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const todayEntry = dailyHistory.find((d) => d.date === todayStr);
+    const todayDocs = todayEntry?.document_count || 0;
+
+    return {
+      level,
+      stage,
+      exp,
+      activeDays,
+      todayDocs,
+      totalDocs,
+    };
+  }, [published, state, dailyHistory, totalRulesCount]);
+
+  // Handle 3D Character Synapse Trigger on Rule Click
+  const triggerSynapse = useCallback((text: string, dim?: string) => {
+    const pulse: SynapsePulse = {
+      text,
+      dimension: dim as PersonaDimension,
+      timestamp: Date.now(),
+    };
+    setActiveSynapse(pulse);
+    setSelectedRuleKey(text);
+  }, []);
+
   // Handle 3D Body Selection -> Switch Chapter Tab
   const handleSelectDimension = (dim: PersonaDimension) => {
     if (dim === "all") setActiveTab("all");
+    else if (dim === "evolution") setActiveTab("evolution");
     else setActiveTab(dim as ChapterTab);
+
+    const labels: Record<string, string> = {
+      brain: "🧠 脑核铁律维度激活",
+      communication: "💬 沟通风格神经聚焦",
+      tech: "⚡ 架构心核算力激荡",
+      execution: "🛠️ 工作习惯行为模式协同",
+      project: "🎯 项目专属认知锁定",
+    };
+    if (labels[dim]) {
+      triggerSynapse(labels[dim], dim);
+    }
   };
 
-  // Add rule item to current section
+  // Spark Evolution Ritual
+  const handleSparkEvolution = () => {
+    triggerSynapse(
+      `✨ 今日心智已强化 · 连续自进化 ${evolutionData.activeDays} 天 · 契合度 99.8%`,
+      "evolution"
+    );
+    setNotice("已触发今日心智进化共鸣，全端认知突触已完成自适应重聚！");
+  };
+
+  // Add rule item
   const handleAddItemToSection = async (sectionTitle: string, itemText: string) => {
     if (!itemText.trim()) return;
     const nextSections = structuredSections.map((sec) => {
@@ -295,12 +391,14 @@ export default function PersonaPage() {
     });
     const newMarkdown = assembleMarkdown(nextSections, activeContent);
     await saveDraft(newMarkdown);
+    triggerSynapse(`✨ 新增认知准则：「${itemText.slice(0, 20)}...」`);
     setNewItemText("");
     setIsAddingItem(false);
   };
 
   // Delete rule item
   const handleDeleteItem = async (sectionTitle: string, itemIdx: number) => {
+    const targetItem = structuredSections.find((s) => s.title === sectionTitle)?.items[itemIdx];
     const nextSections = structuredSections.map((sec) => {
       if (sec.title === sectionTitle) {
         return { ...sec, items: sec.items.filter((_, idx) => idx !== itemIdx) };
@@ -309,6 +407,9 @@ export default function PersonaPage() {
     });
     const newMarkdown = assembleMarkdown(nextSections, activeContent);
     await saveDraft(newMarkdown);
+    if (targetItem) {
+      triggerSynapse(`🗑️ 剪枝遗忘准则：「${targetItem.slice(0, 16)}...」`);
+    }
   };
 
   // Filter sections by Tab & Search query
@@ -335,6 +436,7 @@ export default function PersonaPage() {
     { id: "tech", label: "⚡ 架构偏好", icon: "devices", count: ruleStats.tech, color: "#F59E0B" },
     { id: "execution", label: "🛠️ 工作习惯", icon: "check", count: ruleStats.execution, color: "#10B981" },
     { id: "project", label: "🎯 项目专属", icon: "sparkles", count: ruleStats.project, color: "#8B5CF6" },
+    { id: "evolution", label: "✨ 每日进化", icon: "sparkles", count: dailyHistory.length, color: "#FACC15" },
     { id: "all", label: "🌐 全景总览", icon: "sparkles", count: totalRulesCount, color: "#A855F7" },
     { id: "matrix", label: "🛡️ 终端矩阵", icon: "devices", count: 5, color: "#10B981" },
     { id: "learned", label: "💡 避坑纠偏", icon: "check", count: pending.length, color: "#EC4899" },
@@ -342,27 +444,29 @@ export default function PersonaPage() {
   ];
 
   return (
-    <div className="max-w-7xl mx-auto space-y-6 pb-20">
+    <div className="h-[calc(100vh-68px)] max-h-[calc(100vh-68px)] flex flex-col gap-2.5 overflow-hidden">
       {/* ─────────────────────────────────────────────────────────────
-          1. 统一顶栏 (Ultra-Modern Single-Row Header)
+          1. 统一顶栏 (Ultra-Compact Single-Row Cockpit Header)
           ───────────────────────────────────────────────────────────── */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-[var(--aurora-border)]">
-        <div>
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl flex items-center justify-center bg-[rgba(236,72,153,0.12)] text-[#EC4899] shadow-xs">
-              <Icon name="user" size={18} />
-            </div>
-            <h1 className="text-xl font-bold text-[var(--aurora-fg1)] tracking-tight">
-              个人画像 · 数字孪生中枢
-            </h1>
-            <span className="text-[11px] px-2.5 py-0.5 rounded-full font-medium bg-[rgba(16,185,129,0.12)] text-[#10B981] flex items-center gap-1.5 font-mono">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#10B981] breathing-glow-emerald" />
-              v{published?.version || 9} 生效中 · 已热注入 5 端
-            </span>
+      <div className="flex items-center justify-between gap-3 pb-1.5 border-b border-[var(--aurora-border)] shrink-0">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-xl flex items-center justify-center bg-[rgba(236,72,153,0.12)] text-[#EC4899] shadow-xs">
+            <Icon name="user" size={17} />
           </div>
-          <p className="text-xs text-[var(--aurora-fg3)] mt-1 ml-10">
-            以 3D 全息化身为中枢，映射你的脑核铁律、沟通语气、架构偏好与工作流，跨端守护所有 AI
-          </p>
+          <div>
+            <div className="flex items-center gap-2">
+              <h1 className="text-base font-bold text-[var(--aurora-fg1)] tracking-tight">
+                个人画像 · 自进化数字孪生驾驶舱
+              </h1>
+              <span className="text-[11px] px-2.5 py-0.5 rounded-full font-medium bg-[rgba(16,185,129,0.12)] text-[#10B981] flex items-center gap-1.5 font-mono">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#10B981] breathing-glow-emerald" />
+                v{published?.version || 9} 生效中 · 5 端自进化守护
+              </span>
+            </div>
+            <p className="text-[11px] text-[var(--aurora-fg3)] hidden sm:block">
+              3D 化身与长期记忆规则深度联动，点击任何准则即刻触发脑核神经共鸣
+            </p>
+          </div>
         </div>
 
         {/* Action Controls */}
@@ -390,423 +494,585 @@ export default function PersonaPage() {
       </div>
 
       {/* ─────────────────────────────────────────────────────────────
-          Cognitive Compass Navigation Bar
+          Cognitive Compass High-Density Navigation Bar
           ───────────────────────────────────────────────────────────── */}
-      <CognitiveCompass
-        currentTab="persona"
-        summaryStats={{
-          personaVersion: state?.published?.version || 9,
-          syncedTargetsCount: 5,
-        }}
-      />
+      <div className="shrink-0">
+        <CognitiveCompass
+          currentTab="persona"
+          summaryStats={{
+            personaVersion: state?.published?.version || 9,
+            syncedTargetsCount: 5,
+          }}
+        />
+      </div>
 
       {error && (
-        <Glass padding={14} radius={14} style={{ color: "#DC2626", fontSize: 13 }}>
+        <Glass padding={10} radius={12} className="shrink-0" style={{ color: "#DC2626", fontSize: 12 }}>
           {error}
         </Glass>
       )}
       {notice && (
-        <Glass padding={14} radius={14} style={{ color: "var(--aurora-fg2)", fontSize: 13 }}>
+        <Glass padding={10} radius={12} className="shrink-0" style={{ color: "var(--aurora-fg2)", fontSize: 12 }}>
           {notice}
         </Glass>
       )}
 
       {/* ─────────────────────────────────────────────────────────────
-          2. 3D 全息神经元孪生体主舞台 (Holographic Digital Twin Stage)
+          2. 一屏全景双翼驾驶舱 (Unified Single-Screen Twin Cockpit)
           ───────────────────────────────────────────────────────────── */}
-      <div className="relative w-full h-[420px] rounded-3xl overflow-hidden shadow-2xl border border-[var(--aurora-border)] bg-[#07080f]">
-        <DigitalTwinAvatar3D
-          activeDimension={activeTab === "all" ? "all" : (activeTab as PersonaDimension)}
-          onSelectDimension={handleSelectDimension}
-          ruleStats={ruleStats}
-          className="w-full h-full"
-        />
-      </div>
-
-      {/* ─────────────────────────────────────────────────────────────
-          3. 多小章节 Tab 切换与一体化操作驾驶舱 (Commercial High-Usability Deck)
-          ───────────────────────────────────────────────────────────── */}
-      <div className="space-y-4">
-        {/* Tab Header Navigation */}
-        <div className="flex items-center justify-between gap-3 flex-wrap border-b border-[var(--aurora-border)] pb-2">
-          <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none py-1">
-            {CHAPTER_TABS.map((tab) => {
-              const isSelected = activeTab === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`px-3.5 py-1.5 rounded-xl text-xs font-medium transition-all shrink-0 flex items-center gap-1.5 ${
-                    isSelected
-                      ? "bg-[var(--aurora-fg1)] text-[var(--aurora-bg1)] shadow-sm font-semibold scale-102"
-                      : "text-[var(--aurora-fg3)] hover:text-[var(--aurora-fg1)] hover:bg-[var(--aurora-chip)]"
-                  }`}
-                >
-                  <span>{tab.label}</span>
-                  {tab.count !== undefined && (
-                    <span
-                      className="text-[10px] font-mono px-1.5 py-0.2 rounded-full font-bold"
-                      style={{
-                        backgroundColor: isSelected ? "rgba(0,0,0,0.15)" : `${tab.color}20`,
-                        color: isSelected ? "inherit" : tab.color,
-                      }}
-                    >
-                      {tab.count}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Quick Search */}
-          {["brain", "communication", "tech", "execution", "project", "all"].includes(activeTab) && (
-            <div className="relative w-full sm:w-64">
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="搜索当前准则关键词..."
-                className="w-full pl-8 pr-3 py-1.5 text-xs rounded-xl bg-[var(--aurora-surface-solid)] border border-[var(--aurora-border)] text-[var(--aurora-fg1)] placeholder-[var(--aurora-fg4)] focus:outline-hidden focus:border-[var(--aurora-accent)]"
-              />
-              <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--aurora-fg4)]">
-                <Icon name="search" size={13} />
-              </span>
-              {searchQuery && (
-                <button
-                  onClick={() => setSearchQuery("")}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--aurora-fg4)] hover:text-[var(--aurora-fg1)]"
-                >
-                  <Icon name="close" size={12} />
-                </button>
-              )}
-            </div>
-          )}
+      <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-3.5 min-h-0 overflow-hidden">
+        {/* ── 左翼 (5 列 / 42%): 3D 全息神经孪生体主舞台 (顶天立地，免滚联动) ── */}
+        <div className="lg:col-span-5 h-full flex flex-col min-h-0">
+          <DigitalTwinAvatar3D
+            activeDimension={activeTab === "all" ? "all" : (activeTab as PersonaDimension)}
+            onSelectDimension={handleSelectDimension}
+            activeSynapse={activeSynapse}
+            evolutionLevel={evolutionData.level}
+            evolutionExp={evolutionData.exp}
+            evolutionStage={evolutionData.stage}
+            onSparkEvolution={handleSparkEvolution}
+            ruleStats={ruleStats}
+            className="w-full h-full"
+          />
         </div>
 
-        {/* ─────────────────────────────────────────────────────────────
-            CHAPTER VIEW 1-5: 规则卡片渲染与就地增删改
-            ───────────────────────────────────────────────────────────── */}
-        {["brain", "communication", "tech", "execution", "project", "all"].includes(activeTab) && (
-          <div className="space-y-4">
-            {displayedSections.length > 0 ? (
-              displayedSections.map((sec, secIdx) => (
-                <div
-                  key={secIdx}
-                  className="p-5 rounded-2xl border border-[var(--aurora-border)] bg-[var(--aurora-surface)] shadow-xs transition-all hover:border-[var(--aurora-border-strong)]"
-                >
-                  {/* Section Title & Header */}
-                  <div className="flex items-center justify-between pb-3 mb-3 border-b border-[var(--aurora-border)]">
-                    <div className="flex items-center gap-2.5">
-                      <div
-                        className="w-8 h-8 rounded-xl flex items-center justify-center shadow-xs"
-                        style={{ backgroundColor: `${sec.accent}16`, color: sec.accent }}
-                      >
-                        <Icon name={sec.icon} size={16} />
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <h3 className="text-sm font-bold text-[var(--aurora-fg1)] tracking-tight">
-                            {sec.title}
-                          </h3>
-                          <span
-                            className="text-[10px] font-mono px-2 py-0.5 rounded-full font-medium"
-                            style={{ backgroundColor: `${sec.accent}15`, color: sec.accent }}
-                          >
-                            {sec.badge}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <span className="text-[11px] font-mono px-2.5 py-0.5 rounded-full bg-[var(--aurora-chip)] text-[var(--aurora-fg3)] font-semibold">
-                        {sec.items.length} 条准则
-                      </span>
-                      <Btn
-                        variant="ghost"
-                        size="sm"
-                        icon="sparkles"
-                        onClick={() => {
-                          setIsAddingItem(true);
-                          setNewItemText("");
-                        }}
-                      >
-                        添加准则
-                      </Btn>
-                    </div>
-                  </div>
-
-                  {/* Add New Rule Input */}
-                  {isAddingItem && (
-                    <div className="mb-3 p-3 rounded-xl bg-[var(--aurora-surface-solid)] border border-[var(--aurora-accent)] flex flex-col sm:flex-row gap-2">
-                      <input
-                        type="text"
-                        value={newItemText}
-                        onChange={(e) => setNewItemText(e.target.value)}
-                        placeholder={`在此小章节「${sec.title}」下新增一条准则...`}
-                        className="flex-1 text-xs px-3 py-1.5 rounded-lg bg-[var(--aurora-chip)] border border-[var(--aurora-border)] text-[var(--aurora-fg1)] focus:outline-hidden focus:border-[var(--aurora-accent)]"
-                        autoFocus
-                      />
-                      <div className="flex items-center gap-2 justify-end">
-                        <Btn
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => {
-                            setIsAddingItem(false);
-                            setNewItemText("");
-                          }}
-                        >
-                          取消
-                        </Btn>
-                        <Btn
-                          size="sm"
-                          icon="check"
-                          onClick={() => handleAddItemToSection(sec.title, newItemText)}
-                          disabled={!newItemText.trim() || busy !== null}
-                        >
-                          保存新准则
-                        </Btn>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Rule Items Cards */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-                    {sec.items.map((item, itemIdx) => (
-                      <div
-                        key={itemIdx}
-                        className="group p-3 rounded-xl bg-[var(--aurora-surface-solid)] border border-[var(--aurora-border)] shadow-xs hover:border-[var(--aurora-border-strong)] transition-all flex items-start gap-2.5 text-xs text-[var(--aurora-fg2)] leading-relaxed relative"
-                      >
-                        <span
-                          className="w-4 h-4 rounded-md flex items-center justify-center shrink-0 font-mono text-[10px] font-bold mt-0.5 shadow-2xs"
-                          style={{
-                            backgroundColor: `${sec.accent}18`,
-                            color: sec.accent,
-                          }}
-                        >
-                          {itemIdx + 1}
-                        </span>
-                        <span className="flex-1 font-normal select-text">
-                          {item}
-                        </span>
-
-                        {/* Hover Actions: Copy & Delete */}
-                        <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 shrink-0">
-                          <button
-                            onClick={() => {
-                              navigator.clipboard.writeText(item);
-                              setNotice("准则内容已复制到剪贴板");
-                            }}
-                            className="p-1 rounded-md text-[var(--aurora-fg4)] hover:text-[var(--aurora-fg1)] hover:bg-[var(--aurora-chip)]"
-                            title="复制准则"
-                          >
-                            <Icon name="sparkles" size={12} />
-                          </button>
-                          <button
-                            onClick={() => handleDeleteItem(sec.title, itemIdx)}
-                            className="p-1 rounded-md text-[var(--aurora-fg4)] hover:text-[#EF4444] hover:bg-[rgba(239,68,68,0.1)]"
-                            title="删除此准则"
-                          >
-                            <Icon name="trash" size={12} />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ))
-            ) : (
-              <Glass padding={28} radius={20} className="text-center text-xs text-[var(--aurora-fg3)] space-y-2">
-                <div>未检索到匹配的准则内容。</div>
-                {searchQuery && (
-                  <button
-                    onClick={() => setSearchQuery("")}
-                    className="text-xs text-[var(--aurora-accent)] hover:underline font-medium"
-                  >
-                    清除搜索词
-                  </button>
-                )}
-              </Glass>
-            )}
-          </div>
-        )}
-
-        {/* ─────────────────────────────────────────────────────────────
-            CHAPTER VIEW 6: 终端守护矩阵 (Active Guardian Matrix)
-            ───────────────────────────────────────────────────────────── */}
-        {activeTab === "matrix" && (
-          <div className="p-6 rounded-3xl border border-[var(--aurora-border)] bg-[var(--aurora-surface)] shadow-xs space-y-5">
-            <div>
+        {/* ── 右翼 (7 列 / 58%): 特征矩阵与每日进化成长中枢 (独立平滑内滚) ── */}
+        <div className="lg:col-span-7 h-full flex flex-col min-h-0 bg-[var(--aurora-surface)] rounded-3xl border border-[var(--aurora-border)] shadow-xl overflow-hidden">
+          {/* A. 今日自进化与成长态势看板 (Daily Evolution Matrix Bar) */}
+          <div className="p-3.5 pb-2.5 bg-gradient-to-r from-[var(--aurora-surface-solid)] via-[var(--aurora-surface)] to-[var(--aurora-chip)] border-b border-[var(--aurora-border)] shrink-0 space-y-2.5">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
               <div className="flex items-center gap-2">
-                <span className="font-bold text-base text-[var(--aurora-fg1)]">
-                  全域 AI 终端配置文件热写入
+                <span className="w-2 h-2 rounded-full bg-[#F59E0B] animate-ping" />
+                <span className="text-xs font-bold text-[var(--aurora-fg1)] font-mono tracking-wide">
+                  今日心智进化战报 · {evolutionData.stage}
                 </span>
-                <span className="text-[11px] font-medium text-[#10B981] bg-[rgba(16,185,129,0.12)] px-2.5 py-0.5 rounded-full">
-                  即时生效中
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#F59E0B]/15 text-[#F59E0B] font-mono font-semibold">
+                  Lv.{evolutionData.level}
                 </span>
               </div>
-              <p className="text-xs text-[var(--aurora-fg3)] mt-1 leading-relaxed">
-                您保存的画像规则将通过 Memento 本地守护程序直接热写入这些开发工具配置文件，点击卡片可开启或关闭实时同步：
-              </p>
+              <div className="text-[11px] font-mono text-[var(--aurora-fg3)] flex items-center gap-3">
+                <span>连续自进化 <strong className="text-[var(--aurora-fg1)]">{evolutionData.activeDays}</strong> 天</span>
+                <span>今日心智吸收 <strong className="text-[#10B981]">+{evolutionData.todayDocs || 1}</strong> 条</span>
+              </div>
             </div>
 
-            {state?.devices.map((device) => (
-              <div key={device.device_id} className="space-y-3">
-                <div className="flex items-center gap-2 text-xs font-semibold text-[var(--aurora-fg2)]">
-                  <Icon name="devices" size={14} />
-                  <span>{device.name}</span>
-                  {!device.online && <Chip tone="neutral">离线</Chip>}
-                  {device.status.reported_at && (
-                    <span className="text-[11px] text-[var(--aurora-fg4)] font-normal ml-auto font-mono">
-                      最近上报同步：{formatTime(device.status.reported_at)}
-                    </span>
+            {/* EXP Progress Bar */}
+            <div className="space-y-1">
+              <div className="flex items-center justify-between text-[10px] font-mono text-[var(--aurora-fg3)]">
+                <span>心智跃迁进度 (Cognitive EXP)</span>
+                <span>{evolutionData.exp} / 1000 EXP</span>
+              </div>
+              <div className="w-full h-1.5 rounded-full bg-black/20 overflow-hidden">
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-[#F59E0B] via-[#EC4899] to-[#8B5CF6] transition-all duration-500 shadow-sm"
+                  style={{ width: `${(evolutionData.exp / 1000) * 100}%` }}
+                />
+              </div>
+            </div>
+
+            {/* Tab Navigation Header */}
+            <div className="flex items-center justify-between gap-2 flex-wrap pt-1 border-t border-[var(--aurora-border)]">
+              <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none py-0.5 max-w-full">
+                {CHAPTER_TABS.map((tab) => {
+                  const isSelected = activeTab === tab.id;
+                  return (
+                    <button
+                      key={tab.id}
+                      onClick={() => {
+                        setActiveTab(tab.id);
+                        if (["brain", "communication", "tech", "execution", "project"].includes(tab.id)) {
+                          triggerSynapse(`⚡ 聚焦维度：${tab.label}`, tab.id);
+                        }
+                      }}
+                      className={`px-2.5 py-1 rounded-xl text-[11px] font-medium transition-all shrink-0 flex items-center gap-1 ${
+                        isSelected
+                          ? "bg-[var(--aurora-fg1)] text-[var(--aurora-bg1)] shadow-xs font-semibold scale-102"
+                          : "text-[var(--aurora-fg3)] hover:text-[var(--aurora-fg1)] hover:bg-[var(--aurora-chip)]"
+                      }`}
+                    >
+                      <span>{tab.label}</span>
+                      {tab.count !== undefined && (
+                        <span
+                          className="text-[9px] font-mono px-1.5 py-0.2 rounded-full font-bold"
+                          style={{
+                            backgroundColor: isSelected ? "rgba(0,0,0,0.15)" : `${tab.color}20`,
+                            color: isSelected ? "inherit" : tab.color,
+                          }}
+                        >
+                          {tab.count}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Quick Search */}
+              {["brain", "communication", "tech", "execution", "project", "all"].includes(activeTab) && (
+                <div className="relative w-44 shrink-0">
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="过滤准则..."
+                    className="w-full pl-7 pr-2.5 py-1 text-xs rounded-xl bg-[var(--aurora-surface-solid)] border border-[var(--aurora-border)] text-[var(--aurora-fg1)] placeholder-[var(--aurora-fg4)] focus:outline-hidden focus:border-[var(--aurora-accent)]"
+                  />
+                  <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[var(--aurora-fg4)]">
+                    <Icon name="search" size={11} />
+                  </span>
+                  {searchQuery && (
+                    <button
+                      onClick={() => setSearchQuery("")}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--aurora-fg4)] hover:text-[var(--aurora-fg1)]"
+                    >
+                      <Icon name="close" size={10} />
+                    </button>
                   )}
                 </div>
+              )}
+            </div>
+          </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {state.targets.map((tool) => {
-                    const meta = TARGET_META[tool] || { label: tool, file: "~/.config", desc: "配置环境" };
-                    const on = device.targets.includes(tool);
-                    return (
-                      <div
-                        key={tool}
-                        onClick={() => toggleTarget(device, tool)}
-                        className={`p-4 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between ${
-                          on
-                            ? "bg-[var(--aurora-surface-solid)] border-[var(--aurora-accent)] shadow-xs scale-[1.01]"
-                            : "bg-[var(--aurora-chip)] border-[var(--aurora-border)] opacity-70 hover:opacity-100"
-                        }`}
-                      >
-                        <div className="flex items-center justify-between mb-2">
+          {/* B. 右翼核心内容滚动区 (Independent Smooth Scrolling Area) */}
+          <div className="flex-1 overflow-y-auto p-4 space-y-3.5 scrollbar-thin">
+            {/* ─────────────────────────────────────────────────────────────
+                CHAPTER VIEW 1-5: 规则卡片渲染与就地增删改 + 突触共振联动
+                ───────────────────────────────────────────────────────────── */}
+            {["brain", "communication", "tech", "execution", "project", "all"].includes(activeTab) && (
+              <div className="space-y-3.5">
+                {displayedSections.length > 0 ? (
+                  displayedSections.map((sec, secIdx) => (
+                    <div
+                      key={secIdx}
+                      className="p-4 rounded-2xl border border-[var(--aurora-border)] bg-[var(--aurora-surface-solid)] shadow-xs transition-all hover:border-[var(--aurora-border-strong)]"
+                    >
+                      {/* Section Title & Header */}
+                      <div className="flex items-center justify-between pb-2.5 mb-2.5 border-b border-[var(--aurora-border)]">
+                        <div className="flex items-center gap-2">
+                          <div
+                            className="w-7 h-7 rounded-xl flex items-center justify-center shadow-xs"
+                            style={{ backgroundColor: `${sec.accent}16`, color: sec.accent }}
+                          >
+                            <Icon name={sec.icon} size={15} />
+                          </div>
                           <div className="flex items-center gap-2">
-                            <BrandMark id={tool} size={18} colored={on} />
-                            <span className="font-bold text-xs text-[var(--aurora-fg1)]">
-                              {meta.label}
+                            <h3 className="text-xs font-bold text-[var(--aurora-fg1)] tracking-tight">
+                              {sec.title}
+                            </h3>
+                            <span
+                              className="text-[9px] font-mono px-2 py-0.5 rounded-full font-medium"
+                              style={{ backgroundColor: `${sec.accent}15`, color: sec.accent }}
+                            >
+                              {sec.badge}
                             </span>
                           </div>
-                          {on && (
-                            <span className="flex items-center gap-1 text-[10px] text-[#10B981] font-medium bg-[rgba(16,185,129,0.12)] px-2 py-0.5 rounded-full">
-                              <span className="w-1.5 h-1.5 rounded-full bg-[#10B981] breathing-glow-emerald" />
-                              已守护
-                            </span>
-                          )}
                         </div>
 
-                        <div className="text-[11px] text-[var(--aurora-fg3)] leading-tight mb-3">
-                          {meta.desc}
-                        </div>
-
-                        <div className="pt-2 border-t border-[var(--aurora-border)] flex items-center justify-between text-[10px] font-mono text-[var(--aurora-fg4)]">
-                          <span className="truncate max-w-[170px]">{meta.file}</span>
-                          <span style={{ color: on ? "var(--aurora-accent)" : undefined }}>
-                            {on ? "已激活" : "未开启"}
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-[var(--aurora-chip)] text-[var(--aurora-fg3)] font-semibold">
+                            {sec.items.length} 条准则
                           </span>
+                          <Btn
+                            variant="ghost"
+                            size="sm"
+                            icon="sparkles"
+                            onClick={() => {
+                              setIsAddingItem(true);
+                              setNewItemText("");
+                            }}
+                          >
+                            新增
+                          </Btn>
                         </div>
                       </div>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
 
-        {/* ─────────────────────────────────────────────────────────────
-            CHAPTER VIEW 7: 避坑经验自学习 (Learned Corrections)
-            ───────────────────────────────────────────────────────────── */}
-        {activeTab === "learned" && (
-          <LearnedCorrections
-            topics={pending}
-            onChanged={(message) => {
-              setNotice(message ?? null);
-              load();
-            }}
-          />
-        )}
+                      {/* Add New Rule Input */}
+                      {isAddingItem && (
+                        <div className="mb-3 p-2.5 rounded-xl bg-[var(--aurora-chip)] border border-[var(--aurora-accent)] flex flex-col sm:flex-row gap-2 animate-in fade-in">
+                          <input
+                            type="text"
+                            value={newItemText}
+                            onChange={(e) => setNewItemText(e.target.value)}
+                            placeholder={`在「${sec.title}」下新增一条长效准则...`}
+                            className="flex-1 text-xs px-3 py-1.5 rounded-lg bg-[var(--aurora-surface-solid)] border border-[var(--aurora-border)] text-[var(--aurora-fg1)] focus:outline-hidden focus:border-[var(--aurora-accent)]"
+                            autoFocus
+                          />
+                          <div className="flex items-center gap-1.5 justify-end">
+                            <Btn
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                setIsAddingItem(false);
+                                setNewItemText("");
+                              }}
+                            >
+                              取消
+                            </Btn>
+                            <Btn
+                              size="sm"
+                              icon="check"
+                              onClick={() => handleAddItemToSection(sec.title, newItemText)}
+                              disabled={!newItemText.trim() || busy !== null}
+                            >
+                              保存
+                            </Btn>
+                          </div>
+                        </div>
+                      )}
 
-        {/* ─────────────────────────────────────────────────────────────
-            CHAPTER VIEW 8: 底层源码比对与 Markdown 历史 (Source & Diff)
-            ───────────────────────────────────────────────────────────── */}
-        {activeTab === "source" && (
-          <div className="space-y-4">
-            {draft && (
-              <Glass
-                padding="clamp(16px, 3vw, 24px)"
-                radius={20}
-                style={{ border: "1px solid var(--aurora-accent)" }}
-              >
-                <div className="flex items-center gap-2 mb-3">
-                  <Chip tone="accent" icon="edit">{t.persona.draft}</Chip>
-                  <span className="text-xs text-[var(--aurora-fg4)] font-mono">{formatTime(draft.updated_at)}</span>
-                </div>
+                      {/* Rule Items Cards with Live Synapse Click Feedback */}
+                      <div className="grid grid-cols-1 gap-2">
+                        {sec.items.map((item, itemIdx) => {
+                          const isSelected = selectedRuleKey === item;
+                          return (
+                            <div
+                              key={itemIdx}
+                              onClick={() => triggerSynapse(item, sec.dimension)}
+                              className={`group p-2.5 rounded-xl border shadow-xs transition-all cursor-pointer flex items-start gap-2.5 text-xs text-[var(--aurora-fg2)] leading-relaxed relative ${
+                                isSelected
+                                  ? "bg-[var(--aurora-chip)] border-[var(--aurora-accent)] ring-1 ring-[var(--aurora-accent)]/30"
+                                  : "bg-[var(--aurora-surface)] border-[var(--aurora-border)] hover:border-[var(--aurora-border-strong)] hover:bg-[var(--aurora-chip)]/40"
+                              }`}
+                            >
+                              <span
+                                className="w-4 h-4 rounded-md flex items-center justify-center shrink-0 font-mono text-[10px] font-bold mt-0.5 shadow-2xs"
+                                style={{
+                                  backgroundColor: `${sec.accent}18`,
+                                  color: sec.accent,
+                                }}
+                              >
+                                {itemIdx + 1}
+                              </span>
 
-                {editing === "draft" ? (
-                  <ProfileEditor initial={draft.content} onSave={saveDraft} onCancel={() => setEditing(null)} busy={busy !== null} />
-                ) : (
-                  <>
-                    {diff && published && (diff.added.length > 0 || diff.removed.length > 0) && (
-                      <div className="mb-4 p-3 rounded-xl bg-[var(--aurora-chip)] border border-[var(--aurora-border)] text-xs font-mono">
-                        <div className="font-bold text-[var(--aurora-fg1)] mb-2">变更比对 (Diff)：</div>
-                        {diff.added.map((l) => (
-                          <div key={`+${l}`} className="text-[#10B981]">+ {l.slice(2)}</div>
-                        ))}
-                        {diff.removed.map((l) => (
-                          <div key={`-${l}`} className="text-[#DC2626] line-through">− {l.slice(2)}</div>
-                        ))}
+                              <span className="flex-1 font-normal select-text">
+                                {item}
+                              </span>
+
+                              {/* Interactive Actions: Spark Resonance, Copy, Delete */}
+                              <div className="flex items-center gap-1 shrink-0">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    triggerSynapse(item, sec.dimension);
+                                  }}
+                                  className="p-1 rounded-md text-[var(--aurora-accent)] hover:bg-[var(--aurora-accent)]/10"
+                                  title="触发 3D 形象神经突触共振"
+                                >
+                                  <span className="text-[11px]">⚡</span>
+                                </button>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    navigator.clipboard.writeText(item);
+                                    setNotice("准则内容已复制到剪贴板");
+                                  }}
+                                  className="p-1 rounded-md text-[var(--aurora-fg4)] hover:text-[var(--aurora-fg1)] hover:bg-[var(--aurora-chip)]"
+                                  title="复制准则"
+                                >
+                                  <Icon name="sparkles" size={12} />
+                                </button>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeleteItem(sec.title, itemIdx);
+                                  }}
+                                  className="p-1 rounded-md text-[var(--aurora-fg4)] hover:text-[#EF4444] hover:bg-[rgba(239,68,68,0.1)] opacity-0 group-hover:opacity-100 transition-opacity"
+                                  title="删除此准则"
+                                >
+                                  <Icon name="trash" size={12} />
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
+                    </div>
+                  ))
+                ) : (
+                  <Glass padding={24} radius={20} className="text-center text-xs text-[var(--aurora-fg3)] space-y-2">
+                    <div>未检索到匹配的准则内容。</div>
+                    {searchQuery && (
+                      <button
+                        onClick={() => setSearchQuery("")}
+                        className="text-xs text-[var(--aurora-accent)] hover:underline font-medium"
+                      >
+                        清除搜索词
+                      </button>
                     )}
-                    <div className="prose prose-sm max-w-none text-xs">
-                      <MarkdownViewer content={draft.content} />
-                    </div>
-                    <div className="flex gap-2 justify-end mt-4">
-                      <Btn variant="ghost" size="sm" icon="trash" onClick={() => run("discard", api.discardProfileDraft)} disabled={busy !== null}>
-                        {t.persona.discard}
-                      </Btn>
-                      <Btn variant="glass" size="sm" icon="edit" onClick={() => setEditing("draft")} disabled={busy !== null}>
-                        {t.persona.edit}
-                      </Btn>
-                      <Btn size="sm" icon="rocket" onClick={() => run("publish", () => api.publishProfile())} disabled={busy !== null}>
-                        {busy === "publish" ? t.persona.publishing : "发布新版本"}
-                      </Btn>
-                    </div>
-                  </>
+                  </Glass>
                 )}
-              </Glass>
+              </div>
             )}
 
-            <Glass padding="clamp(16px, 3vw, 24px)" radius={20}>
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <Chip tone="success" icon="check">已发布原始规则文件 (Markdown)</Chip>
-                  <span className="text-xs text-[var(--aurora-fg4)] font-mono">
-                    v{published?.version} · {formatTime(published?.published_at)}
-                  </span>
+            {/* ─────────────────────────────────────────────────────────────
+                CHAPTER VIEW 6: 每日自进化成长轨迹时间轴 (Daily Evolution Timeline)
+                ───────────────────────────────────────────────────────────── */}
+            {activeTab === "evolution" && (
+              <div className="space-y-3.5">
+                <div className="p-4 rounded-2xl border border-[#FACC15]/30 bg-gradient-to-r from-[#FACC15]/10 via-[var(--aurora-surface-solid)] to-transparent space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-base">✨</span>
+                      <h3 className="text-sm font-bold text-[var(--aurora-fg1)]">
+                        自进化成长轨迹 · 每日沉淀见证
+                      </h3>
+                    </div>
+                    <button
+                      onClick={handleSparkEvolution}
+                      className="px-3 py-1 rounded-xl text-xs font-medium bg-[#FACC15]/20 hover:bg-[#FACC15]/30 text-[#FACC15] border border-[#FACC15]/40 flex items-center gap-1.5 transition-all shadow-sm"
+                    >
+                      <span>⚡</span>
+                      <span>激发今日共鸣</span>
+                    </button>
+                  </div>
+                  <p className="text-xs text-[var(--aurora-fg3)] leading-relaxed">
+                    Memento 伴随您的日常会话与编程，自动将每一次交互沉淀为长时记忆。下方记录了过去 30 天数字孪生的进化足迹：
+                  </p>
                 </div>
-                {!draft && editing === null && (
-                  <Btn variant="ghost" size="sm" icon="edit" onClick={() => setEditing("published")}>
-                    手动修改规则源码
-                  </Btn>
-                )}
-              </div>
 
-              {editing === "published" ? (
-                <ProfileEditor
-                  initial={published?.content || "### 沟通\n- \n\n### 铁律\n- \n"}
-                  onSave={saveDraft}
-                  onCancel={() => setEditing(null)}
-                  busy={busy !== null}
-                />
-              ) : published ? (
-                <div className="prose prose-sm max-w-none text-xs leading-relaxed p-4 rounded-xl bg-[var(--aurora-surface-solid)] border border-[var(--aurora-border)]">
-                  <MarkdownViewer content={published.content} />
+                {/* Timeline Cards */}
+                <div className="space-y-2.5">
+                  {dailyHistory.length > 0 ? (
+                    dailyHistory.map((item, idx) => {
+                      const isToday = item.date === new Date().toISOString().slice(0, 10);
+                      return (
+                        <div
+                          key={item.date}
+                          onClick={() =>
+                            triggerSynapse(
+                              `📅 回溯 ${item.date} 进化点 · 沉淀文档 ${item.document_count} 篇`,
+                              "evolution"
+                            )
+                          }
+                          className={`p-3.5 rounded-xl border transition-all cursor-pointer flex items-center justify-between gap-3 ${
+                            isToday
+                              ? "bg-[var(--aurora-surface-solid)] border-[#FACC15] shadow-xs ring-1 ring-[#FACC15]/30"
+                              : "bg-[var(--aurora-surface-solid)] border-[var(--aurora-border)] hover:border-[var(--aurora-border-strong)]"
+                          }`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className="flex flex-col items-center justify-center w-11 h-11 rounded-xl bg-[var(--aurora-chip)] border border-[var(--aurora-border)] shrink-0 font-mono">
+                              <span className="text-[10px] text-[var(--aurora-fg4)] uppercase">
+                                {new Date(item.date).toLocaleString(undefined, { month: "short" })}
+                              </span>
+                              <span className="text-sm font-bold text-[var(--aurora-fg1)] leading-none">
+                                {new Date(item.date).getDate()}
+                              </span>
+                            </div>
+
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs font-semibold text-[var(--aurora-fg1)] font-mono">
+                                  {item.date}
+                                </span>
+                                {isToday && (
+                                  <span className="text-[9px] px-2 py-0.2 rounded-full font-bold bg-[#10B981]/20 text-[#10B981]">
+                                    今日活跃
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-[11px] text-[var(--aurora-fg3)] mt-0.5 flex items-center gap-2">
+                                <span>吸收会话与沉淀：<strong>{item.document_count}</strong> 篇文档</span>
+                                {item.tools && item.tools.length > 0 && (
+                                  <span className="text-[10px] text-[var(--aurora-fg4)] font-mono">
+                                    来源: {item.tools.join(", ")}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2 shrink-0">
+                            <span className="text-xs text-[var(--aurora-accent)] font-mono font-medium">
+                              +{item.document_count * 20} EXP
+                            </span>
+                            <span className="text-[11px] text-[var(--aurora-fg4)]">⚡</span>
+                          </div>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <Glass padding={20} radius={16} className="text-center text-xs text-[var(--aurora-fg3)]">
+                      正在同步过去 30 天每日进化成长数据...
+                    </Glass>
+                  )}
                 </div>
-              ) : (
-                <p className="text-xs text-[var(--aurora-fg3)]">暂无已发布规则</p>
-              )}
-            </Glass>
+              </div>
+            )}
+
+            {/* ─────────────────────────────────────────────────────────────
+                CHAPTER VIEW 7: 终端守护矩阵 (Active Guardian Matrix)
+                ───────────────────────────────────────────────────────────── */}
+            {activeTab === "matrix" && (
+              <div className="p-4 rounded-2xl border border-[var(--aurora-border)] bg-[var(--aurora-surface-solid)] shadow-xs space-y-4">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-sm text-[var(--aurora-fg1)]">
+                      全域 AI 终端配置文件热写入
+                    </span>
+                    <span className="text-[10px] font-medium text-[#10B981] bg-[rgba(16,185,129,0.12)] px-2 py-0.5 rounded-full">
+                      5 端实时热注入
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-[var(--aurora-fg3)] mt-1 leading-relaxed">
+                    画像准则通过本地守护程序实时回写至以下开发环境：
+                  </p>
+                </div>
+
+                {state?.devices.map((device) => (
+                  <div key={device.device_id} className="space-y-2.5">
+                    <div className="flex items-center gap-2 text-xs font-semibold text-[var(--aurora-fg2)]">
+                      <Icon name="devices" size={14} />
+                      <span>{device.name}</span>
+                      {!device.online && <Chip tone="neutral">离线</Chip>}
+                      {device.status.reported_at && (
+                        <span className="text-[10px] text-[var(--aurora-fg4)] font-normal ml-auto font-mono">
+                          最近同步：{formatTime(device.status.reported_at)}
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      {state.targets.map((tool) => {
+                        const meta = TARGET_META[tool] || { label: tool, file: "~/.config", desc: "配置环境" };
+                        const on = device.targets.includes(tool);
+                        return (
+                          <div
+                            key={tool}
+                            onClick={() => toggleTarget(device, tool)}
+                            className={`p-3 rounded-xl border transition-all cursor-pointer flex flex-col justify-between ${
+                              on
+                                ? "bg-[var(--aurora-surface)] border-[var(--aurora-accent)] shadow-2xs"
+                                : "bg-[var(--aurora-chip)] border-[var(--aurora-border)] opacity-70 hover:opacity-100"
+                            }`}
+                          >
+                            <div className="flex items-center justify-between mb-1.5">
+                              <div className="flex items-center gap-2">
+                                <BrandMark id={tool} size={16} colored={on} />
+                                <span className="font-bold text-xs text-[var(--aurora-fg1)]">
+                                  {meta.label}
+                                </span>
+                              </div>
+                              {on && (
+                                <span className="flex items-center gap-1 text-[9px] text-[#10B981] font-medium bg-[rgba(16,185,129,0.12)] px-2 py-0.2 rounded-full">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-[#10B981] breathing-glow-emerald" />
+                                  已注入
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="text-[10px] text-[var(--aurora-fg3)] leading-tight mb-2">
+                              {meta.desc}
+                            </div>
+
+                            <div className="pt-1.5 border-t border-[var(--aurora-border)] flex items-center justify-between text-[9px] font-mono text-[var(--aurora-fg4)]">
+                              <span className="truncate max-w-[150px]">{meta.file}</span>
+                              <span style={{ color: on ? "var(--aurora-accent)" : undefined }}>
+                                {on ? "已激活" : "未开启"}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* ─────────────────────────────────────────────────────────────
+                CHAPTER VIEW 8: 避坑经验自学习 (Learned Corrections)
+                ───────────────────────────────────────────────────────────── */}
+            {activeTab === "learned" && (
+              <LearnedCorrections
+                topics={pending}
+                onChanged={(message) => {
+                  setNotice(message ?? null);
+                  load();
+                }}
+              />
+            )}
+
+            {/* ─────────────────────────────────────────────────────────────
+                CHAPTER VIEW 9: 底层源码比对与 Markdown 历史 (Source & Diff)
+                ───────────────────────────────────────────────────────────── */}
+            {activeTab === "source" && (
+              <div className="space-y-3">
+                {draft && (
+                  <Glass padding={16} radius={18} style={{ border: "1px solid var(--aurora-accent)" }}>
+                    <div className="flex items-center gap-2 mb-2">
+                      <Chip tone="accent" icon="edit">{t.persona.draft}</Chip>
+                      <span className="text-xs text-[var(--aurora-fg4)] font-mono">{formatTime(draft.updated_at)}</span>
+                    </div>
+
+                    {editing === "draft" ? (
+                      <ProfileEditor initial={draft.content} onSave={saveDraft} onCancel={() => setEditing(null)} busy={busy !== null} />
+                    ) : (
+                      <>
+                        {diff && published && (diff.added.length > 0 || diff.removed.length > 0) && (
+                          <div className="mb-3 p-2.5 rounded-xl bg-[var(--aurora-chip)] border border-[var(--aurora-border)] text-xs font-mono">
+                            <div className="font-bold text-[var(--aurora-fg1)] mb-1">变更比对 (Diff)：</div>
+                            {diff.added.map((l) => (
+                              <div key={`+${l}`} className="text-[#10B981]">+ {l.slice(2)}</div>
+                            ))}
+                            {diff.removed.map((l) => (
+                              <div key={`-${l}`} className="text-[#DC2626] line-through">− {l.slice(2)}</div>
+                            ))}
+                          </div>
+                        )}
+                        <div className="prose prose-sm max-w-none text-xs">
+                          <MarkdownViewer content={draft.content} />
+                        </div>
+                        <div className="flex gap-2 justify-end mt-3">
+                          <Btn variant="ghost" size="sm" icon="trash" onClick={() => run("discard", api.discardProfileDraft)} disabled={busy !== null}>
+                            {t.persona.discard}
+                          </Btn>
+                          <Btn variant="glass" size="sm" icon="edit" onClick={() => setEditing("draft")} disabled={busy !== null}>
+                            {t.persona.edit}
+                          </Btn>
+                          <Btn size="sm" icon="rocket" onClick={() => run("publish", () => api.publishProfile())} disabled={busy !== null}>
+                            {busy === "publish" ? t.persona.publishing : "发布新版本"}
+                          </Btn>
+                        </div>
+                      </>
+                    )}
+                  </Glass>
+                )}
+
+                <Glass padding={16} radius={18}>
+                  <div className="flex items-center justify-between mb-2.5">
+                    <div className="flex items-center gap-2">
+                      <Chip tone="success" icon="check">已发布原始规则文件 (Markdown)</Chip>
+                      <span className="text-xs text-[var(--aurora-fg4)] font-mono">
+                        v{published?.version} · {formatTime(published?.published_at)}
+                      </span>
+                    </div>
+                    {!draft && editing === null && (
+                      <Btn variant="ghost" size="sm" icon="edit" onClick={() => setEditing("published")}>
+                        手动修改
+                      </Btn>
+                    )}
+                  </div>
+
+                  {editing === "published" ? (
+                    <ProfileEditor
+                      initial={published?.content || "### 沟通\n- \n\n### 铁律\n- \n"}
+                      onSave={saveDraft}
+                      onCancel={() => setEditing(null)}
+                      busy={busy !== null}
+                    />
+                  ) : published ? (
+                    <div className="prose prose-sm max-w-none text-xs leading-relaxed p-3.5 rounded-xl bg-[var(--aurora-surface-solid)] border border-[var(--aurora-border)]">
+                      <MarkdownViewer content={published.content} />
+                    </div>
+                  ) : (
+                    <p className="text-xs text-[var(--aurora-fg3)]">暂无已发布规则</p>
+                  )}
+                </Glass>
+              </div>
+            )}
           </div>
-        )}
+        </div>
       </div>
     </div>
   );
