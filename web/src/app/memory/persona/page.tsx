@@ -1,4 +1,5 @@
 "use client";
+
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
@@ -17,9 +18,9 @@ const DigitalTwinAvatar3D = dynamic(
   {
     ssr: false,
     loading: () => (
-      <div className="w-full h-[540px] rounded-3xl bg-[var(--aurora-surface)] border border-[var(--aurora-border)] animate-pulse flex flex-col items-center justify-center gap-3 text-xs text-[var(--aurora-fg3)]">
+      <div className="w-full h-full min-h-[500px] rounded-3xl bg-[var(--aurora-surface)] border border-[var(--aurora-border)] animate-pulse flex flex-col items-center justify-center gap-3 text-xs text-[var(--aurora-fg3)]">
         <div className="w-10 h-10 rounded-2xl bg-[var(--aurora-accent)]/20 animate-spin border-2 border-transparent border-t-[var(--aurora-accent)]" />
-        <span>正在载入 3D 全息神经元孪生体...</span>
+        <span>正在载入 3D 真人数字孪生模型...</span>
       </div>
     ),
   }
@@ -32,8 +33,6 @@ const TARGET_META: Record<string, { label: string; file: string; desc: string }>
   openclaw: { label: "OpenClaw", file: "~/.openclaw/workspace/USER.md", desc: "开源智能体工作区" },
   hermes: { label: "Hermes", file: "~/.hermes/SOUL.md", desc: "多代理自进化中枢" },
 };
-
-type Tone = "neutral" | "accent" | "success" | "warn" | "danger";
 
 interface PersonaSection {
   title: string;
@@ -140,7 +139,7 @@ function ProfileEditor({
       <textarea
         value={value}
         onChange={(e) => setValue(e.target.value)}
-        rows={Math.min(22, Math.max(10, value.split("\n").length + 2))}
+        rows={Math.min(18, Math.max(8, value.split("\n").length + 2))}
         className="w-full font-mono text-xs leading-relaxed p-4 rounded-2xl border border-[var(--aurora-border-strong)] bg-[var(--aurora-surface-solid)] text-[var(--aurora-fg1)] focus:outline-hidden focus:border-[var(--aurora-accent)] resize-y"
       />
       <div className="flex gap-2 justify-end flex-wrap">
@@ -151,6 +150,8 @@ function ProfileEditor({
   );
 }
 
+type ViewTab = "rules" | "matrix" | "learned" | "source";
+
 export default function PersonaPage() {
   const { t } = useI18n();
   const [state, setState] = useState<ProfileState | null>(null);
@@ -159,7 +160,10 @@ export default function PersonaPage() {
   const [busy, setBusy] = useState<"regenerate" | "publish" | "save" | "discard" | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [editing, setEditing] = useState<"draft" | "published" | null>(null);
-  const [showAdvancedEditor, setShowAdvancedEditor] = useState(false);
+
+  // Split-screen active dimension & Tab navigation
+  const [activeDimension, setActiveDimension] = useState<PersonaDimension>("all");
+  const [currentTab, setCurrentTab] = useState<ViewTab>("rules");
 
   const load = useCallback(async () => {
     try {
@@ -227,8 +231,6 @@ export default function PersonaPage() {
     load();
   };
 
-  const [activeDimension, setActiveDimension] = useState<PersonaDimension>("all");
-
   const draft = state?.draft ?? null;
   const published = state?.published ?? null;
   const diff = useMemo(() => (draft ? lineDiff(draft.content, published?.content) : null), [draft, published]);
@@ -257,11 +259,9 @@ export default function PersonaPage() {
 
   const handleSelectDimension = (dim: PersonaDimension) => {
     setActiveDimension(dim);
-    if (dim !== "all") {
-      const gallery = document.getElementById("persona-rules-gallery");
-      if (gallery) {
-        gallery.scrollIntoView({ behavior: "smooth", block: "nearest" });
-      }
+    // Automatically switch to Rules view tab if user clicks a 3D body organ
+    if (currentTab !== "rules") {
+      setCurrentTab("rules");
     }
   };
 
@@ -270,32 +270,37 @@ export default function PersonaPage() {
     return structuredSections.filter((s) => s.dimension === activeDimension);
   }, [structuredSections, activeDimension]);
 
+  const DIMENSION_TABS: Array<{ id: PersonaDimension; label: string; icon: string; count: number; color: string }> = [
+    { id: "all", label: "全部", icon: "sparkles", count: totalRulesCount, color: "#8B5CF6" },
+    { id: "brain", label: "🧠 脑核", icon: "zap", count: ruleStats.ironLaws, color: "#EF4444" },
+    { id: "communication", label: "💬 喉核", icon: "message", count: ruleStats.communication, color: "#06B6D4" },
+    { id: "tech", label: "⚡ 心核", icon: "devices", count: ruleStats.tech, color: "#F59E0B" },
+    { id: "execution", label: "🛠️ 肢端", icon: "check", count: ruleStats.execution, color: "#10B981" },
+  ];
+
   return (
-    <div className="max-w-6xl mx-auto space-y-6 pb-20">
+    <div className="h-[calc(100vh-68px)] max-h-[calc(100vh-68px)] flex flex-col overflow-hidden pb-1">
       {/* ─────────────────────────────────────────────────────────────
-          1. 统一顶栏 (Single-Row Modern Header)
+          1. 纤薄顶栏 (Ultra-Slim Unified TopBar)
           ───────────────────────────────────────────────────────────── */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-[var(--aurora-border)]">
-        <div>
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl flex items-center justify-center bg-[rgba(236,72,153,0.1)] text-[#EC4899] shadow-xs">
-              <Icon name="user" size={18} />
-            </div>
-            <h1 className="text-xl font-bold text-[var(--aurora-fg1)] tracking-tight">
-              个人画像 · 数字孪生与铁律
+      <div className="flex items-center justify-between gap-3 pb-2 px-1 border-b border-[var(--aurora-border)] shrink-0">
+        <div className="flex items-center gap-3">
+          <div className="w-7 h-7 rounded-xl flex items-center justify-center bg-[rgba(236,72,153,0.12)] text-[#EC4899] shadow-xs">
+            <Icon name="user" size={16} />
+          </div>
+          <div className="flex items-center gap-2">
+            <h1 className="text-base font-bold text-[var(--aurora-fg1)] tracking-tight">
+              个人画像 · 数字孪生中枢
             </h1>
-            <span className="text-[11px] px-2.5 py-0.5 rounded-full font-medium bg-[rgba(16,185,129,0.12)] text-[#10B981] flex items-center gap-1.5">
+            <span className="text-[11px] px-2 py-0.5 rounded-full font-medium bg-[rgba(16,185,129,0.12)] text-[#10B981] flex items-center gap-1.5 font-mono">
               <span className="w-1.5 h-1.5 rounded-full bg-[#10B981] breathing-glow-emerald" />
-              已同步至全域 AI
+              v{published?.version || 9} · 已热注入 5 端
             </span>
           </div>
-          <p className="text-xs text-[var(--aurora-fg3)] mt-1 ml-10">
-            全息神经元人体三维中枢 · 映射你的认知、沟通、架构偏好与四肢执行铁律，让所有 AI 工具如臂使指
-          </p>
         </div>
 
         {/* Action Controls */}
-        <div className="flex items-center gap-2 self-start sm:self-auto">
+        <div className="flex items-center gap-2">
           <Btn
             variant="glass"
             size="sm"
@@ -303,7 +308,7 @@ export default function PersonaPage() {
             onClick={regenerate}
             disabled={busy !== null}
           >
-            {busy === "regenerate" ? t.persona.regenerating : "AI 重新提炼画像"}
+            {busy === "regenerate" ? t.persona.regenerating : "AI 重新提炼"}
           </Btn>
           {draft && (
             <Btn
@@ -318,475 +323,393 @@ export default function PersonaPage() {
         </div>
       </div>
 
-      {/* ─────────────────────────────────────────────────────────────
-          Cognitive Brain 3-Pillars Executive Compass Navigation
-          ───────────────────────────────────────────────────────────── */}
-      <CognitiveCompass
-        currentTab="persona"
-        summaryStats={{
-          personaVersion: state?.published?.version || 9,
-          syncedTargetsCount: 5,
-        }}
-      />
-
       {error && (
-        <Glass padding={14} radius={14} style={{ color: "#DC2626", fontSize: 13 }}>
-          {error}
-        </Glass>
+        <div className="mt-2 shrink-0">
+          <Glass padding={10} radius={12} style={{ color: "#DC2626", fontSize: 12 }}>
+            {error}
+          </Glass>
+        </div>
       )}
       {notice && (
-        <Glass padding={14} radius={14} style={{ color: "var(--aurora-fg2)", fontSize: 13 }}>
-          {notice}
-        </Glass>
+        <div className="mt-2 shrink-0">
+          <Glass padding={10} radius={12} style={{ color: "var(--aurora-fg2)", fontSize: 12 }}>
+            {notice}
+          </Glass>
+        </div>
       )}
 
       {/* ─────────────────────────────────────────────────────────────
-          2. 3D 全息数字孪生中枢 (Holographic 3D Digital Twin Stage)
+          2. 一屏主工作台 (One-Screen Split Viewport: 3D Twin & Content)
           ───────────────────────────────────────────────────────────── */}
-      <section className="space-y-3">
-        <div className="flex items-center justify-between px-1">
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-[#A855F7] animate-pulse" />
-            <h2 className="text-sm font-bold text-[var(--aurora-fg1)] tracking-wide uppercase">
-              3D 全息神经元孪生体 (Digital Twin Hologram)
-            </h2>
-            <span className="text-[11px] font-mono text-[var(--aurora-fg3)]">
-              · 实时映射脑核/咽喉/核心/四肢四维准则
-            </span>
-          </div>
-
-          <div className="flex items-center gap-2 text-xs">
-            <span className="text-[11px] text-[var(--aurora-fg4)] hidden sm:inline">
-              轻按 3D 人体部位或下方标签可联动过滤
-            </span>
-          </div>
+      <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-3 min-h-0 pt-2 overflow-hidden">
+        {/* ── Left Wing: 3D Real-Human Avatar Stage (占满左侧半屏) ── */}
+        <div className="lg:col-span-5 xl:col-span-5 h-full min-h-[380px] flex flex-col relative overflow-hidden rounded-3xl border border-[var(--aurora-border)] bg-[#07080f] shadow-sm">
+          <DigitalTwinAvatar3D
+            activeDimension={activeDimension}
+            onSelectDimension={handleSelectDimension}
+            ruleStats={ruleStats}
+            className="w-full h-full"
+          />
         </div>
 
-        {/* 3D Canvas Central Stage */}
-        <DigitalTwinAvatar3D
-          activeDimension={activeDimension}
-          onSelectDimension={handleSelectDimension}
-          ruleStats={ruleStats}
-        />
-      </section>
+        {/* ── Right Wing: Interactive Rules & Ops Cockpit (右侧多功能工作台) ── */}
+        <div className="lg:col-span-7 xl:col-span-7 h-full flex flex-col rounded-3xl border border-[var(--aurora-border)] bg-[var(--aurora-surface)] overflow-hidden shadow-xs">
+          {/* Top Tabs & Filters Bar */}
+          <div className="p-3 border-b border-[var(--aurora-border)] bg-[var(--aurora-surface-solid)] flex flex-wrap items-center justify-between gap-2 shrink-0">
+            {/* 4 Feature Tabs */}
+            <div className="flex items-center gap-1 bg-[var(--aurora-chip)] p-1 rounded-xl">
+              <button
+                onClick={() => setCurrentTab("rules")}
+                className={`px-3 py-1 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 ${
+                  currentTab === "rules"
+                    ? "bg-[var(--aurora-surface-solid)] text-[var(--aurora-fg1)] shadow-xs font-semibold"
+                    : "text-[var(--aurora-fg3)] hover:text-[var(--aurora-fg1)]"
+                }`}
+              >
+                <Icon name="sparkles" size={13} />
+                <span>准则细则</span>
+                <span className="text-[10px] font-mono px-1 rounded-full bg-[var(--aurora-border)]">
+                  {totalRulesCount}
+                </span>
+              </button>
 
-      {/* ─────────────────────────────────────────────────────────────
-          3. Hero 准则版本概览卡 (Quick Metrics & Overview)
-          ───────────────────────────────────────────────────────────── */}
-      <div className="relative overflow-hidden rounded-3xl p-5 sm:p-6 border border-[var(--aurora-border)] bg-gradient-to-br from-[var(--aurora-surface)] via-[var(--aurora-surface)] to-[rgba(236,72,153,0.06)] shadow-xs">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-5">
-          <div className="space-y-1.5 max-w-xl">
-            <span className="text-[10px] font-mono uppercase tracking-widest text-[#EC4899] font-bold">
-              Cognitive Profile & Iron Rules · Active
-            </span>
-            <h3 className="text-lg sm:text-xl font-bold text-[var(--aurora-fg1)] tracking-tight">
-              这是属于你的数字化准则，全天候跨端守护
-            </h3>
-            <p className="text-xs text-[var(--aurora-fg2)] leading-relaxed">
-              Memento 从日常纠偏与交互中提炼出你的偏好与红线，实时热写入本机的各大开发环境配置文件。无论你在使用哪个 AI 助手，它都能完全懂得你的规矩。
-            </p>
-          </div>
+              <button
+                onClick={() => setCurrentTab("matrix")}
+                className={`px-3 py-1 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 ${
+                  currentTab === "matrix"
+                    ? "bg-[var(--aurora-surface-solid)] text-[var(--aurora-fg1)] shadow-xs font-semibold"
+                    : "text-[var(--aurora-fg3)] hover:text-[var(--aurora-fg1)]"
+                }`}
+              >
+                <Icon name="devices" size={13} />
+                <span>终端守护</span>
+                <span className="text-[10px] font-mono px-1 rounded-full bg-[#10B981]/20 text-[#10B981]">
+                  5
+                </span>
+              </button>
 
-          {/* Quick Metrics */}
-          <div className="flex gap-3 shrink-0 bg-[var(--aurora-surface-solid)] p-3 rounded-2xl border border-[var(--aurora-border)] shadow-2xs">
-            <div className="px-3 border-r border-[var(--aurora-border)]">
-              <div className="text-[10px] text-[var(--aurora-fg3)]">生效版本</div>
-              <div className="text-xl font-bold font-mono text-[#EC4899] mt-0.5">
-                v{published?.version || 5}
-              </div>
-            </div>
-            <div className="px-3 border-r border-[var(--aurora-border)]">
-              <div className="text-[10px] text-[var(--aurora-fg3)]">准则条目</div>
-              <div className="text-xl font-bold font-mono text-[var(--aurora-fg1)] mt-0.5">
-                {totalRulesCount || 18}
-                <span className="text-xs font-normal text-[var(--aurora-fg4)] ml-1">条</span>
-              </div>
-            </div>
-            <div className="px-3">
-              <div className="text-[10px] text-[var(--aurora-fg3)]">守护终端</div>
-              <div className="text-xl font-bold font-mono text-[#10B981] mt-0.5">
-                5
-                <span className="text-xs font-normal text-[var(--aurora-fg4)] ml-1">个</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* 避坑经验自学习 (Learned Corrections) */}
-      <LearnedCorrections
-        topics={pending}
-        onChanged={(message) => {
-          setNotice(message ?? null);
-          load();
-        }}
-      />
-
-      {/* ─────────────────────────────────────────────────────────────
-          4. Bento 卡片画廊与双向维度联动 (Interactive Rule Gallery)
-          ───────────────────────────────────────────────────────────── */}
-      <div id="persona-rules-gallery" className="scroll-mt-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 px-1">
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-[var(--aurora-fg1)] uppercase tracking-wider">
-                AI 视角准则画廊
-              </span>
-              <span className="text-[11px] text-[var(--aurora-fg3)]">
-                （当前维度显示 {filteredSections.length} 个分类 · 共 {filteredSections.reduce((acc, s) => acc + s.items.length, 0)} 条细则）
-              </span>
-            </div>
-          </div>
-
-          <button
-            onClick={() => setShowAdvancedEditor((v) => !v)}
-            className="text-xs text-[var(--aurora-accent)] hover:underline flex items-center gap-1 font-medium self-start sm:self-auto"
-          >
-            <Icon name={showAdvancedEditor ? "close" : "edit"} size={13} />
-            <span>{showAdvancedEditor ? "收起底层代码比对" : "展开底层代码与 Diff"}</span>
-          </button>
-        </div>
-
-        {/* 维度筛选交互胶囊 Tabs (与 3D 人体实时联动) */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-2 mb-4 scrollbar-none">
-          <button
-            onClick={() => handleSelectDimension("all")}
-            className={`px-3 py-1.5 rounded-xl text-xs font-medium transition-all shrink-0 flex items-center gap-1.5 ${
-              activeDimension === "all"
-                ? "bg-[var(--aurora-accent)] text-white shadow-xs font-semibold scale-102"
-                : "bg-[var(--aurora-surface)] border border-[var(--aurora-border)] text-[var(--aurora-fg3)] hover:text-[var(--aurora-fg1)] hover:bg-[var(--aurora-surface-solid)]"
-            }`}
-          >
-            <span>🌐 全部维度</span>
-            <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-white/20">
-              {totalRulesCount}
-            </span>
-          </button>
-
-          <button
-            onClick={() => handleSelectDimension("brain")}
-            className={`px-3 py-1.5 rounded-xl text-xs font-medium transition-all shrink-0 flex items-center gap-1.5 ${
-              activeDimension === "brain"
-                ? "bg-[#EF4444] text-white shadow-xs font-semibold scale-102"
-                : "bg-[var(--aurora-surface)] border border-[var(--aurora-border)] text-[var(--aurora-fg3)] hover:text-[#EF4444] hover:bg-[rgba(239,68,68,0.08)]"
-            }`}
-          >
-            <span>🧠 脑核 · 绝对红线</span>
-            <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-black/20">
-              {ruleStats.ironLaws}
-            </span>
-          </button>
-
-          <button
-            onClick={() => handleSelectDimension("communication")}
-            className={`px-3 py-1.5 rounded-xl text-xs font-medium transition-all shrink-0 flex items-center gap-1.5 ${
-              activeDimension === "communication"
-                ? "bg-[#06B6D4] text-white shadow-xs font-semibold scale-102"
-                : "bg-[var(--aurora-surface)] border border-[var(--aurora-border)] text-[var(--aurora-fg3)] hover:text-[#06B6D4] hover:bg-[rgba(6,182,212,0.08)]"
-            }`}
-          >
-            <span>💬 喉核 · 交互与沟通</span>
-            <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-black/20">
-              {ruleStats.communication}
-            </span>
-          </button>
-
-          <button
-            onClick={() => handleSelectDimension("tech")}
-            className={`px-3 py-1.5 rounded-xl text-xs font-medium transition-all shrink-0 flex items-center gap-1.5 ${
-              activeDimension === "tech"
-                ? "bg-[#F59E0B] text-black shadow-xs font-semibold scale-102"
-                : "bg-[var(--aurora-surface)] border border-[var(--aurora-border)] text-[var(--aurora-fg3)] hover:text-[#F59E0B] hover:bg-[rgba(245,158,11,0.08)]"
-            }`}
-          >
-            <span>⚡ 心核 · 技术与架构</span>
-            <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-black/20">
-              {ruleStats.tech}
-            </span>
-          </button>
-
-          <button
-            onClick={() => handleSelectDimension("execution")}
-            className={`px-3 py-1.5 rounded-xl text-xs font-medium transition-all shrink-0 flex items-center gap-1.5 ${
-              activeDimension === "execution"
-                ? "bg-[#10B981] text-white shadow-xs font-semibold scale-102"
-                : "bg-[var(--aurora-surface)] border border-[var(--aurora-border)] text-[var(--aurora-fg3)] hover:text-[#10B981] hover:bg-[rgba(16,185,129,0.08)]"
-            }`}
-          >
-            <span>🛠️ 肢端 · 工作与执行</span>
-            <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-black/20">
-              {ruleStats.execution}
-            </span>
-          </button>
-        </div>
-
-        {filteredSections.length > 0 ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {filteredSections.map((sec, idx) => {
-              const isSelected = activeDimension === sec.dimension;
-              return (
-                <div
-                  key={idx}
-                  className={`p-5 rounded-2xl border transition-all duration-300 flex flex-col justify-between ${
-                    isSelected
-                      ? "bg-[var(--aurora-surface)] border-[var(--aurora-border-strong)] shadow-md ring-2"
-                      : "bg-[var(--aurora-surface)] border-[var(--aurora-border)] shadow-xs hover:border-[var(--aurora-border-strong)]"
-                  }`}
-                  style={{
-                    borderColor: isSelected ? sec.accent : undefined,
-                    boxShadow: isSelected ? `0 8px 30px -6px ${sec.accent}30` : undefined,
-                  }}
-                >
-                  <div>
-                    <div className="flex items-center justify-between pb-3 mb-3 border-b border-[var(--aurora-border)]">
-                      <div
-                        className="flex items-center gap-2.5 cursor-pointer group"
-                        onClick={() => handleSelectDimension(sec.dimension)}
-                        title="点击联动 3D 全息人体视角"
-                      >
-                        <div
-                          className="w-8 h-8 rounded-xl flex items-center justify-center shadow-xs transition-transform group-hover:scale-110"
-                          style={{ backgroundColor: `${sec.accent}16`, color: sec.accent }}
-                        >
-                          <Icon name={sec.icon} size={16} />
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <h3 className="text-sm font-bold text-[var(--aurora-fg1)] tracking-tight">
-                              {sec.title}
-                            </h3>
-                            {isSelected && (
-                              <span
-                                className="text-[10px] px-1.5 py-0.2 rounded-md font-mono font-medium animate-pulse"
-                                style={{ backgroundColor: `${sec.accent}20`, color: sec.accent }}
-                              >
-                                3D 聚焦中
-                              </span>
-                            )}
-                          </div>
-                          <span className="text-[10px] text-[var(--aurora-fg4)] font-mono">
-                            {sec.badge} · 映射于全息人体
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => handleSelectDimension(sec.dimension)}
-                          className="text-[11px] font-mono px-2.5 py-0.5 rounded-full bg-[var(--aurora-chip)] text-[var(--aurora-fg3)] hover:text-[var(--aurora-fg1)] font-semibold transition-colors"
-                        >
-                          {sec.items.length} 条
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="space-y-2.5">
-                      {sec.items.map((item, itemIdx) => (
-                        <div
-                          key={itemIdx}
-                          className="p-3 rounded-xl bg-[var(--aurora-surface-solid)] border border-[var(--aurora-border)] shadow-xs hover:border-[var(--aurora-border-strong)] transition-all flex items-start gap-3 text-xs text-[var(--aurora-fg2)] leading-relaxed"
-                        >
-                          <span
-                            className="w-4 h-4 rounded-md flex items-center justify-center shrink-0 font-mono text-[10px] font-bold mt-0.5 shadow-2xs"
-                            style={{
-                              backgroundColor: `${sec.accent}18`,
-                              color: sec.accent,
-                            }}
-                          >
-                            {itemIdx + 1}
-                          </span>
-                          <span className="flex-1 font-normal select-text">
-                            {item}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <Glass padding={24} radius={18} className="text-center text-xs text-[var(--aurora-fg3)] space-y-2">
-            <div>当前分类维度暂无准则记录。</div>
-            <button
-              onClick={() => handleSelectDimension("all")}
-              className="text-xs text-[var(--aurora-accent)] hover:underline font-medium"
-            >
-              返回查看全部维度规则
-            </button>
-          </Glass>
-        )}
-      </div>
-
-      {/* ─────────────────────────────────────────────────────────────
-          4. 全域 AI 终端守护矩阵 (Active Guardian Matrix)
-          ───────────────────────────────────────────────────────────── */}
-      <div className="rounded-3xl p-6 border border-[var(--aurora-border)] bg-[var(--aurora-surface)] shadow-xs">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-4 mb-4 border-b border-[var(--aurora-border)]">
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="font-bold text-base text-[var(--aurora-fg1)]">
-                全域 AI 终端守护矩阵
-              </span>
-              <span className="text-[11px] font-medium text-[#10B981] bg-[rgba(16,185,129,0.12)] px-2.5 py-0.5 rounded-full">
-                实时生效中
-              </span>
-            </div>
-            <p className="text-xs text-[var(--aurora-fg3)] mt-1">
-              您保存的画像规则将通过 Memento 本地守护程序直接热写入这些环境，点击卡片可开启或关闭同步：
-            </p>
-          </div>
-        </div>
-
-        {state?.devices.map((device) => {
-          return (
-            <div key={device.device_id} className="space-y-3">
-              <div className="flex items-center gap-2 text-xs font-semibold text-[var(--aurora-fg2)]">
-                <Icon name="devices" size={14} />
-                <span>{device.name}</span>
-                {!device.online && <Chip tone="neutral">离线</Chip>}
-                {device.status.reported_at && (
-                  <span className="text-[11px] text-[var(--aurora-fg4)] font-normal ml-auto">
-                    最近上报：{formatTime(device.status.reported_at)}
+              <button
+                onClick={() => setCurrentTab("learned")}
+                className={`px-3 py-1 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 ${
+                  currentTab === "learned"
+                    ? "bg-[var(--aurora-surface-solid)] text-[var(--aurora-fg1)] shadow-xs font-semibold"
+                    : "text-[var(--aurora-fg3)] hover:text-[var(--aurora-fg1)]"
+                }`}
+              >
+                <Icon name="check" size={13} />
+                <span>避坑经验</span>
+                {pending.length > 0 && (
+                  <span className="text-[10px] font-mono px-1 rounded-full bg-[#EF4444] text-white">
+                    {pending.length}
                   </span>
                 )}
-              </div>
+              </button>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {state.targets.map((tool) => {
-                  const meta = TARGET_META[tool] || { label: tool, file: "~/.config", desc: "配置环境" };
-                  const on = device.targets.includes(tool);
-                  const result = device.status.results?.[tool];
-                  const isSuccess = result === "written" || result === "unchanged";
+              <button
+                onClick={() => setCurrentTab("source")}
+                className={`px-3 py-1 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 ${
+                  currentTab === "source"
+                    ? "bg-[var(--aurora-surface-solid)] text-[var(--aurora-fg1)] shadow-xs font-semibold"
+                    : "text-[var(--aurora-fg3)] hover:text-[var(--aurora-fg1)]"
+                }`}
+              >
+                <Icon name="edit" size={13} />
+                <span>源码比对</span>
+              </button>
+            </div>
 
+            {/* Quick Dimension Pills (Active When in Rules Tab) */}
+            {currentTab === "rules" && (
+              <div className="flex items-center gap-1 overflow-x-auto scrollbar-none">
+                {DIMENSION_TABS.map((tab) => {
+                  const isSelected = activeDimension === tab.id;
                   return (
-                    <div
-                      key={tool}
-                      onClick={() => toggleTarget(device, tool)}
-                      className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between ${
-                        on
-                          ? "bg-[var(--aurora-surface-solid)] border-[var(--aurora-accent)] shadow-xs scale-[1.01]"
-                          : "bg-[var(--aurora-chip)] border-[var(--aurora-border)] opacity-70 hover:opacity-100"
+                    <button
+                      key={tab.id}
+                      onClick={() => handleSelectDimension(tab.id)}
+                      className={`px-2 py-0.5 rounded-lg text-[11px] font-medium transition-all shrink-0 flex items-center gap-1 ${
+                        isSelected
+                          ? "bg-[var(--aurora-fg1)] text-[var(--aurora-bg1)] font-semibold shadow-xs"
+                          : "text-[var(--aurora-fg3)] hover:text-[var(--aurora-fg1)] hover:bg-[var(--aurora-chip)]"
                       }`}
                     >
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-2">
-                          <BrandMark id={tool} size={18} colored={on} />
-                          <span className="font-bold text-xs text-[var(--aurora-fg1)]">
-                            {meta.label}
-                          </span>
-                        </div>
-                        {on && (
-                          <span className="flex items-center gap-1 text-[10px] text-[#10B981] font-medium bg-[rgba(16,185,129,0.12)] px-2 py-0.5 rounded-full">
-                            <span className="w-1.5 h-1.5 rounded-full bg-[#10B981] breathing-glow-emerald" />
-                            已守护
-                          </span>
-                        )}
-                      </div>
-
-                      <div className="text-[11px] text-[var(--aurora-fg3)] leading-tight mb-2">
-                        {meta.desc}
-                      </div>
-
-                      <div className="pt-2 border-t border-[var(--aurora-border)] flex items-center justify-between text-[10px] font-mono text-[var(--aurora-fg4)]">
-                        <span className="truncate max-w-[170px]">{meta.file}</span>
-                        <span style={{ color: on ? "var(--aurora-accent)" : undefined }}>
-                          {on ? "已激活" : "未开启"}
-                        </span>
-                      </div>
-                    </div>
+                      <span>{tab.label}</span>
+                      <span className="font-mono text-[9px] opacity-75">
+                        {tab.count}
+                      </span>
+                    </button>
                   );
                 })}
               </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* ─────────────────────────────────────────────────────────────
-          5. 底层代码编辑与版本比对抽屉 (收纳折叠)
-          ───────────────────────────────────────────────────────────── */}
-      {(showAdvancedEditor || draft) && (
-        <div className="space-y-4 pt-2">
-          {draft && (
-            <Glass
-              padding="clamp(16px, 3vw, 24px)"
-              radius={20}
-              style={{ border: "1px solid var(--aurora-accent)" }}
-            >
-              <div className="flex items-center gap-2 mb-3">
-                <Chip tone="accent" icon="edit">{t.persona.draft}</Chip>
-                <span className="text-xs text-[var(--aurora-fg4)] font-mono">{formatTime(draft.updated_at)}</span>
-              </div>
-
-              {editing === "draft" ? (
-                <ProfileEditor initial={draft.content} onSave={saveDraft} onCancel={() => setEditing(null)} busy={busy !== null} />
-              ) : (
-                <>
-                  {diff && published && (diff.added.length > 0 || diff.removed.length > 0) && (
-                    <div className="mb-4 p-3 rounded-xl bg-[var(--aurora-chip)] border border-[var(--aurora-border)] text-xs font-mono">
-                      <div className="font-bold text-[var(--aurora-fg1)] mb-2">变更比对 (Diff)：</div>
-                      {diff.added.map((l) => (
-                        <div key={`+${l}`} className="text-[#10B981]">+ {l.slice(2)}</div>
-                      ))}
-                      {diff.removed.map((l) => (
-                        <div key={`-${l}`} className="text-[#DC2626] line-through">− {l.slice(2)}</div>
-                      ))}
-                    </div>
-                  )}
-                  <div className="prose prose-sm max-w-none text-xs">
-                    <MarkdownViewer content={draft.content} />
-                  </div>
-                  <div className="flex gap-2 justify-end mt-4">
-                    <Btn variant="ghost" size="sm" icon="trash" onClick={() => run("discard", api.discardProfileDraft)} disabled={busy !== null}>
-                      {t.persona.discard}
-                    </Btn>
-                    <Btn variant="glass" size="sm" icon="edit" onClick={() => setEditing("draft")} disabled={busy !== null}>
-                      {t.persona.edit}
-                    </Btn>
-                    <Btn size="sm" icon="rocket" onClick={() => run("publish", () => api.publishProfile())} disabled={busy !== null}>
-                      {busy === "publish" ? t.persona.publishing : "发布新版本"}
-                    </Btn>
-                  </div>
-                </>
-              )}
-            </Glass>
-          )}
-
-          {/* Published Raw Markdown */}
-          <Glass padding="clamp(16px, 3vw, 24px)" radius={20}>
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <Chip tone="success" icon="check">已发布原始规则文件 (Markdown)</Chip>
-                <span className="text-xs text-[var(--aurora-fg4)] font-mono">
-                  v{published?.version} · {formatTime(published?.published_at)}
-                </span>
-              </div>
-              {!draft && editing === null && (
-                <Btn variant="ghost" size="sm" icon="edit" onClick={() => setEditing("published")}>
-                  手动修改规则源码
-                </Btn>
-              )}
-            </div>
-
-            {editing === "published" ? (
-              <ProfileEditor
-                initial={published?.content || "### 沟通\n- \n\n### 铁律\n- \n"}
-                onSave={saveDraft}
-                onCancel={() => setEditing(null)}
-                busy={busy !== null}
-              />
-            ) : published ? (
-              <div className="prose prose-sm max-w-none text-xs leading-relaxed p-4 rounded-xl bg-[var(--aurora-surface-solid)] border border-[var(--aurora-border)]">
-                <MarkdownViewer content={published.content} />
-              </div>
-            ) : (
-              <p className="text-xs text-[var(--aurora-fg3)]">暂无已发布规则</p>
             )}
-          </Glass>
+          </div>
+
+          {/* Right Wing Scrollable Viewport (完全独立平滑滚动) */}
+          <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin">
+            {/* TAB 1: 准则细则 (Rules Gallery & Detail) */}
+            {currentTab === "rules" && (
+              <div className="space-y-4">
+                {filteredSections.length > 0 ? (
+                  filteredSections.map((sec, idx) => {
+                    const isSelected = activeDimension === sec.dimension;
+                    return (
+                      <div
+                        key={idx}
+                        className={`p-4 rounded-2xl border transition-all duration-300 ${
+                          isSelected
+                            ? "bg-[var(--aurora-surface-solid)] border-[var(--aurora-border-strong)] shadow-md"
+                            : "bg-[var(--aurora-surface)] border-[var(--aurora-border)]"
+                        }`}
+                        style={{
+                          borderColor: isSelected ? sec.accent : undefined,
+                          boxShadow: isSelected ? `0 6px 20px -6px ${sec.accent}25` : undefined,
+                        }}
+                      >
+                        {/* Section Header */}
+                        <div className="flex items-center justify-between pb-2.5 mb-2.5 border-b border-[var(--aurora-border)]">
+                          <div
+                            className="flex items-center gap-2.5 cursor-pointer group"
+                            onClick={() => handleSelectDimension(sec.dimension)}
+                            title="点击聚焦 3D 人体部位"
+                          >
+                            <div
+                              className="w-7 h-7 rounded-lg flex items-center justify-center shadow-xs transition-transform group-hover:scale-110"
+                              style={{ backgroundColor: `${sec.accent}16`, color: sec.accent }}
+                            >
+                              <Icon name={sec.icon} size={15} />
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <h3 className="text-sm font-bold text-[var(--aurora-fg1)]">
+                                  {sec.title}
+                                </h3>
+                                {isSelected && (
+                                  <span
+                                    className="text-[9px] font-mono px-1.5 py-0.2 rounded-md font-medium"
+                                    style={{ backgroundColor: `${sec.accent}20`, color: sec.accent }}
+                                  >
+                                    3D 同步聚焦
+                                  </span>
+                                )}
+                              </div>
+                              <span className="text-[10px] text-[var(--aurora-fg4)] font-mono">
+                                {sec.badge} · 映射于数字孪生体
+                              </span>
+                            </div>
+                          </div>
+
+                          <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-[var(--aurora-chip)] text-[var(--aurora-fg3)] font-semibold">
+                            {sec.items.length} 条准则
+                          </span>
+                        </div>
+
+                        {/* Rules List */}
+                        <div className="space-y-2">
+                          {sec.items.map((item, itemIdx) => (
+                            <div
+                              key={itemIdx}
+                              className="p-2.5 rounded-xl bg-[var(--aurora-surface-solid)] border border-[var(--aurora-border)] hover:border-[var(--aurora-border-strong)] transition-all flex items-start gap-2.5 text-xs text-[var(--aurora-fg2)] leading-relaxed"
+                            >
+                              <span
+                                className="w-4 h-4 rounded-md flex items-center justify-center shrink-0 font-mono text-[10px] font-bold mt-0.5"
+                                style={{
+                                  backgroundColor: `${sec.accent}18`,
+                                  color: sec.accent,
+                                }}
+                              >
+                                {itemIdx + 1}
+                              </span>
+                              <span className="flex-1 font-normal select-text">
+                                {item}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <Glass padding={24} radius={18} className="text-center text-xs text-[var(--aurora-fg3)] space-y-2">
+                    <div>当前维度暂无匹配准则。</div>
+                    <button
+                      onClick={() => handleSelectDimension("all")}
+                      className="text-xs text-[var(--aurora-accent)] hover:underline font-medium"
+                    >
+                      返回全景视野
+                    </button>
+                  </Glass>
+                )}
+              </div>
+            )}
+
+            {/* TAB 2: 全域 AI 终端守护矩阵 (Guardian Matrix) */}
+            {currentTab === "matrix" && (
+              <div className="space-y-4">
+                <div className="p-3 rounded-2xl bg-[var(--aurora-surface-solid)] border border-[var(--aurora-border)]">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-xs font-bold text-[var(--aurora-fg1)]">
+                      全域 AI 终端配置文件热写入
+                    </span>
+                    <span className="text-[10px] text-[#10B981] bg-[#10B981]/15 px-2 py-0.5 rounded-full font-medium">
+                      即时生效
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-[var(--aurora-fg3)] leading-relaxed">
+                    点击终端卡片可开启或关闭实时同步，守护程序将把准则热写入本机环境配置：
+                  </p>
+                </div>
+
+                {state?.devices.map((device) => (
+                  <div key={device.device_id} className="space-y-3">
+                    <div className="flex items-center gap-2 text-xs font-semibold text-[var(--aurora-fg2)]">
+                      <Icon name="devices" size={14} />
+                      <span>{device.name}</span>
+                      {!device.online && <Chip tone="neutral">离线</Chip>}
+                      {device.status.reported_at && (
+                        <span className="text-[10px] text-[var(--aurora-fg4)] font-normal ml-auto">
+                          最近同步：{formatTime(device.status.reported_at)}
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      {state.targets.map((tool) => {
+                        const meta = TARGET_META[tool] || { label: tool, file: "~/.config", desc: "配置环境" };
+                        const on = device.targets.includes(tool);
+                        return (
+                          <div
+                            key={tool}
+                            onClick={() => toggleTarget(device, tool)}
+                            className={`p-3 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between ${
+                              on
+                                ? "bg-[var(--aurora-surface-solid)] border-[var(--aurora-accent)] shadow-xs scale-[1.01]"
+                                : "bg-[var(--aurora-chip)] border-[var(--aurora-border)] opacity-70 hover:opacity-100"
+                            }`}
+                          >
+                            <div className="flex items-center justify-between mb-1.5">
+                              <div className="flex items-center gap-2">
+                                <BrandMark id={tool} size={16} colored={on} />
+                                <span className="font-bold text-xs text-[var(--aurora-fg1)]">
+                                  {meta.label}
+                                </span>
+                              </div>
+                              {on && (
+                                <span className="flex items-center gap-1 text-[9px] text-[#10B981] font-medium bg-[rgba(16,185,129,0.12)] px-2 py-0.2 rounded-full">
+                                  已守护
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="text-[10px] text-[var(--aurora-fg3)] leading-tight mb-2">
+                              {meta.desc}
+                            </div>
+
+                            <div className="pt-2 border-t border-[var(--aurora-border)] flex items-center justify-between text-[9px] font-mono text-[var(--aurora-fg4)]">
+                              <span className="truncate max-w-[140px]">{meta.file}</span>
+                              <span style={{ color: on ? "var(--aurora-accent)" : undefined }}>
+                                {on ? "已开启" : "未开启"}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* TAB 3: 避坑自学习 (Learned Corrections) */}
+            {currentTab === "learned" && (
+              <div className="space-y-4">
+                <LearnedCorrections
+                  topics={pending}
+                  onChanged={(message) => {
+                    setNotice(message ?? null);
+                    load();
+                  }}
+                />
+              </div>
+            )}
+
+            {/* TAB 4: 规则源码与 Diff 比对 (Source & Diff) */}
+            {currentTab === "source" && (
+              <div className="space-y-4">
+                {draft && (
+                  <Glass padding={16} radius={18} style={{ border: "1px solid var(--aurora-accent)" }}>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <Chip tone="accent" icon="edit">{t.persona.draft}</Chip>
+                        <span className="text-[10px] text-[var(--aurora-fg4)] font-mono">{formatTime(draft.updated_at)}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Btn variant="ghost" size="sm" icon="trash" onClick={() => run("discard", api.discardProfileDraft)} disabled={busy !== null}>
+                          {t.persona.discard}
+                        </Btn>
+                        <Btn size="sm" icon="rocket" onClick={() => run("publish", () => api.publishProfile())} disabled={busy !== null}>
+                          {busy === "publish" ? t.persona.publishing : "发布"}
+                        </Btn>
+                      </div>
+                    </div>
+
+                    {editing === "draft" ? (
+                      <ProfileEditor initial={draft.content} onSave={saveDraft} onCancel={() => setEditing(null)} busy={busy !== null} />
+                    ) : (
+                      <>
+                        {diff && published && (diff.added.length > 0 || diff.removed.length > 0) && (
+                          <div className="mb-3 p-2.5 rounded-xl bg-[var(--aurora-chip)] border border-[var(--aurora-border)] text-xs font-mono">
+                            <div className="font-bold text-[var(--aurora-fg1)] mb-1.5">变更比对 (Diff)：</div>
+                            {diff.added.map((l) => (
+                              <div key={`+${l}`} className="text-[#10B981]">+ {l.slice(2)}</div>
+                            ))}
+                            {diff.removed.map((l) => (
+                              <div key={`-${l}`} className="text-[#DC2626] line-through">− {l.slice(2)}</div>
+                            ))}
+                          </div>
+                        )}
+                        <div className="prose prose-sm max-w-none text-xs">
+                          <MarkdownViewer content={draft.content} />
+                        </div>
+                      </>
+                    )}
+                  </Glass>
+                )}
+
+                <Glass padding={16} radius={18}>
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <Chip tone="success" icon="check">已发布原始文件</Chip>
+                      <span className="text-[10px] text-[var(--aurora-fg4)] font-mono">
+                        v{published?.version} · {formatTime(published?.published_at)}
+                      </span>
+                    </div>
+                    {!draft && editing === null && (
+                      <Btn variant="ghost" size="sm" icon="edit" onClick={() => setEditing("published")}>
+                        手动编辑源码
+                      </Btn>
+                    )}
+                  </div>
+
+                  {editing === "published" ? (
+                    <ProfileEditor
+                      initial={published?.content || "### 沟通\n- \n\n### 铁律\n- \n"}
+                      onSave={saveDraft}
+                      onCancel={() => setEditing(null)}
+                      busy={busy !== null}
+                    />
+                  ) : published ? (
+                    <div className="prose prose-sm max-w-none text-xs leading-relaxed p-3 rounded-xl bg-[var(--aurora-surface-solid)] border border-[var(--aurora-border)]">
+                      <MarkdownViewer content={published.content} />
+                    </div>
+                  ) : (
+                    <p className="text-xs text-[var(--aurora-fg3)]">暂无已发布规则</p>
+                  )}
+                </Glass>
+              </div>
+            )}
+          </div>
         </div>
-      )}
+      </div>
     </div>
   );
 }
