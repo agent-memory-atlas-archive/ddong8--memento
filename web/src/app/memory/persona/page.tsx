@@ -205,6 +205,7 @@ export default function PersonaPage() {
 
   // Tab & Interactive Resonance state
   const [activeTab, setActiveTab] = useState<ChapterTab>("brain");
+  const [activeDimension, setActiveDimension] = useState<PersonaDimension>("brain");
   const [searchQuery, setSearchQuery] = useState("");
   const [newItemText, setNewItemText] = useState("");
   const [isAddingItem, setIsAddingItem] = useState(false);
@@ -341,6 +342,9 @@ export default function PersonaPage() {
 
   // Handle 3D Character Synapse Trigger on Rule Click
   const triggerSynapse = useCallback((text: string, dim?: string) => {
+    if (dim && dim !== "all") {
+      setActiveDimension(dim as PersonaDimension);
+    }
     const pulse: SynapsePulse = {
       text,
       dimension: dim as PersonaDimension,
@@ -350,18 +354,20 @@ export default function PersonaPage() {
     setSelectedRuleKey(text);
   }, []);
 
-  // Handle 3D Body Selection -> Switch Chapter Tab
+  // Handle 3D Body Selection -> Switch Chapter Tab & Pose
   const handleSelectDimension = (dim: PersonaDimension) => {
+    setActiveDimension(dim);
     if (dim === "all") setActiveTab("all");
     else if (dim === "evolution") setActiveTab("evolution");
     else setActiveTab(dim as ChapterTab);
 
     const labels: Record<string, string> = {
-      brain: "🧠 脑核铁律维度激活",
-      communication: "💬 沟通风格神经聚焦",
-      tech: "⚡ 架构心核算力激荡",
-      execution: "🛠️ 工作习惯行为模式协同",
-      project: "🎯 项目专属认知锁定",
+      brain: "🧠 脑核铁律激活 · 抚眉深思态",
+      communication: "💬 沟通风格聚焦 · 从容伸掌述职态",
+      tech: "⚡ 架构心核激荡 · 全息操控算力态",
+      execution: "🛠️ 工作习惯协同 · 沉稳抱胸把关态",
+      project: "🎯 项目专属锁定 · 托举记忆晶核态",
+      evolution: "✨ 每日自进化 · 仰首拥抱星芒态",
     };
     if (labels[dim]) {
       triggerSynapse(labels[dim], dim);
@@ -517,7 +523,7 @@ export default function PersonaPage() {
         {/* ── 左翼 (5 列 / 42%): 3D 全息神经孪生体主舞台 (顶天立地，免滚联动) ── */}
         <div className="lg:col-span-5 h-full flex flex-col min-h-0">
           <DigitalTwinAvatar3D
-            activeDimension={activeTab === "all" ? "all" : (activeTab as PersonaDimension)}
+            activeDimension={activeDimension}
             onSelectDimension={handleSelectDimension}
             activeSynapse={activeSynapse}
             evolutionLevel={evolutionData.level}
@@ -682,6 +688,23 @@ export default function PersonaPage() {
                             >
                               {sec.badge}
                             </span>
+                            <span
+                              className="text-[9px] font-mono px-2 py-0.2 rounded-full border border-[var(--aurora-border)] hidden sm:inline-flex items-center gap-1"
+                              style={{ backgroundColor: `${sec.accent}10`, color: sec.accent }}
+                            >
+                              <span>姿态:</span>
+                              <strong className="font-semibold">
+                                {sec.dimension === "brain"
+                                  ? "抚眉深思态"
+                                  : sec.dimension === "communication"
+                                  ? "从容述职态"
+                                  : sec.dimension === "tech"
+                                  ? "全息操控态"
+                                  : sec.dimension === "execution"
+                                  ? "沉稳抱胸态"
+                                  : "托举晶核态"}
+                              </strong>
+                            </span>
                           </div>
                         </div>
 
@@ -761,17 +784,17 @@ export default function PersonaPage() {
                                 {item}
                               </span>
 
-                              {/* Interactive Actions: Spark Resonance, Copy, Delete */}
-                              <div className="flex items-center gap-0.5 shrink-0 opacity-80 group-hover:opacity-100 transition-opacity">
+                              {/* Interactive Actions: Spark Trait Gesture, Copy, Delete */}
+                              <div className="flex items-center gap-1 shrink-0 opacity-80 group-hover:opacity-100 transition-opacity">
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     triggerSynapse(item, sec.dimension);
                                   }}
-                                  className="p-1 rounded-md text-[var(--aurora-accent)] hover:bg-[var(--aurora-accent)]/15 transition-colors"
-                                  title="触发 3D 形象神经共振"
+                                  className="px-1.5 py-0.5 rounded-md text-[10px] font-mono font-medium flex items-center gap-0.5 text-[var(--aurora-accent)] bg-[var(--aurora-accent)]/10 hover:bg-[var(--aurora-accent)]/20 transition-all border border-[var(--aurora-accent)]/30"
+                                  title="联动 3D 形象执行此特点动作与神经共振"
                                 >
-                                  <span className="text-[11px]">⚡</span>
+                                  <span>⚡ 3D联动</span>
                                 </button>
                                 <button
                                   onClick={(e) => {
