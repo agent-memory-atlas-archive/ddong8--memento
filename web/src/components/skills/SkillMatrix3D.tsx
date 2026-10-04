@@ -263,7 +263,12 @@ export default function SkillMatrix3D({
 
     updateCameraFromSpherical();
 
+    container.style.touchAction = "none";
+
     let pointerDownPos = { x: 0, y: 0 };
+    let initialPinchDist = 0;
+    let initialPinchRadius = 0;
+
     const handlePointerDown = (e: MouseEvent) => {
       isDragging = true;
       prevMousePos = { x: e.clientX, y: e.clientY };
@@ -315,11 +320,93 @@ export default function SkillMatrix3D({
       }
     };
 
+    // Touch Event Handlers for Mobile Devices
+    const handleTouchStart = (e: TouchEvent) => {
+      if (e.touches.length === 1) {
+        isDragging = true;
+        const touch = e.touches[0];
+        prevMousePos = { x: touch.clientX, y: touch.clientY };
+        pointerDownPos = { x: touch.clientX, y: touch.clientY };
+
+        const rect = container.getBoundingClientRect();
+        mouse.x = ((touch.clientX - rect.left) / rect.width) * 2 - 1;
+        mouse.y = -((touch.clientY - rect.top) / rect.height) * 2 + 1;
+      } else if (e.touches.length === 2) {
+        isDragging = false;
+        initialPinchDist = Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY
+        );
+        initialPinchRadius = spherical.radius;
+      }
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (e.touches.length === 1 && isDragging) {
+        const touch = e.touches[0];
+        const dx = touch.clientX - prevMousePos.x;
+        const dy = touch.clientY - prevMousePos.y;
+        prevMousePos = { x: touch.clientX, y: touch.clientY };
+
+        spherical.theta -= dx * 0.008;
+        spherical.phi = Math.max(0.1, Math.min(Math.PI / 2 - 0.05, spherical.phi - dy * 0.008));
+        updateCameraFromSpherical();
+
+        const rect = container.getBoundingClientRect();
+        mouse.x = ((touch.clientX - rect.left) / rect.width) * 2 - 1;
+        mouse.y = -((touch.clientY - rect.top) / rect.height) * 2 + 1;
+      } else if (e.touches.length === 2 && initialPinchDist > 0) {
+        const currentDist = Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY
+        );
+        const factor = initialPinchDist / (currentDist || 1);
+        spherical.radius = Math.max(5, Math.min(18, initialPinchRadius * factor));
+        updateCameraFromSpherical();
+      }
+    };
+
+    const handleTouchEnd = (e: TouchEvent) => {
+      if (e.touches.length === 0) {
+        isDragging = false;
+        initialPinchDist = 0;
+        if (e.changedTouches.length === 1) {
+          const touch = e.changedTouches[0];
+          const dist = Math.hypot(touch.clientX - pointerDownPos.x, touch.clientY - pointerDownPos.y);
+          if (dist < 8) {
+            const rect = container.getBoundingClientRect();
+            mouse.x = ((touch.clientX - rect.left) / rect.width) * 2 - 1;
+            mouse.y = -((touch.clientY - rect.top) / rect.height) * 2 + 1;
+
+            raycaster.setFromCamera(mouse, camera);
+            const meshes = Array.from(skillMeshMap.values());
+            const intersects = raycaster.intersectObjects(meshes, false);
+            if (intersects.length > 0) {
+              const hit = intersects[0].object as THREE.Mesh;
+              const skill = hit.userData.skill as SkillItem;
+              if (skill && onSelectSkillRef.current) {
+                onSelectSkillRef.current(skill);
+                targetCameraTarget.set(hit.position.x, hit.position.y, hit.position.z);
+                spherical.radius = 7.5;
+              }
+            }
+          }
+        }
+      } else if (e.touches.length === 1) {
+        isDragging = true;
+        const touch = e.touches[0];
+        prevMousePos = { x: touch.clientX, y: touch.clientY };
+      }
+    };
+
     container.addEventListener("mousedown", handlePointerDown);
     window.addEventListener("mouseup", handlePointerUp);
     container.addEventListener("mousemove", handlePointerMove);
     container.addEventListener("wheel", handleWheel, { passive: false });
     container.addEventListener("click", handleClick);
+    container.addEventListener("touchstart", handleTouchStart, { passive: false });
+    container.addEventListener("touchmove", handleTouchMove, { passive: false });
+    container.addEventListener("touchend", handleTouchEnd, { passive: false });
 
     // 8. Render Animation Loop
     let animId = 0;
@@ -410,6 +497,9 @@ export default function SkillMatrix3D({
       container.removeEventListener("mousemove", handlePointerMove);
       container.removeEventListener("wheel", handleWheel);
       container.removeEventListener("click", handleClick);
+      container.removeEventListener("touchstart", handleTouchStart);
+      container.removeEventListener("touchmove", handleTouchMove);
+      container.removeEventListener("touchend", handleTouchEnd);
       document.body.style.cursor = "default";
       if (renderer.domElement && container.contains(renderer.domElement)) {
         container.removeChild(renderer.domElement);

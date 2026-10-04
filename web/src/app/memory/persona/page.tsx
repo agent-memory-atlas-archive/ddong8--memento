@@ -720,16 +720,16 @@ export default function PersonaPage() {
       {/* ─────────────────────────────────────────────────────────────
           1. 统一顶栏 (Ultra-Refined Single-Row Cockpit Header)
           ───────────────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between gap-3 pb-1 border-b border-[var(--aurora-border)] shrink-0">
-        <div className="flex items-center gap-2.5">
+      <div className="flex items-center justify-between gap-2 pb-1 border-b border-[var(--aurora-border)] shrink-0 flex-wrap sm:flex-nowrap">
+        <div className="flex items-center gap-2 min-w-0">
           <div className="w-7 h-7 rounded-xl flex items-center justify-center bg-[rgba(236,72,153,0.12)] text-[#EC4899] shadow-xs shrink-0">
             <Icon name="user" size={16} />
           </div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-sm sm:text-base font-bold text-[var(--aurora-fg1)] tracking-tight">
-              个人画像 · 数字孪生驾驶舱
+          <div className="flex items-center gap-1.5 min-w-0">
+            <h1 className="text-xs sm:text-base font-bold text-[var(--aurora-fg1)] tracking-tight truncate">
+              个人画像 · 数字孪生
             </h1>
-            <span className="text-[10px] px-2 py-0.2 rounded-full font-medium bg-[rgba(16,185,129,0.12)] text-[#10B981] flex items-center gap-1 font-mono">
+            <span className="text-[10px] px-2 py-0.2 rounded-full font-medium bg-[rgba(16,185,129,0.12)] text-[#10B981] hidden md:flex items-center gap-1 font-mono shrink-0">
               <span className="w-1.5 h-1.5 rounded-full bg-[#10B981] breathing-glow-emerald" />
               v{published?.version || 9} · 5 端实时热守护
             </span>
@@ -737,7 +737,7 @@ export default function PersonaPage() {
         </div>
 
         {/* Action Controls */}
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 shrink-0">
           <Btn
             variant="glass"
             size="sm"
@@ -810,7 +810,10 @@ export default function PersonaPage() {
 
           {/* 3D 场景内心智特征全息视窗 (In-Scene Holographic Persona Trait Inspector) */}
           {activeDimension !== "all" && (
-            <div className="absolute top-14 right-3 bottom-14 z-30 w-80 sm:w-96 md:w-[440px] max-w-[calc(100%-24px)] flex flex-col pointer-events-auto bg-black/85 backdrop-blur-2xl border border-white/20 rounded-2xl shadow-2xl overflow-hidden animate-in fade-in slide-in-from-right-4 duration-200">
+            <div className="absolute z-30 max-sm:inset-x-2 max-sm:bottom-14 max-sm:max-h-[66vh] sm:top-14 sm:right-3 sm:bottom-14 sm:w-[380px] xl:w-[440px] flex flex-col pointer-events-auto bg-black/90 backdrop-blur-2xl border border-white/20 rounded-2xl shadow-2xl overflow-hidden animate-in fade-in max-sm:slide-in-from-bottom-6 sm:slide-in-from-right-4 duration-200">
+              {/* Mobile Drag Handle */}
+              <div className="w-10 h-1 rounded-full bg-white/25 mx-auto my-1.5 sm:hidden shrink-0" />
+
               {/* Header */}
               <div className="p-3.5 border-b border-white/10 bg-white/5 flex items-start justify-between gap-2 shrink-0">
                 <div className="min-w-0 flex-1 space-y-1">

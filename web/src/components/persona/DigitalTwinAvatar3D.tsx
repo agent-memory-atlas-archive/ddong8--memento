@@ -498,9 +498,39 @@ export default function DigitalTwinAvatar3D({
       }
     };
 
+    container.style.touchAction = "none";
+
+    const handleTouchStart = (e: TouchEvent) => {
+      if (e.touches.length === 1) {
+        isDragging = true;
+        prevMouseX = e.touches[0].clientX;
+        const rect = container.getBoundingClientRect();
+        mouse.x = ((e.touches[0].clientX - rect.left) / rect.width) * 2 - 1;
+        mouse.y = -((e.touches[0].clientY - rect.top) / rect.height) * 2 + 1;
+      }
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (isDragging && e.touches.length === 1) {
+        const deltaX = e.touches[0].clientX - prevMouseX;
+        avatarGroup.rotation.y += deltaX * 0.008;
+        prevMouseX = e.touches[0].clientX;
+        const rect = container.getBoundingClientRect();
+        mouse.x = ((e.touches[0].clientX - rect.left) / rect.width) * 2 - 1;
+        mouse.y = -((e.touches[0].clientY - rect.top) / rect.height) * 2 + 1;
+      }
+    };
+
+    const handleTouchEnd = () => {
+      isDragging = false;
+    };
+
     container.addEventListener("mousedown", handlePointerDown);
     window.addEventListener("mouseup", handlePointerUp);
     container.addEventListener("mousemove", handlePointerMove);
+    container.addEventListener("touchstart", handleTouchStart, { passive: false });
+    container.addEventListener("touchmove", handleTouchMove, { passive: false });
+    container.addEventListener("touchend", handleTouchEnd, { passive: false });
 
     // 7. 60fps Trait-Driven Gesture & Physics Loop
     let animId: number;
@@ -690,6 +720,9 @@ export default function DigitalTwinAvatar3D({
       container.removeEventListener("mousedown", handlePointerDown);
       window.removeEventListener("mouseup", handlePointerUp);
       container.removeEventListener("mousemove", handlePointerMove);
+      container.removeEventListener("touchstart", handleTouchStart);
+      container.removeEventListener("touchmove", handleTouchMove);
+      container.removeEventListener("touchend", handleTouchEnd);
       if (renderer.domElement && container.contains(renderer.domElement)) {
         container.removeChild(renderer.domElement);
       }
@@ -839,14 +872,15 @@ export default function DigitalTwinAvatar3D({
               setIsVoiceEnabled(next);
               if (next) speakPhrase("数字孪生拟态语音已激活");
             }}
-            className={`px-2.5 py-1 rounded-xl text-[11px] font-mono font-medium transition-all backdrop-blur-md border ${
+            className={`px-2 sm:px-2.5 py-1 rounded-xl text-[11px] font-mono font-medium transition-all backdrop-blur-md border flex items-center gap-1 ${
               isVoiceEnabled
                 ? "bg-[#10B981]/25 text-[#10B981] border-[#10B981]/40 shadow-xs"
                 : "bg-black/50 text-white/50 border-white/10 hover:text-white"
             }`}
             title="切换 3D 数字人语音播报"
           >
-            {isVoiceEnabled ? "🔊 拟态语音" : "🔇 静音"}
+            <span>{isVoiceEnabled ? "🔊" : "🔇"}</span>
+            <span className="hidden sm:inline">{isVoiceEnabled ? "语音" : "静音"}</span>
           </button>
 
           {onSparkEvolution && (
@@ -857,31 +891,34 @@ export default function DigitalTwinAvatar3D({
                 onSparkEvolution();
               }}
               title="激发今日心智进化共鸣"
-              className="px-2.5 py-1 rounded-xl text-[11px] font-mono font-medium transition-all backdrop-blur-md border bg-gradient-to-r from-[#F59E0B]/20 to-[#EC4899]/20 hover:from-[#F59E0B]/35 hover:to-[#EC4899]/35 text-[#F59E0B] border-[#F59E0B]/40 hover:scale-102 flex items-center gap-1 shadow-md"
+              className="px-2 sm:px-2.5 py-1 rounded-xl text-[11px] font-mono font-medium transition-all backdrop-blur-md border bg-gradient-to-r from-[#F59E0B]/20 to-[#EC4899]/20 hover:from-[#F59E0B]/35 hover:to-[#EC4899]/35 text-[#F59E0B] border-[#F59E0B]/40 hover:scale-102 flex items-center gap-1 shadow-md"
             >
               <span>⚡</span>
-              <span className="hidden sm:inline">共鸣激发</span>
+              <span className="hidden sm:inline">共鸣</span>
             </button>
           )}
 
           <button
             onClick={() => setIsRotating((v) => !v)}
-            className={`px-2.5 py-1 rounded-xl text-[11px] font-mono font-medium transition-all backdrop-blur-md border ${
+            className={`px-2 sm:px-2.5 py-1 rounded-xl text-[11px] font-mono font-medium transition-all backdrop-blur-md border flex items-center gap-1 ${
               isRotating
                 ? "bg-[#A855F7]/30 text-[#C084FC] border-[#A855F7]/50"
                 : "bg-black/50 text-white/70 border-white/10 hover:bg-black/70 hover:text-white"
             }`}
+            title="切换视角自转"
           >
-            {isRotating ? "自转中" : "自转"}
+            <span>🔄</span>
+            <span className="hidden sm:inline">{isRotating ? "自转中" : "自转"}</span>
           </button>
 
           {onToggleCollapse && (
             <button
               onClick={onToggleCollapse}
-              className="px-2.5 py-1 rounded-xl text-[11px] font-mono font-semibold bg-black/65 hover:bg-black/90 backdrop-blur-md border border-white/20 text-white flex items-center gap-1 shadow-md transition-all active:scale-95"
+              className="px-2 sm:px-2.5 py-1 rounded-xl text-[11px] font-mono font-semibold bg-black/65 hover:bg-black/90 backdrop-blur-md border border-white/20 text-white flex items-center gap-1 shadow-md transition-all active:scale-95"
               title={isPanelCollapsed ? "打开右侧管理面板" : "让 3D 数字人铺满整屏"}
             >
-              <span>{isPanelCollapsed ? "⧉ 打开侧边面板" : "⛶ 3D 铺满整屏"}</span>
+              <span>{isPanelCollapsed ? "⧉" : "⛶"}</span>
+              <span className="hidden sm:inline">{isPanelCollapsed ? "打开侧边面板" : "3D 铺满整屏"}</span>
             </button>
           )}
 

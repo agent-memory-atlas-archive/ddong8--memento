@@ -466,16 +466,16 @@ export default function SkillsPage() {
       {/* ─────────────────────────────────────────────────────────────
           1. 统一顶栏 (Ultra-Refined Single-Row Cockpit Header)
           ───────────────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between gap-3 pb-1 border-b border-[var(--aurora-border)] shrink-0">
-        <div className="flex items-center gap-2.5">
+      <div className="flex items-center justify-between gap-2 pb-1 border-b border-[var(--aurora-border)] shrink-0 flex-wrap sm:flex-nowrap">
+        <div className="flex items-center gap-2 min-w-0">
           <div className="w-7 h-7 rounded-xl flex items-center justify-center bg-[rgba(245,158,11,0.12)] text-[#F59E0B] shadow-xs shrink-0">
             <Icon name="zap" size={16} />
           </div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-sm sm:text-base font-bold text-[var(--aurora-fg1)] tracking-tight">
-              技能进化 · 科技树与全息能量阵列
+          <div className="flex items-center gap-1.5 min-w-0">
+            <h1 className="text-xs sm:text-base font-bold text-[var(--aurora-fg1)] tracking-tight truncate">
+              技能进化 · 科技树
             </h1>
-            <span className="text-[10px] px-2 py-0.2 rounded-full font-medium bg-[rgba(16,185,129,0.12)] text-[#10B981] flex items-center gap-1 font-mono">
+            <span className="text-[10px] px-2 py-0.2 rounded-full font-medium bg-[rgba(16,185,129,0.12)] text-[#10B981] hidden md:flex items-center gap-1 font-mono shrink-0">
               <span className="w-1.5 h-1.5 rounded-full bg-[#10B981] breathing-glow-emerald" />
               Agent Skill 协议就绪 · 5 端全息注入
             </span>
@@ -483,7 +483,7 @@ export default function SkillsPage() {
         </div>
 
         {/* Action Controls */}
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 shrink-0">
           <Btn
             variant="glass"
             size="sm"
@@ -576,7 +576,10 @@ export default function SkillsPage() {
 
           {/* 3D 场景内全息技能 SOP 详情视窗 (In-Scene Holographic Skill SOP Inspector) */}
           {selectedSkillObj && (
-            <div className="absolute top-14 right-3 bottom-3 z-30 w-80 sm:w-96 md:w-[440px] max-w-[calc(100%-24px)] flex flex-col pointer-events-auto bg-black/85 backdrop-blur-2xl border border-white/20 rounded-2xl shadow-2xl overflow-hidden animate-in fade-in slide-in-from-right-4 duration-200">
+            <div className="absolute z-30 max-sm:inset-x-2 max-sm:bottom-2 max-sm:max-h-[72vh] sm:top-14 sm:right-3 sm:bottom-3 sm:w-[380px] xl:w-[440px] flex flex-col pointer-events-auto bg-black/90 backdrop-blur-2xl border border-white/20 rounded-2xl shadow-2xl overflow-hidden animate-in fade-in max-sm:slide-in-from-bottom-6 sm:slide-in-from-right-4 duration-200">
+              {/* Mobile Drag Handle */}
+              <div className="w-10 h-1 rounded-full bg-white/25 mx-auto my-1.5 sm:hidden shrink-0" />
+
               {/* Top Title & Quick Actions */}
               <div className="p-3.5 border-b border-white/10 bg-white/5 flex items-start justify-between gap-2 shrink-0">
                 <div className="min-w-0 flex-1 space-y-1">

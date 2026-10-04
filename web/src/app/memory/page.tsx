@@ -336,18 +336,18 @@ export default function MemoryPage() {
       {/* ─────────────────────────────────────────────────────────────
           1. 统一顶栏 (Ultra-Refined Single-Row Cockpit Header)
           ───────────────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between gap-3 pb-1 border-b border-[var(--aurora-border)] shrink-0">
-        <div className="flex items-center gap-2.5">
+      <div className="flex items-center justify-between gap-2 pb-1 border-b border-[var(--aurora-border)] shrink-0 flex-wrap sm:flex-nowrap">
+        <div className="flex items-center gap-2 min-w-0">
           <div className="w-7 h-7 rounded-xl flex items-center justify-center bg-[rgba(56,189,248,0.12)] text-[#38BDF8] shadow-xs shrink-0">
             <Icon name="layers" size={16} />
           </div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-sm sm:text-base font-bold text-[var(--aurora-fg1)] tracking-tight">
-              长期记忆 · 认知中枢星云驾驶舱
+          <div className="flex items-center gap-1.5 min-w-0">
+            <h1 className="text-xs sm:text-base font-bold text-[var(--aurora-fg1)] tracking-tight truncate">
+              长期记忆 · 认知星云
             </h1>
-            <span className="text-[10px] px-2 py-0.2 rounded-full font-medium bg-[rgba(16,185,129,0.12)] text-[#10B981] flex items-center gap-1 font-mono">
+            <span className="text-[10px] px-2 py-0.2 rounded-full font-medium bg-[rgba(16,185,129,0.12)] text-[#10B981] hidden md:flex items-center gap-1 font-mono shrink-0">
               <span className="w-1.5 h-1.5 rounded-full bg-[#10B981] breathing-glow-emerald" />
-              {nodes.length || stats?.entities || 42} 星晶实体 · {edges.length || stats?.relations || 86} 突触 · {totalLeaves || 39} 条长效准则
+              {nodes.length || stats?.entities || 42} 实体 · {edges.length || stats?.relations || 86} 突触
             </span>
           </div>
         </div>
@@ -426,17 +426,17 @@ export default function MemoryPage() {
           />
 
           {/* 3D 悬浮顶部滤镜与状态栏 */}
-          <div className="absolute top-3 left-3 right-3 flex items-center justify-between pointer-events-none gap-2 flex-wrap">
-            <div className="flex items-center gap-1 bg-black/60 backdrop-blur-md px-2.5 py-1 rounded-full border border-white/10 pointer-events-auto">
-              <span className="w-2 h-2 rounded-full bg-[#38BDF8] animate-pulse" />
-              <span className="text-[11px] font-mono font-bold text-white tracking-wide">
-                认知星云 Galaxy 3D
+          <div className="absolute top-2.5 left-2.5 right-2.5 flex items-center justify-between pointer-events-none gap-1.5 overflow-hidden">
+            <div className="flex items-center gap-1.5 bg-black/60 backdrop-blur-md px-2.5 py-1 rounded-full border border-white/10 pointer-events-auto shrink-0">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#38BDF8] animate-pulse" />
+              <span className="text-[10px] sm:text-[11px] font-mono font-bold text-white tracking-wide">
+                认知星云 3D
               </span>
             </div>
 
             {/* Quick Entity Type Pills & Fullscreen Controls */}
-            <div className="flex items-center gap-1.5 pointer-events-auto">
-              <div className="flex items-center gap-1 bg-black/60 backdrop-blur-md p-1 rounded-full border border-white/10 overflow-x-auto max-w-[280px]">
+            <div className="flex items-center gap-1 pointer-events-auto min-w-0">
+              <div className="flex items-center gap-0.5 bg-black/60 backdrop-blur-md p-0.5 rounded-full border border-white/10 overflow-x-auto scrollbar-none max-w-[130px] sm:max-w-[280px]">
                 {[
                   { id: "", label: "全部", color: "#38BDF8" },
                   { id: "project", label: "核心工程", color: "#10B981" },
@@ -479,7 +479,10 @@ export default function MemoryPage() {
 
           {/* ── 3D 场景内全息实体详情视窗 (In-Scene 3D Holographic Inspector) ── */}
           {selectedEntity ? (
-            <div className="absolute top-14 right-3 bottom-3 z-30 w-[340px] sm:w-[380px] xl:w-[420px] rounded-2xl bg-black/85 backdrop-blur-2xl border border-white/20 shadow-2xl flex flex-col overflow-hidden animate-in fade-in slide-in-from-right-4 duration-300 pointer-events-auto">
+            <div className="absolute z-30 max-sm:inset-x-2 max-sm:bottom-2 max-sm:max-h-[70vh] sm:top-14 sm:right-3 sm:bottom-3 sm:w-[380px] xl:w-[440px] rounded-2xl bg-black/90 backdrop-blur-2xl border border-white/20 shadow-2xl flex flex-col overflow-hidden animate-in fade-in max-sm:slide-in-from-bottom-6 sm:slide-in-from-right-4 duration-300 pointer-events-auto">
+              {/* Mobile Drag Handle */}
+              <div className="w-10 h-1 rounded-full bg-white/25 mx-auto my-1.5 sm:hidden shrink-0" />
+
               {/* 视窗 Header */}
               <div className="p-3 bg-white/5 border-b border-white/10 flex items-center justify-between shrink-0">
                 <div className="flex items-center gap-2 min-w-0 pr-2">
