@@ -18,7 +18,11 @@ const str = (v: unknown): string => (v == null ? "" : String(v));
  * the whole history, a backfill replay or a bootstrap from the knowledge graph),
  * the dream journals, and memories that are no longer given to the AI.
  */
-export default function DreamingPanel() {
+export default function DreamingPanel({
+  onDreamingChange,
+}: {
+  onDreamingChange?: (active: boolean) => void;
+} = {}) {
   const { t } = useI18n();
   const d = t.dreaming;
   const [tiers, setTiers] = useState<Obj | null>(null);
@@ -61,6 +65,7 @@ export default function DreamingPanel() {
   const dream = async (daysBack: number) => {
     setShowScopes(false);
     setRunning(true);
+    onDreamingChange?.(true);
     setNotice(null);
     try {
       const res = await api.triggerDream(daysBack);
@@ -71,12 +76,14 @@ export default function DreamingPanel() {
       setError(fmt(d.dreamFailed, { error: (e as Error).message }));
     } finally {
       setRunning(false);
+      onDreamingChange?.(false);
     }
   };
 
   const backfill = async () => {
     setShowScopes(false);
     setRunning(true);
+    onDreamingChange?.(true);
     setNotice(null);
     try {
       const res = await api.triggerDreamBackfill(3, 30);
@@ -98,12 +105,14 @@ export default function DreamingPanel() {
       setError(fmt(d.backfillFailed, { error: (e as Error).message }));
     } finally {
       setRunning(false);
+      onDreamingChange?.(false);
     }
   };
 
   const bootstrap = async () => {
     setShowScopes(false);
     setRunning(true);
+    onDreamingChange?.(true);
     setNotice(d.bootstrapping);
     try {
       const res = await api.bootstrapMemories();
@@ -113,6 +122,7 @@ export default function DreamingPanel() {
       setError(fmt(d.bootstrapFailed, { error: (e as Error).message }));
     } finally {
       setRunning(false);
+      onDreamingChange?.(false);
     }
   };
 

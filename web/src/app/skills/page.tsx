@@ -8,15 +8,16 @@ import { Btn, Chip, Glass } from "@/components/aurora/primitives";
 import { Icon } from "@/components/aurora/Icon";
 import MarkdownViewer from "@/components/viewers/MarkdownViewer";
 import CognitiveCompass from "@/components/memory/CognitiveCompass";
+import type { SkillItem } from "@/components/skills/SkillMatrix3D";
 
 const SkillMatrix3D = dynamic(
   () => import("@/components/skills/SkillMatrix3D"),
   {
     ssr: false,
     loading: () => (
-      <div className="w-full h-[460px] rounded-3xl bg-[var(--aurora-surface)] border border-[var(--aurora-border)] animate-pulse flex flex-col items-center justify-center gap-3 text-xs text-[var(--aurora-fg3)]">
+      <div className="w-full h-full rounded-3xl bg-[var(--aurora-surface)] border border-[var(--aurora-border)] animate-pulse flex flex-col items-center justify-center gap-3 text-xs text-[var(--aurora-fg3)]">
         <div className="w-10 h-10 rounded-2xl bg-[var(--aurora-accent)]/20 animate-spin border-2 border-transparent border-t-[var(--aurora-accent)]" />
-        <span>正在载入 3D 技能科技树星阵...</span>
+        <span className="font-mono">正在载入 3D 技能科技树星阵...</span>
       </div>
     ),
   }
@@ -48,18 +49,17 @@ const field: CSSProperties = {
   color: "var(--aurora-fg1)",
 };
 
-/** Per-device write results collapsed into counts by kind. */
-function skillResultCounts(results: Obj | undefined): Record<string, number> {
-  const counts: Record<string, number> = {};
-  for (const v of Object.values(results ?? {})) {
-    const s = String(v);
-    const kind = s.startsWith("error") ? "error" : s.startsWith("skipped") ? "skipped" : s.startsWith("kept") ? "kept" : s === "removed" ? "removed" : "ok";
-    counts[kind] = (counts[kind] ?? 0) + 1;
-  }
-  return counts;
-}
-
-function SkillEditor({ skill, busy, onSave, onCancel }: { skill: Obj; busy: boolean; onSave: (edits: Obj, publish: boolean) => void; onCancel: () => void }) {
+function SkillEditor({
+  skill,
+  busy,
+  onSave,
+  onCancel,
+}: {
+  skill: Obj;
+  busy: boolean;
+  onSave: (edits: Obj, publish: boolean) => void;
+  onCancel: () => void;
+}) {
   const { t } = useI18n();
   const s = t.skills;
   const [title, setTitle] = useState(str(skill.title));
@@ -75,7 +75,7 @@ function SkillEditor({ skill, busy, onSave, onCancel }: { skill: Obj; busy: bool
     </div>
   );
   return (
-    <div className="mt-3 p-4 rounded-2xl bg-[var(--aurora-surface-mute)] border border-[var(--aurora-border)]">
+    <div className="mt-3 p-4 rounded-2xl bg-[var(--aurora-surface-mute)] border border-[var(--aurora-border)] animate-in fade-in">
       {label(s.fieldTitle)}
       <input value={title} onChange={(e) => setTitle(e.target.value)} style={field} />
       {label(s.fieldSlug, s.fieldSlugHint)}
@@ -83,7 +83,7 @@ function SkillEditor({ skill, busy, onSave, onCancel }: { skill: Obj; busy: bool
       {label(s.fieldDescription, s.fieldDescriptionHint)}
       <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3} style={{ ...field, resize: "vertical" }} />
       {label(s.fieldBody)}
-      <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={14} style={{ ...field, ...mono, lineHeight: 1.55, resize: "vertical" }} />
+      <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={12} style={{ ...field, ...mono, lineHeight: 1.55, resize: "vertical" }} />
       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 12, flexWrap: "wrap" }}>
         <Btn variant="ghost" size="sm" onClick={onCancel} disabled={busy}>
           {t.cancel}
@@ -112,7 +112,12 @@ export default function SkillsPage() {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [editing, setEditing] = useState<string | null>(null);
   const [showUpdate, setShowUpdate] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"3d-matrix" | "published" | "drafts" | "reviews" | "archived">("3d-matrix");
+  const [searchQuery, setSearchQuery] = useState("");
+
+  // Navigation tab for Right Wing
+  const [activeTab, setActiveTab] = useState<"published" | "drafts" | "reviews" | "archived">("published");
+
+  // 3D Skill Matrix Synergy State
   const [selectedSkillSlug, setSelectedSkillSlug] = useState<string | null>(null);
   const poll = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -141,7 +146,7 @@ export default function SkillsPage() {
       if (reviewed === 0) return s.reviewNothing;
       return fmt(s.reviewDone, { n: reviewed, skills: count(sessions.skills_new), pitfalls: num(sessions.pitfalls_new), todos: num(sessions.todos_new) });
     },
-    [s],
+    [s]
   );
 
   const startPolling = useCallback(() => {
@@ -205,67 +210,96 @@ export default function SkillsPage() {
   const drafts = list(data?.drafts);
   const published = list(data?.published);
   const archived = list(data?.archived);
-  const devices = list(data?.devices);
-  const statusLabels: Record<string, string> = { draft: s.statusDraft, published: s.statusPublished, dismissed: s.statusDismissed, retired: s.statusRetired };
+
+  // Map into SkillItem for 3D matrix
+  const matrixSkills = useMemo<SkillItem[]>(() => {
+    const pList: SkillItem[] = published.map((p) => ({
+      id: str(p.id),
+      slug: str(p.slug),
+      title: str(p.title),
+      description: str(p.description),
+      status: "published",
+      version: num(p.version) || 1,
+      body: str(p.body),
+      results: obj(p.results),
+    }));
+    const dList: SkillItem[] = drafts.map((d) => ({
+      id: str(d.id),
+      slug: str(d.slug),
+      title: str(d.title),
+      description: str(d.description),
+      status: "draft",
+      version: num(d.version) || 0,
+      body: str(d.body),
+      results: obj(d.results),
+    }));
+    return [...pList, ...dList];
+  }, [published, drafts]);
+
+  // Handle 3D skill selection
+  const handleSelectSkillFrom3D = (skill: SkillItem | null) => {
+    if (!skill) {
+      setSelectedSkillSlug(null);
+      return;
+    }
+    setSelectedSkillSlug(skill.slug || null);
+    if (skill.status === "draft") {
+      setActiveTab("drafts");
+    } else {
+      setActiveTab("published");
+    }
+    if (skill.id) {
+      setExpanded((prev) => new Set(prev).add(skill.id!));
+    }
+  };
 
   const reviewList = list(reviews.reviews);
   const stats = obj(reviews.stats);
   const outcomes = obj(stats.outcomes);
-  const outcomeLabels: Record<string, string> = { done: s.outcomeDone, partial: s.outcomePartial, failed: s.outcomeFailed, chat: s.outcomeChat, error: s.outcomeError, unknown: s.outcomeUnknown };
-  const outcomeTone = (o: string) => (o === "done" ? "success" : o === "failed" || o === "error" ? "danger" : o === "partial" ? "warn" : "neutral");
-
-  const learned = (r: Obj) => {
-    const parts: string[] = [];
-    if (r.skill != null) {
-      parts.push(r.skill_event === "new" ? fmt(s.learnedNewSkill, { skill: str(r.skill) }) : r.skill_event === "update_pending" ? fmt(s.learnedSkillUpdate, { skill: str(r.skill) }) : fmt(s.learnedSkillUsed, { skill: str(r.skill) }));
-    }
-    if (num(r.pitfalls_new) > 0) parts.push(fmt(s.learnedPitfalls, { n: num(r.pitfalls_new) }));
-    if (count(r.pitfalls_seen) > 0) parts.push(fmt(s.learnedRepeats, { n: count(r.pitfalls_seen) }));
-    if (num(r.todos_new) > 0) parts.push(fmt(s.learnedTodos, { n: num(r.todos_new) }));
-    if (num(r.todos_done) > 0) parts.push(fmt(s.learnedTodosDone, { n: num(r.todos_done) }));
-    return parts.length ? parts.join(" · ") : s.learnedNothing;
+  const outcomeLabels: Record<string, string> = {
+    done: s.outcomeDone,
+    partial: s.outcomePartial,
+    failed: s.outcomeFailed,
+    chat: s.outcomeChat,
+    error: s.outcomeError,
+    unknown: s.outcomeUnknown,
   };
-
-  const deviceSummary = (d: Obj) => {
-    if (count(d.targets) === 0) return s.deviceNoTools;
-    const devStatus = obj(d.status);
-    if (!devStatus.results) return s.deviceWaiting;
-    const c = skillResultCounts(obj(devStatus.results));
-    const parts = [
-      c.ok ? fmt(s.deviceWritten, { n: c.ok }) : "",
-      c.kept ? fmt(s.deviceKept, { n: c.kept }) : "",
-      c.skipped ? fmt(s.deviceSkipped, { n: c.skipped }) : "",
-      c.error ? fmt(s.deviceErrors, { n: c.error }) : "",
-    ].filter(Boolean);
-    return `${parts.length ? parts.join(" · ") : s.deviceNoSkills} · ${time(devStatus.reported_at)}`;
-  };
+  const outcomeTone = (o: string) =>
+    o === "done" ? "success" : o === "failed" || o === "error" ? "danger" : o === "partial" ? "warn" : "neutral";
 
   const renderSkillCard = (skill: Obj) => {
     const id = str(skill.id);
+    const slug = str(skill.slug);
     const status = str(skill.status) || "draft";
     const disabled = busy !== null;
     const update = skill.pending_update ? obj(skill.pending_update) : null;
     const evidence = list(skill.evidence);
     const isExpanded = expanded.has(id);
+    const isSelectedIn3D = selectedSkillSlug === slug;
 
     return (
       <div
         key={id}
-        className="p-5 rounded-2xl border border-[var(--aurora-border)] bg-[var(--aurora-surface)] shadow-xs hover:border-[var(--aurora-border-strong)] transition-all flex flex-col justify-between"
+        onClick={() => setSelectedSkillSlug(slug)}
+        className={`p-4 rounded-2xl border transition-all flex flex-col justify-between cursor-pointer ${
+          isSelectedIn3D
+            ? "bg-[var(--aurora-surface-solid)] border-[var(--aurora-accent)] shadow-md ring-1 ring-[var(--aurora-accent)]/30"
+            : "bg-[var(--aurora-surface-solid)] border-[var(--aurora-border)] hover:border-[var(--aurora-border-strong)]"
+        }`}
       >
         <div>
           {/* Card Header */}
-          <div className="flex items-start justify-between gap-3 pb-3 mb-3 border-b border-[var(--aurora-border)]">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-xl flex items-center justify-center bg-[rgba(245,158,11,0.12)] text-[#F59E0B]">
-                <Icon name="zap" size={16} />
+          <div className="flex items-start justify-between gap-3 pb-2.5 mb-2.5 border-b border-[var(--aurora-border)]">
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-xl flex items-center justify-center bg-[rgba(245,158,11,0.12)] text-[#F59E0B] shrink-0">
+                <Icon name="zap" size={15} />
               </div>
-              <div>
-                <h3 className="text-sm font-bold text-[var(--aurora-fg1)]">
+              <div className="min-w-0">
+                <h3 className="text-xs sm:text-sm font-bold text-[var(--aurora-fg1)] truncate">
                   {str(skill.title)}
                 </h3>
-                <span className="text-[11px] font-mono text-[var(--aurora-fg4)]">
-                  /{str(skill.slug)}
+                <span className="text-[10px] font-mono text-[var(--aurora-fg4)] truncate block">
+                  /{slug}
                 </span>
               </div>
             </div>
@@ -274,21 +308,21 @@ export default function SkillsPage() {
               <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-[var(--aurora-chip)] text-[var(--aurora-fg2)] font-semibold">
                 {status === "published" ? `v${str(skill.version || "1.0")}` : "草稿"}
               </span>
-              {skill.project ? (
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-[rgba(16,185,129,0.1)] text-[#10B981] font-medium">
-                  {str(skill.project)}
+              {isSelectedIn3D && (
+                <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-[var(--aurora-accent)]/15 text-[var(--aurora-accent)] border border-[var(--aurora-accent)]/30">
+                  3D 对焦中
                 </span>
-              ) : null}
+              )}
             </div>
           </div>
 
-          <p className="text-xs text-[var(--aurora-fg2)] leading-relaxed mb-4">
+          <p className="text-xs text-[var(--aurora-fg2)] leading-relaxed mb-3">
             {str(skill.description)}
           </p>
 
           {/* Update Notice */}
           {update && (
-            <div className="mb-3 p-3 rounded-xl bg-[rgba(217,119,6,0.08)] border border-[rgba(217,119,6,0.25)] text-xs">
+            <div className="mb-3 p-2.5 rounded-xl bg-[rgba(217,119,6,0.08)] border border-[rgba(217,119,6,0.25)] text-xs">
               <div className="font-semibold text-[#B45309] mb-1">发现新版技能演进建议：</div>
               <p className="text-[var(--aurora-fg3)]">{str(update.reason)}</p>
               {showUpdate === id && (
@@ -296,24 +330,24 @@ export default function SkillsPage() {
                   <MarkdownViewer content={str(update.body)} />
                 </div>
               )}
-              <div className="flex gap-2 justify-end mt-2">
-                <Btn variant="ghost" size="sm" onClick={() => act(id, () => api.skillAction(id, "update/discard"))}>忽略</Btn>
-                <Btn variant="glass" size="sm" onClick={() => setShowUpdate(showUpdate === id ? null : id)}>
+              <div className="flex gap-1.5 justify-end mt-2">
+                <Btn variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); act(id, () => api.skillAction(id, "update/discard")); }}>忽略</Btn>
+                <Btn variant="glass" size="sm" onClick={(e) => { e.stopPropagation(); setShowUpdate(showUpdate === id ? null : id); }}>
                   {showUpdate === id ? "收起" : "对比变更"}
                 </Btn>
-                <Btn size="sm" onClick={() => act(id, () => api.skillAction(id, "update/apply"), s.updateApplied)}>应用更新</Btn>
+                <Btn size="sm" onClick={(e) => { e.stopPropagation(); act(id, () => api.skillAction(id, "update/apply"), s.updateApplied); }}>应用更新</Btn>
               </div>
             </div>
           )}
 
           {/* Expanded Step Body */}
           {isExpanded && (
-            <div className="mb-3 p-3.5 rounded-xl bg-[var(--aurora-surface-solid)] border border-[var(--aurora-border)]">
+            <div className="mb-3 p-3 rounded-xl bg-[var(--aurora-surface)] border border-[var(--aurora-border)]">
               <div className="prose prose-sm max-w-none text-xs leading-relaxed">
                 <MarkdownViewer content={str(skill.body)} />
               </div>
               {evidence.length > 0 && (
-                <div className="mt-2.5 pt-2 border-t border-[var(--aurora-border)] text-[11px] text-[var(--aurora-fg4)]">
+                <div className="mt-2 pt-2 border-t border-[var(--aurora-border)] text-[10px] text-[var(--aurora-fg4)]">
                   提炼自最近真实操作会话：{str(evidence[evidence.length - 1]?.title || "日常编码实践")}
                 </div>
               )}
@@ -322,7 +356,7 @@ export default function SkillsPage() {
         </div>
 
         {/* Card Footer Actions */}
-        <div className="pt-3 border-t border-[var(--aurora-border)] flex items-center justify-between">
+        <div className="pt-2.5 border-t border-[var(--aurora-border)] flex items-center justify-between" onClick={(e) => e.stopPropagation()}>
           <button
             type="button"
             onClick={() => toggle(id)}
@@ -360,46 +394,62 @@ export default function SkillsPage() {
         </div>
 
         {editing === id && (
-          <SkillEditor
-            skill={skill}
-            busy={disabled}
-            onCancel={() => setEditing(null)}
-            onSave={(edits, publish) =>
-              publish && status === "draft"
-                ? act(id, () => api.publishSkill(id, edits), s.publishedNotice)
-                : act(id, () => api.editSkill(id, edits), status === "draft" ? s.saved : s.savedNewVersion)
-            }
-          />
+          <div onClick={(e) => e.stopPropagation()}>
+            <SkillEditor
+              skill={skill}
+              busy={disabled}
+              onCancel={() => setEditing(null)}
+              onSave={(edits, publish) =>
+                publish && status === "draft"
+                  ? act(id, () => api.publishSkill(id, edits), s.publishedNotice)
+                  : act(id, () => api.editSkill(id, edits), status === "draft" ? s.saved : s.savedNewVersion)
+              }
+            />
+          </div>
         )}
       </div>
     );
   };
 
+  const filteredPublished = useMemo(() => {
+    if (!searchQuery.trim()) return published;
+    const q = searchQuery.toLowerCase().trim();
+    return published.filter(
+      (p) => str(p.title).toLowerCase().includes(q) || str(p.slug).toLowerCase().includes(q) || str(p.description).toLowerCase().includes(q)
+    );
+  }, [published, searchQuery]);
+
+  const filteredDrafts = useMemo(() => {
+    if (!searchQuery.trim()) return drafts;
+    const q = searchQuery.toLowerCase().trim();
+    return drafts.filter(
+      (d) => str(d.title).toLowerCase().includes(q) || str(d.slug).toLowerCase().includes(q) || str(d.description).toLowerCase().includes(q)
+    );
+  }, [drafts, searchQuery]);
+
   return (
-    <div className="max-w-6xl mx-auto space-y-6 pb-20">
+    <div className="h-[calc(100vh-68px)] max-h-[calc(100vh-68px)] flex flex-col gap-2 overflow-hidden">
       {/* ─────────────────────────────────────────────────────────────
-          1. 统一顶栏 (Single-Row Modern Header)
+          1. 统一顶栏 (Ultra-Refined Single-Row Cockpit Header)
           ───────────────────────────────────────────────────────────── */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-[var(--aurora-border)]">
-        <div>
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl flex items-center justify-center bg-[rgba(245,158,11,0.12)] text-[#F59E0B] shadow-xs">
-              <Icon name="zap" size={18} />
-            </div>
-            <h1 className="text-xl font-bold text-[var(--aurora-fg1)] tracking-tight">
-              技能进化 · 特长与工具箱
+      <div className="flex items-center justify-between gap-3 pb-1 border-b border-[var(--aurora-border)] shrink-0">
+        <div className="flex items-center gap-2.5">
+          <div className="w-7 h-7 rounded-xl flex items-center justify-center bg-[rgba(245,158,11,0.12)] text-[#F59E0B] shadow-xs shrink-0">
+            <Icon name="zap" size={16} />
+          </div>
+          <div className="flex items-center gap-2">
+            <h1 className="text-sm sm:text-base font-bold text-[var(--aurora-fg1)] tracking-tight">
+              技能进化 · 科技树与全息能量阵列
             </h1>
-            <span className="text-[11px] px-2.5 py-0.5 rounded-full font-medium bg-[rgba(16,185,129,0.12)] text-[#10B981] flex items-center gap-1.5">
+            <span className="text-[10px] px-2 py-0.2 rounded-full font-medium bg-[rgba(16,185,129,0.12)] text-[#10B981] flex items-center gap-1 font-mono">
               <span className="w-1.5 h-1.5 rounded-full bg-[#10B981] breathing-glow-emerald" />
-              Agent Skill 协议就绪
+              Agent Skill 协议就绪 · 5 端全息注入
             </span>
           </div>
-          <p className="text-xs text-[var(--aurora-fg3)] mt-1 ml-10">
-            AI 会执行什么 · 从高频操作中沉淀出标准 SOP、自动化执行脚本与工业级专业本领
-          </p>
         </div>
 
-        <div className="flex items-center gap-2 self-start sm:self-auto">
+        {/* Action Controls */}
+        <div className="flex items-center gap-1.5">
           <Btn
             variant="glass"
             size="sm"
@@ -413,253 +463,323 @@ export default function SkillsPage() {
       </div>
 
       {/* ─────────────────────────────────────────────────────────────
-          Cognitive Brain 3-Pillars Executive Compass Navigation
+          Cognitive Compass Compact Header Bar (36px Height)
           ───────────────────────────────────────────────────────────── */}
-      <CognitiveCompass
-        currentTab="skills"
-        summaryStats={{
-          skillsCount: count(data?.published) + count(data?.drafts),
-          syncedTargetsCount: 5,
-        }}
-      />
+      <div className="shrink-0">
+        <CognitiveCompass
+          currentTab="skills"
+          variant="compact"
+          summaryStats={{
+            skillsCount: published.length + drafts.length,
+            syncedTargetsCount: 5,
+          }}
+        />
+      </div>
 
       {error && (
-        <Glass padding={14} radius={14} style={{ color: "#DC2626", fontSize: 13 }}>
+        <Glass padding={8} radius={10} className="shrink-0" style={{ color: "#DC2626", fontSize: 11 }}>
           {error}
         </Glass>
       )}
       {notice && (
-        <Glass padding={14} radius={14} style={{ color: "var(--aurora-fg2)", fontSize: 13 }}>
-          {notice}
+        <Glass padding={8} radius={10} className="shrink-0" style={{ color: "var(--aurora-fg2)", fontSize: 11 }}>
+          <div className="flex items-center justify-between">
+            <span>{notice}</span>
+            <button onClick={() => setNotice(null)} className="text-[var(--aurora-fg4)] hover:text-[var(--aurora-fg1)]">
+              <Icon name="close" size={10} />
+            </button>
+          </div>
         </Glass>
       )}
 
       {/* ─────────────────────────────────────────────────────────────
-          2. Hero 技能进化大屏 (Skill Evolution Cockpit)
+          2. 一屏全景双翼驾驶舱 (Unified Single-Screen Twin Cockpit)
           ───────────────────────────────────────────────────────────── */}
-      <div className="relative overflow-hidden rounded-3xl p-6 sm:p-8 border border-[var(--aurora-border)] bg-gradient-to-br from-[var(--aurora-surface)] via-[var(--aurora-surface)] to-[rgba(245,158,11,0.06)] shadow-sm">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-          <div className="space-y-2 max-w-xl">
-            <span className="text-[11px] font-mono uppercase tracking-widest text-[#F59E0B] font-semibold">
-              Autonomous Skill Library · v1.0
-            </span>
-            <h2 className="text-2xl sm:text-3xl font-extrabold text-[var(--aurora-fg1)] tracking-tight">
-              赋予 AI 执行专业任务的硬核本领。
-            </h2>
-            <p className="text-xs sm:text-sm text-[var(--aurora-fg2)] leading-relaxed">
-              支持工业级标准 `SKILL.md` 规范。通过 Memento 的日常会话复盘，系统自动发掘高价值可复用动作，沉淀为开箱即用的自动化工具，全端设备秒级下发生效。
-            </p>
-          </div>
-
-          {/* Quick Metrics */}
-          <div className="flex gap-4 shrink-0 bg-[var(--aurora-surface-solid)] p-4 rounded-2xl border border-[var(--aurora-border)] shadow-xs">
-            <div className="px-3 border-r border-[var(--aurora-border)]">
-              <div className="text-[11px] text-[var(--aurora-fg3)]">活跃技能</div>
-              <div className="text-2xl font-bold font-mono text-[#F59E0B] mt-0.5">
-                {published.length}
-                <span className="text-xs font-normal text-[var(--aurora-fg4)] ml-1">项</span>
-              </div>
-            </div>
-            <div className="px-3 border-r border-[var(--aurora-border)]">
-              <div className="text-[11px] text-[var(--aurora-fg3)]">待审提炼</div>
-              <div className="text-2xl font-bold font-mono text-[var(--aurora-fg1)] mt-0.5">
-                {drafts.length}
-                <span className="text-xs font-normal text-[var(--aurora-fg4)] ml-1">条</span>
-              </div>
-            </div>
-            <div className="px-3">
-              <div className="text-[11px] text-[var(--aurora-fg3)]">跨端分发</div>
-              <div className="text-2xl font-bold font-mono text-[#10B981] mt-0.5">
-                {devices.length || 1}
-                <span className="text-xs font-normal text-[var(--aurora-fg4)] ml-1">台</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* ─────────────────────────────────────────────────────────────
-          3. 胶囊过滤器 (Filter Pills)
-          ───────────────────────────────────────────────────────────── */}
-      <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-[var(--aurora-surface)] border border-[var(--aurora-border)] shadow-xs self-start flex-wrap">
-        {[
-          { id: "3d-matrix" as const, label: `🌐 3D 技能科技树 (${published.length + drafts.length})`, icon: "sparkles" as const },
-          { id: "published" as const, label: `活跃技能 (${published.length})`, icon: "zap" as const },
-          { id: "drafts" as const, label: `待审草稿 (${drafts.length})`, icon: "edit" as const },
-          { id: "reviews" as const, label: `审查动态 (${reviewList.length})`, icon: "sparkles" as const },
-          { id: "archived" as const, label: `历史归档 (${archived.length})`, icon: "minus" as const },
-        ].map((tab) => {
-          const active = activeTab === tab.id;
-          return (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-medium transition-all ${
-                active
-                  ? "bg-[var(--aurora-surface-solid)] text-[#F59E0B] shadow-xs font-semibold"
-                  : "text-[var(--aurora-fg3)] hover:text-[var(--aurora-fg1)] hover:bg-[var(--aurora-chip)]"
-              }`}
-            >
-              <Icon name={tab.icon} size={13} />
-              <span>{tab.label}</span>
-            </button>
-          );
-        })}
-      </div>
-
-      {/* ─────────────────────────────────────────────────────────────
-          4. TAB: 3D 技能科技树与能力星阵 (Skill Matrix 3D)
-          ───────────────────────────────────────────────────────────── */}
-      {activeTab === "3d-matrix" && (
-        <div className="space-y-4 animate-in fade-in">
+      <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-3 min-h-0 overflow-hidden">
+        {/* ── 左翼 (5 列 / 42%): 3D 技能科技树与 5 端激光阵列主舞台 (顶天立地，免滚联动) ── */}
+        <div className="lg:col-span-5 h-full flex flex-col min-h-0 relative rounded-3xl overflow-hidden border border-[var(--aurora-border)] bg-[var(--aurora-surface)] shadow-xl">
           <SkillMatrix3D
-            skills={[...published, ...drafts]}
+            skills={matrixSkills}
             selectedSlug={selectedSkillSlug}
-            onSelectSkill={(skill) => {
-              if (skill?.slug) {
-                setSelectedSkillSlug(skill.slug);
-                if (skill.id) {
-                  setExpanded((prev) => new Set([...prev, str(skill.id)]));
-                }
-              } else {
-                setSelectedSkillSlug(null);
-              }
-            }}
+            onSelectSkill={handleSelectSkillFrom3D}
+            className="w-full h-full"
           />
 
-          {/* Selected Skill Focus Card */}
-          {selectedSkillSlug && (
-            <div className="animate-in fade-in slide-in-from-bottom-2 space-y-2">
-              <div className="flex items-center justify-between text-xs font-bold text-[var(--aurora-fg2)]">
-                <span className="flex items-center gap-1.5 text-[#38BDF8]">
-                  <span className="w-2 h-2 rounded-full bg-[#38BDF8] animate-ping" />
-                  <span>🎯 已聚焦技能晶核与 5 端热注通道：</span>
-                </span>
+          {/* 3D 悬浮顶部滤镜与状态栏 */}
+          <div className="absolute top-3 left-3 right-3 flex items-center justify-between pointer-events-none gap-2 flex-wrap">
+            <div className="flex items-center gap-1.5 bg-black/60 backdrop-blur-md px-2.5 py-1 rounded-full border border-white/10 pointer-events-auto">
+              <span className="w-2 h-2 rounded-full bg-[#F59E0B] animate-pulse" />
+              <span className="text-[11px] font-mono font-bold text-white tracking-wide">
+                科技树星阵 SkillMatrix 3D
+              </span>
+            </div>
+
+            <div className="flex items-center gap-1 bg-black/60 backdrop-blur-md px-2.5 py-1 rounded-full border border-white/10 pointer-events-auto text-[10px] font-mono text-white/80">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#10B981] breathing-glow-emerald" />
+              <span>5/5 端基座实时能量注入</span>
+            </div>
+          </div>
+
+          {/* 3D 悬浮底部交互指示器 */}
+          <div className="absolute bottom-3 left-3 right-3 pointer-events-none">
+            {selectedSkillSlug ? (
+              <div className="bg-black/75 backdrop-blur-md p-3 rounded-2xl border border-white/20 pointer-events-auto flex items-center justify-between shadow-lg animate-in fade-in">
+                <div className="space-y-0.5 min-w-0 pr-2">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-[#F59E0B]" />
+                    <span className="text-xs font-bold text-white truncate font-mono">
+                      /{selectedSkillSlug}
+                    </span>
+                    <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300">
+                      能量束注入中
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-white/70 truncate">
+                    全息激光已注入 5 大受护终端基座
+                  </p>
+                </div>
                 <button
                   onClick={() => setSelectedSkillSlug(null)}
-                  className="text-xs text-[var(--aurora-accent)] hover:underline font-mono"
+                  className="p-1 rounded-xl bg-white/10 text-white/60 hover:text-white transition-all shrink-0"
+                  title="重置对焦"
                 >
-                  关闭对焦
+                  <Icon name="close" size={12} />
                 </button>
               </div>
-              {(() => {
-                const matched = [...published, ...drafts].find((s) => str(s.slug) === selectedSkillSlug);
-                if (!matched) return null;
-                return renderSkillCard(matched);
-              })()}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ─────────────────────────────────────────────────────────────
-          5. 技能网格 (Bento Skill Cards)
-          ───────────────────────────────────────────────────────────── */}
-      {activeTab === "published" && (
-        <div>
-          {published.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {published.map(renderSkillCard)}
-            </div>
-          ) : (
-            <Glass padding={24} radius={18} className="text-center text-xs text-[var(--aurora-fg3)]">
-              暂无已发布的活跃技能，请在上方点击「自动审查提炼技能」发掘日常编码 SOP。
-            </Glass>
-          )}
-        </div>
-      )}
-
-      {activeTab === "drafts" && (
-        <div>
-          {drafts.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {drafts.map(renderSkillCard)}
-            </div>
-          ) : (
-            <Glass padding={24} radius={18} className="text-center text-xs text-[var(--aurora-fg3)]">
-              暂无待审阅的草稿技能。系统在夜间或手动审查时会自动提炼新技能。
-            </Glass>
-          )}
-        </div>
-      )}
-
-      {activeTab === "reviews" && (
-        <div className="space-y-3">
-          {reviewList.length > 0 ? (
-            reviewList.slice(0, 20).map((r, i) => (
-              <div
-                key={i}
-                className="p-4 rounded-2xl border border-[var(--aurora-border)] bg-[var(--aurora-surface)] shadow-xs flex flex-col gap-1.5"
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <Chip tone={outcomeTone(str(r.outcome))}>{outcomeLabels[str(r.outcome)] ?? str(r.outcome)}</Chip>
-                    <span className="font-semibold text-xs text-[var(--aurora-fg1)] truncate max-w-md">{str(r.title)}</span>
-                  </div>
-                  <span className="text-[11px] font-mono text-[var(--aurora-fg4)]">{time(r.reviewed_at)}</span>
-                </div>
-                {str(r.summary) && (
-                  <p className="text-xs text-[var(--aurora-fg2)] leading-relaxed mt-1">{str(r.summary)}</p>
-                )}
-                <div className="text-[11px] text-[var(--aurora-fg3)] mt-1 font-mono">
-                  {learned(obj(r.result))}
-                </div>
+            ) : (
+              <div className="text-center">
+                <span className="text-[10px] font-mono text-white/50 bg-black/40 backdrop-blur-xs px-3 py-1 rounded-full border border-white/10 pointer-events-auto">
+                  点击技能晶核发射激光束注入 5 端基座 · 滚轮缩放 · 左键旋转
+                </span>
               </div>
-            ))
-          ) : (
-            <Glass padding={24} radius={18} className="text-center text-xs text-[var(--aurora-fg3)]">
-              暂无审查会话记录
-            </Glass>
-          )}
+            )}
+          </div>
         </div>
-      )}
 
-      {activeTab === "archived" && (
-        <div className="space-y-3">
-          {archived.length > 0 ? (
-            archived.map((a) => (
-              <div
-                key={str(a.id)}
-                className="p-4 rounded-2xl border border-[var(--aurora-border)] bg-[var(--aurora-surface)] shadow-xs flex items-center justify-between"
-              >
+        {/* ── 右翼 (7 列 / 58%): 技能列表、演进草稿与审查动态 (独立平滑内滚) ── */}
+        <div className="lg:col-span-7 h-full flex flex-col min-h-0 bg-[var(--aurora-surface)] rounded-3xl border border-[var(--aurora-border)] shadow-xl overflow-hidden">
+          {/* A. 顶部仪表盘概览与 Tab 导航区 (Sticky Header) */}
+          <div className="p-3 bg-gradient-to-r from-[var(--aurora-surface-solid)] via-[var(--aurora-surface)] to-[var(--aurora-chip)] border-b border-[var(--aurora-border)] shrink-0 space-y-2.5">
+            {/* 三列高级 KPI 态势磁贴 */}
+            <div className="grid grid-cols-3 gap-2">
+              {/* Tile 1: 活跃上线技能 */}
+              <div className="p-2 rounded-xl bg-[var(--aurora-surface)]/80 border border-[var(--aurora-border)] flex items-center justify-between">
                 <div>
-                  <div className="text-sm font-semibold text-[var(--aurora-fg1)]">{str(a.title)}</div>
-                  <div className="text-xs text-[var(--aurora-fg4)] font-mono mt-0.5">
-                    {statusLabels[str(a.status)] ?? str(a.status)} · /{str(a.slug)}
+                  <div className="text-[10px] text-[var(--aurora-fg4)]">活跃上线技能</div>
+                  <div className="text-xs font-bold text-[#10B981] font-mono mt-0.5">
+                    {published.length} <span className="text-[10px] font-normal text-[var(--aurora-fg3)]">个</span>
                   </div>
                 </div>
-                <Btn variant="ghost" size="sm" disabled={busy !== null} onClick={() => act(str(a.id), () => api.skillAction(str(a.id), "restore"), s.restoredNotice)}>
-                  恢复技能
-                </Btn>
+                <div className="text-right">
+                  <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-[rgba(16,185,129,0.1)] text-[#10B981]">
+                    Agent Skill 协议
+                  </span>
+                </div>
               </div>
-            ))
-          ) : (
-            <Glass padding={24} radius={18} className="text-center text-xs text-[var(--aurora-fg3)]">
-              暂无已归档技能
-            </Glass>
-          )}
-        </div>
-      )}
 
-      {/* ─────────────────────────────────────────────────────────────
-          5. 设备端生效报告 (Device Sync Matrix)
-          ───────────────────────────────────────────────────────────── */}
-      {devices.length > 0 && (
-        <div className="rounded-3xl p-5 border border-[var(--aurora-border)] bg-[var(--aurora-surface)] shadow-xs">
-          <div className="flex items-center gap-2 pb-3 mb-2 border-b border-[var(--aurora-border)]">
-            <Icon name="devices" size={15} />
-            <span className="font-bold text-xs text-[var(--aurora-fg1)]">各设备技能分发生效状态</span>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {devices.map((d, i) => (
-              <div key={i} className="p-3 rounded-xl bg-[var(--aurora-surface-solid)] border border-[var(--aurora-border)] flex items-center justify-between text-xs">
-                <span className="font-semibold text-[var(--aurora-fg1)] truncate">{str(d.name)}</span>
-                <span className="text-[11px] text-[var(--aurora-fg3)] font-mono">{deviceSummary(d)}</span>
+              {/* Tile 2: 待审草稿与演进 */}
+              <div className="p-2 rounded-xl bg-[var(--aurora-surface)]/80 border border-[var(--aurora-border)] flex items-center justify-between">
+                <div>
+                  <div className="text-[10px] text-[var(--aurora-fg4)]">待审草稿与演进</div>
+                  <div className="text-xs font-bold text-[#F59E0B] font-mono mt-0.5">
+                    {drafts.length} <span className="text-[10px] font-normal text-[var(--aurora-fg3)]">个</span>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-[rgba(245,158,11,0.1)] text-[#F59E0B]">
+                    会话挖掘
+                  </span>
+                </div>
               </div>
-            ))}
+
+              {/* Tile 3: 5 端受护运行时 */}
+              <div className="p-2 rounded-xl bg-[var(--aurora-surface)]/80 border border-[var(--aurora-border)] flex items-center justify-between">
+                <div>
+                  <div className="text-[10px] text-[var(--aurora-fg4)]">全息注入终端</div>
+                  <div className="text-xs font-bold text-[#3B82F6] font-mono mt-0.5">
+                    5 <span className="text-[10px] font-normal text-[var(--aurora-fg3)]">端在线</span>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-[rgba(59,130,246,0.1)] text-[#3B82F6]">
+                    全部激活
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Navigation Tabs Bar */}
+            <div className="flex items-center justify-between gap-2 overflow-x-auto pb-0.5">
+              <div className="flex items-center gap-1.5">
+                {[
+                  { id: "published", label: `⚡ 活跃技能 (${published.length})`, color: "#10B981" },
+                  { id: "drafts", label: `📝 演进草稿 (${drafts.length})`, color: "#F59E0B" },
+                  { id: "reviews", label: `🔄 审查动态 ${reviewRunning ? "· 进行中" : ""}`, color: "#3B82F6" },
+                  { id: "archived", label: `📦 历史归档 (${archived.length})`, color: "#64748B" },
+                ].map((tb) => (
+                  <button
+                    key={tb.id}
+                    onClick={() => setActiveTab(tb.id as typeof activeTab)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-medium whitespace-nowrap transition-all border ${
+                      activeTab === tb.id
+                        ? "bg-[var(--aurora-surface-solid)] text-[var(--aurora-fg1)] border-[var(--aurora-border-strong)] shadow-xs font-bold"
+                        : "border-transparent text-[var(--aurora-fg3)] hover:text-[var(--aurora-fg1)] hover:bg-[var(--aurora-surface-solid)]/60"
+                    }`}
+                  >
+                    {tb.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Search input */}
+              <div className="relative w-36 shrink-0">
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="过滤技能..."
+                  className="w-full pl-6 pr-2 py-0.8 text-[11px] rounded-lg bg-[var(--aurora-surface-solid)] border border-[var(--aurora-border)] text-[var(--aurora-fg1)] placeholder-[var(--aurora-fg4)] focus:outline-hidden focus:border-[var(--aurora-accent)]"
+                />
+                <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-[var(--aurora-fg4)]">
+                  <Icon name="search" size={10} />
+                </span>
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery("")}
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[var(--aurora-fg4)] hover:text-[var(--aurora-fg1)]"
+                  >
+                    <Icon name="close" size={9} />
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* B. 内容滚动主视口 (Smooth Inner Scroll Container) */}
+          <div className="flex-1 overflow-y-auto p-3.5 space-y-3 min-h-0 scrollbar-thin">
+            {/* ── TAB 1: 活跃上线技能 (Published) ── */}
+            {activeTab === "published" && (
+              <div className="space-y-2.5 animate-in fade-in">
+                {filteredPublished.length === 0 ? (
+                  <div className="p-8 text-center text-xs text-[var(--aurora-fg4)] bg-[var(--aurora-surface-solid)] rounded-2xl border border-[var(--aurora-border)]">
+                    {searchQuery ? "未找到匹配的上线技能" : "暂无已发布技能，可在「演进草稿」中发布或通过日常编码自动提炼"}
+                  </div>
+                ) : (
+                  filteredPublished.map(renderSkillCard)
+                )}
+              </div>
+            )}
+
+            {/* ── TAB 2: 演进建议与草稿 (Drafts) ── */}
+            {activeTab === "drafts" && (
+              <div className="space-y-2.5 animate-in fade-in">
+                {filteredDrafts.length === 0 ? (
+                  <div className="p-8 text-center text-xs text-[var(--aurora-fg4)] bg-[var(--aurora-surface-solid)] rounded-2xl border border-[var(--aurora-border)]">
+                    {searchQuery ? "未找到匹配的草稿" : "当前无待审技能草稿，系统将在会话复盘中持续挖掘高价值操作"}
+                  </div>
+                ) : (
+                  filteredDrafts.map(renderSkillCard)
+                )}
+              </div>
+            )}
+
+            {/* ── TAB 3: 审查动态 (Reviews) ── */}
+            {activeTab === "reviews" && (
+              <div className="space-y-3 animate-in fade-in">
+                {job && (
+                  <div className="p-3.5 rounded-2xl bg-[var(--aurora-surface-solid)] border border-[var(--aurora-border)] flex items-center justify-between">
+                    <div>
+                      <div className="text-xs font-bold text-[var(--aurora-fg1)] flex items-center gap-1.5">
+                        {reviewRunning && (
+                          <span className="w-2 h-2 rounded-full bg-[var(--aurora-accent)] animate-ping" />
+                        )}
+                        <span>审查任务状态：{str(job.status)}</span>
+                      </div>
+                      <div className="text-[11px] text-[var(--aurora-fg3)] mt-0.5">
+                        {jobSummary(job)}
+                      </div>
+                    </div>
+                    <Btn
+                      variant="glass"
+                      size="sm"
+                      icon="refresh"
+                      disabled={reviewRunning || busy !== null}
+                      onClick={reviewNow}
+                    >
+                      {reviewRunning ? s.reviewing : "重新审查"}
+                    </Btn>
+                  </div>
+                )}
+
+                {/* Outcome Stats Pills */}
+                {Object.keys(outcomes).length > 0 && (
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {Object.entries(outcomes).map(([outcome, cnt]) => (
+                      <div
+                        key={outcome}
+                        className="p-2.5 rounded-xl bg-[var(--aurora-surface-solid)] border border-[var(--aurora-border)] text-xs flex items-center justify-between"
+                      >
+                        <span className="text-[var(--aurora-fg3)]">
+                          {outcomeLabels[outcome] || outcome}
+                        </span>
+                        <span className="font-mono font-bold text-[var(--aurora-fg1)]">
+                          {num(cnt)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Review Sessions List */}
+                <div className="space-y-2">
+                  <div className="text-xs font-bold text-[var(--aurora-fg2)]">
+                    会话复盘审查记录 ({reviewList.length})
+                  </div>
+                  {reviewList.length === 0 ? (
+                    <div className="p-6 text-center text-xs text-[var(--aurora-fg4)] bg-[var(--aurora-surface-solid)] rounded-2xl border border-[var(--aurora-border)]">
+                      暂无审查审计记录
+                    </div>
+                  ) : (
+                    reviewList.map((r, i) => (
+                      <div
+                        key={i}
+                        className="p-3 rounded-xl bg-[var(--aurora-surface-solid)] border border-[var(--aurora-border)] text-xs space-y-1"
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="font-semibold text-[var(--aurora-fg1)]">
+                            {str(r.session_title || r.title || `会话审计 #${i + 1}`)}
+                          </span>
+                          <span className="text-[10px] font-mono text-[var(--aurora-fg4)]">
+                            {time(r.created_at || r.reviewed_at)}
+                          </span>
+                        </div>
+                        {Boolean(r.notes) && (
+                          <p className="text-[11px] text-[var(--aurora-fg3)] leading-relaxed">
+                            {str(r.notes)}
+                          </p>
+                        )}
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* ── TAB 4: 历史归档 (Archived) ── */}
+            {activeTab === "archived" && (
+              <div className="space-y-2.5 animate-in fade-in">
+                {archived.length === 0 ? (
+                  <div className="p-8 text-center text-xs text-[var(--aurora-fg4)] bg-[var(--aurora-surface-solid)] rounded-2xl border border-[var(--aurora-border)]">
+                    暂无已归档技能
+                  </div>
+                ) : (
+                  archived.map(renderSkillCard)
+                )}
+              </div>
+            )}
           </div>
         </div>
-      )}
+      </div>
     </div>
   );
 }
