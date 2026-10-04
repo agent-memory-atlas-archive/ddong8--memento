@@ -838,7 +838,7 @@ export default function PersonaPage() {
 
             {/* Tab Navigation & Search Bar */}
             <div className="flex items-center justify-between gap-2 flex-wrap pt-0.5">
-              <div className="flex items-center gap-1 overflow-x-auto scrollbar-none py-0.5 max-w-full">
+              <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none py-0.5 max-w-full">
                 {CHAPTER_TABS.map((tab) => {
                   const isSelected = activeTab === tab.id;
                   return (
@@ -850,19 +850,25 @@ export default function PersonaPage() {
                           triggerSynapse(`⚡ 聚焦维度：${tab.label}`, tab.id);
                         }
                       }}
-                      className={`px-2 py-0.8 rounded-lg text-[11px] font-medium transition-all shrink-0 flex items-center gap-1 ${
+                      className={`px-2.5 py-1 rounded-xl text-[11px] font-medium transition-all shrink-0 flex items-center gap-1.5 border ${
                         isSelected
-                          ? "bg-[var(--aurora-fg1)] text-[var(--aurora-bg1)] shadow-xs font-semibold scale-102"
-                          : "text-[var(--aurora-fg3)] hover:text-[var(--aurora-fg1)] hover:bg-[var(--aurora-chip)]"
+                          ? "shadow-xs font-semibold scale-102"
+                          : "border-transparent text-[var(--aurora-fg2)] hover:text-[var(--aurora-fg1)] hover:bg-[var(--aurora-chip)]/70"
                       }`}
+                      style={{
+                        backgroundColor: isSelected ? `${tab.color}18` : undefined,
+                        borderColor: isSelected ? `${tab.color}50` : undefined,
+                        color: isSelected ? tab.color : undefined,
+                      }}
                     >
-                      <span>{tab.label}</span>
+                      <span className="font-sans">{tab.label}</span>
                       {tab.count !== undefined && (
                         <span
-                          className="text-[9px] font-mono px-1 py-0.1 rounded-full font-bold"
+                          className="text-[9px] font-mono px-1.5 py-0.2 rounded-full font-bold transition-colors"
                           style={{
-                            backgroundColor: isSelected ? "rgba(0,0,0,0.15)" : `${tab.color}20`,
-                            color: isSelected ? "inherit" : tab.color,
+                            backgroundColor: isSelected ? `${tab.color}25` : "var(--aurora-chip)",
+                            color: isSelected ? tab.color : "var(--aurora-fg3)",
+                            border: isSelected ? `1px solid ${tab.color}40` : "1px solid var(--aurora-border)",
                           }}
                         >
                           {tab.count}
@@ -900,49 +906,49 @@ export default function PersonaPage() {
 
             {/* Industrial-Grade Priority Filter Bar */}
             {["brain", "communication", "tech", "execution", "project", "all"].includes(activeTab) && (
-              <div className="flex items-center justify-between gap-2 pt-1 border-t border-[var(--aurora-border)]/60 flex-wrap">
+              <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-[var(--aurora-border)]/60 flex-wrap">
                 <div className="flex items-center gap-1.5 text-[10px]">
-                  <span className="text-[var(--aurora-fg4)] font-mono font-medium">重要度:</span>
+                  <span className="text-[var(--aurora-fg4)] font-mono font-medium mr-0.5">重要度:</span>
                   <button
                     onClick={() => setPriorityFilter("ALL")}
-                    className={`px-2 py-0.5 rounded-md font-mono transition-all ${
+                    className={`px-2.5 py-0.8 rounded-lg font-mono transition-all border ${
                       priorityFilter === "ALL"
-                        ? "bg-[var(--aurora-fg1)] text-[var(--aurora-bg1)] font-bold shadow-2xs"
-                        : "text-[var(--aurora-fg3)] hover:bg-[var(--aurora-chip)]"
+                        ? "bg-[var(--aurora-chip)] text-[var(--aurora-fg1)] border-[var(--aurora-border-strong)] font-bold shadow-2xs"
+                        : "border-transparent text-[var(--aurora-fg3)] hover:text-[var(--aurora-fg1)] hover:bg-[var(--aurora-chip)]/50"
                     }`}
                   >
                     全部 ({priorityCounts.total})
                   </button>
                   <button
                     onClick={() => setPriorityFilter("P0")}
-                    className={`px-2 py-0.5 rounded-md font-mono transition-all flex items-center gap-1 ${
+                    className={`px-2.5 py-0.8 rounded-lg font-mono transition-all flex items-center gap-1.5 border ${
                       priorityFilter === "P0"
-                        ? "bg-[#EF4444] text-white font-bold shadow-2xs"
-                        : "text-[#EF4444] hover:bg-[#EF4444]/15"
+                        ? "bg-[#EF4444]/15 text-[#EF4444] border-[#EF4444]/50 font-bold shadow-2xs"
+                        : "border-transparent text-[#EF4444]/80 hover:bg-[#EF4444]/10 hover:text-[#EF4444]"
                     }`}
                   >
                     <span className="w-1.5 h-1.5 rounded-full bg-[#EF4444] animate-ping" />
-                    P0 绝对红线 ({priorityCounts.p0})
+                    <span>P0 绝对红线 ({priorityCounts.p0})</span>
                   </button>
                   <button
                     onClick={() => setPriorityFilter("P1")}
-                    className={`px-2 py-0.5 rounded-md font-mono transition-all flex items-center gap-1 ${
+                    className={`px-2.5 py-0.8 rounded-lg font-mono transition-all flex items-center gap-1.5 border ${
                       priorityFilter === "P1"
-                        ? "bg-[#F59E0B] text-black font-bold shadow-2xs"
-                        : "text-[#F59E0B] hover:bg-[#F59E0B]/15"
+                        ? "bg-[#F59E0B]/15 text-[#D97706] border-[#F59E0B]/50 font-bold shadow-2xs"
+                        : "border-transparent text-[#D97706]/80 hover:bg-[#F59E0B]/10 hover:text-[#D97706]"
                     }`}
                   >
-                    P1 工程基线 ({priorityCounts.p1})
+                    <span>P1 工程基线 ({priorityCounts.p1})</span>
                   </button>
                   <button
                     onClick={() => setPriorityFilter("P2")}
-                    className={`px-2 py-0.5 rounded-md font-mono transition-all flex items-center gap-1 ${
+                    className={`px-2.5 py-0.8 rounded-lg font-mono transition-all flex items-center gap-1.5 border ${
                       priorityFilter === "P2"
-                        ? "bg-[#10B981] text-white font-bold shadow-2xs"
-                        : "text-[#10B981] hover:bg-[#10B981]/15"
+                        ? "bg-[#10B981]/15 text-[#059669] border-[#10B981]/50 font-bold shadow-2xs"
+                        : "border-transparent text-[#059669]/80 hover:bg-[#10B981]/10 hover:text-[#059669]"
                     }`}
                   >
-                    P2 协作偏好 ({priorityCounts.p2})
+                    <span>P2 协作偏好 ({priorityCounts.p2})</span>
                   </button>
                 </div>
 
@@ -952,7 +958,7 @@ export default function PersonaPage() {
                     setActiveTab("sandbox");
                     handleRunSandbox(SANDBOX_PRESETS[0].prompt, SANDBOX_PRESETS[0].scenario);
                   }}
-                  className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-[#EF4444]/12 hover:bg-[#EF4444]/22 text-[#EF4444] border border-[#EF4444]/30 flex items-center gap-1 transition-all"
+                  className="text-[10px] font-mono px-2.5 py-0.8 rounded-lg bg-[var(--aurora-surface-solid)] hover:bg-[#EF4444]/12 text-[#EF4444] border border-[#EF4444]/35 hover:border-[#EF4444]/60 flex items-center gap-1.5 transition-all shadow-2xs"
                   title="一键切到沙盒并执行回滚红线拒止实测"
                 >
                   <span className="w-1.5 h-1.5 rounded-full bg-[#EF4444] animate-ping" />
